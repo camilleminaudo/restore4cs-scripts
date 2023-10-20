@@ -137,9 +137,6 @@ if(SN_logger_tube != "NA"){
   }
 }
 
-
-
-# just a first glance
 #
 # for (i in  seq(1,length(fieldsheet$pilot_site))){ # for each incubation, proceed with...
 #
@@ -163,22 +160,12 @@ if(SN_logger_tube != "NA"){
 #
 #   p <- ggarrange(pCO2,pCH4, nrow = 1)
 #
-#
-#   my_sel <- my_data[my_data$label == my_label,]
-#
-#   if (fieldsheet$chamber_type[i] == "floating"){
-#     my_sel$temperature <- approx(data_logger_float$unixtime, data_logger_float$`Ch:1 - Temperature   (°C)`, xout = my_sel$unixtime)$y
-#   } else if (fieldsheet$chamber_type[i] == "tunbe"){
-#     my_sel$temperature <- approx(data_logger_tube$unixtime, data_logger_tube$`Ch:1 - Temperature   (°C)`, xout = my_sel$unixtime)$y
-#   } else {
-#     warning("chamber type not correct!")
-#   }
 # }
 
 
 # load Li-COR file with GoFluxYourself package
 
-test_imp <- LI7810_import(inputfile = paste(datapath,directory_analyser,file_to_read, sep = "/"))
+mydata_imp <- LI7810_import(inputfile = paste(datapath,directory_analyser,file_to_read, sep = "/"))
 
 
 
@@ -225,28 +212,28 @@ for (i in seq_along(fieldsheet$pilot_site)){
 
 
 # Define the measurements' window of observation
-test_ow <- obs.win(inputfile = test_imp, auxfile = auxfile,
+mydata_ow <- obs.win(inputfile = mydata_imp, auxfile = auxfile,
                    obs.length = auxfile$duration, shoulder = 30)
 
 
 
 # Manually identify measurements by clicking on the start and end points
-test_manID <- lapply(seq_along(test_ow), click.peak.loop,
-                     flux.unique = test_ow) %>%
+mydata_manID <- lapply(seq_along(mydata_ow), click.peak.loop,
+                     flux.unique = mydata_ow) %>%
   map_df(., ~as.data.frame(.x))
 
 
 
 # Additional auxiliary data required for flux calculation.
-test_manID <- test_manID %>%
+mydata_manID <- mydata_manID %>%
   left_join(auxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
 
 
 
 # Calculate fluxes for all gas types
-CO2_results <- goFlux(test_manID, "CO2dry_ppm")
-CH4_results <- goFlux(test_manID, "CH4dry_ppb")
-H2O_results <- goFlux(test_manID, "H2O_ppm")
+CO2_results <- goFlux(mydata_manID, "CO2dry_ppm")
+CH4_results <- goFlux(mydata_manID, "CH4dry_ppb")
+H2O_results <- goFlux(mydata_manID, "H2O_ppm")
 
 # Use best.flux to select the best flux estimates (LM or HM)
 # based on a list of criteria
@@ -265,9 +252,9 @@ CO2_flux_res <- CO2_flux_res %>%
 # ?flux2pdf
 
 # Make a list of plots of all measurements, for each gastype
-CO2_flux_plots <- flux.plot(CO2_flux_res, test_manID, "CO2dry_ppm")
-CH4_flux_plots <- flux.plot(CH4_flux_res, test_manID, "CH4dry_ppb")
-H2O_flux_plots <- flux.plot(H2O_flux_res, test_manID, "H2O_ppm")
+CO2_flux_plots <- flux.plot(CO2_flux_res, mydata_manID, "CO2dry_ppm")
+CH4_flux_plots <- flux.plot(CH4_flux_res, mydata_manID, "CH4dry_ppb")
+H2O_flux_plots <- flux.plot(H2O_flux_res, mydata_manID, "H2O_ppm")
 
 # Combine plot lists into one list
 flux_plot.ls <- c(CO2_flux_plots, CH4_flux_plots, H2O_flux_plots)
