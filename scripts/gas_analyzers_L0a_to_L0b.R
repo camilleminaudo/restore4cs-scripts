@@ -28,8 +28,10 @@ library(GoFluxYourself)
 require(dplyr)
 require(purrr)
 
-source("C:/Projects/myGit/GoFluxYourself/R/click.peak.R")
-source("C:/Projects/myGit/GoFluxYourself/R/click.peak.loop.R")
+
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/click.peak.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/click.peak.loop.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/flux.term.R"))
 
 
 
@@ -140,25 +142,25 @@ if(SN_logger_tube != "NA"){
 #
 # for (i in  seq(1,length(fieldsheet$pilot_site))){ # for each incubation, proceed with...
 #
-#   my_sel <- my_data[my_data$unixtime>= (fieldsheet$unix_start_time[i]-30) & my_data$unixtime<= (fieldsheet$unix_end_time[i]+60),]
-#
-#   my_label <- unique(my_sel$label)
-#   my_label <- my_label[which(my_label != "")]
-#
-#   pCO2 <- ggplot(my_sel, aes(unixtime, CO2))+geom_line()+
-#     geom_line(data = my_data[my_data$label == my_label,],
-#               aes(unixtime, CO2), colour = "red", alpha = 0.5, linewidth = 1.5)+
-#     ylab("CO2 [ppm]")+
-#     ggtitle(paste0(subsite_ID," ",fieldsheet$date[i],", plot ",fieldsheet$plot_id[i],", incub ", i))+
-#     theme_article()
-#   pCH4 <- ggplot(my_sel, aes(unixtime, CH4))+geom_line()+
-#     geom_line(data = my_data[my_data$label == my_label,],
-#               aes(unixtime, CH4), colour = "red", alpha = 0.5, linewidth = 1.5)+
-#     ylab("CH4 [ppm]")+
-#     ggtitle(paste(fieldsheet$chamber_type[i], fieldsheet$strata[i], fieldsheet$transparent_dark[i], sep=", "))+
-#     theme_article()
-#
-#   p <- ggarrange(pCO2,pCH4, nrow = 1)
+  # my_sel <- my_data[my_data$unixtime>= (fieldsheet$unix_start_time[i]-30) & my_data$unixtime<= (fieldsheet$unix_end_time[i]+60),]
+  #
+  # my_label <- unique(my_sel$label)
+  # my_label <- my_label[which(my_label != "")]
+  #
+  # pCO2 <- ggplot(my_sel, aes(unixtime, CO2))+geom_line()+
+  #   geom_line(data = my_data[my_data$label == my_label,],
+  #             aes(unixtime, CO2), colour = "red", alpha = 0.5, linewidth = 1.5)+
+  #   ylab("CO2 [ppm]")+
+  #   ggtitle(paste0(subsite_ID," ",fieldsheet$date[i],", plot ",fieldsheet$plot_id[i],", incub ", i))+
+  #   theme_article()
+  # pCH4 <- ggplot(my_sel, aes(unixtime, CH4))+geom_line()+
+  #   geom_line(data = my_data[my_data$label == my_label,],
+  #             aes(unixtime, CH4), colour = "red", alpha = 0.5, linewidth = 1.5)+
+  #   ylab("CH4 [ppm]")+
+  #   ggtitle(paste(fieldsheet$chamber_type[i], fieldsheet$strata[i], fieldsheet$transparent_dark[i], sep=", "))+
+  #   theme_article()
+  #
+  # p <- ggarrange(pCO2,pCH4, nrow = 1)
 #
 # }
 
@@ -172,7 +174,7 @@ mydata_imp <- LI7810_import(inputfile = paste(datapath,directory_analyser,file_t
 # The auxfile requires start.time and UniqueID
 # start.time must be in the format "%Y-%m-%d %H:%M:%S"
 auxfile <- NULL
-# for (i in seq(1,5)){
+# for (i in 15){
 for (i in seq_along(fieldsheet$pilot_site)){
 
   my_sel <- my_data[my_data$unixtime>= (fieldsheet$unix_start_time[i]) & my_data$unixtime<= (fieldsheet$unix_end_time[i]),]
@@ -210,29 +212,26 @@ for (i in seq_along(fieldsheet$pilot_site)){
 }
 
 
+#----- compute CO2 fluxes -----
 
 # Define the measurements' window of observation
 mydata_ow <- obs.win(inputfile = mydata_imp, auxfile = auxfile,
                    obs.length = auxfile$duration, shoulder = 30)
 
-
-
 # Manually identify measurements by clicking on the start and end points
 mydata_manID <- lapply(seq_along(mydata_ow), click.peak.loop,
-                     flux.unique = mydata_ow) %>%
+                     flux.unique = mydata_ow,
+                     gastype = "CO2dry_ppm",
+                     plot.lim = c(200,1000)) %>%
   map_df(., ~as.data.frame(.x))
-
-
 
 # Additional auxiliary data required for flux calculation.
 mydata_manID <- mydata_manID %>%
   left_join(auxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
 
 
-
-# Calculate fluxes for all gas types
+# Calculate fluxes for CO2 and H2O
 CO2_results <- goFlux(mydata_manID, "CO2dry_ppm")
-CH4_results <- goFlux(mydata_manID, "CH4dry_ppb")
 H2O_results <- goFlux(mydata_manID, "H2O_ppm")
 
 # Use best.flux to select the best flux estimates (LM or HM)
@@ -240,28 +239,23 @@ H2O_results <- goFlux(mydata_manID, "H2O_ppm")
 criteria <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
 
 CO2_flux_res <- best.flux(CO2_results, criteria)
-CH4_flux_res <- best.flux(CH4_results, criteria)
 H2O_flux_res <- best.flux(H2O_results, criteria)
 
 CO2_flux_res <- CO2_flux_res %>%
   left_join(auxfile %>% select(UniqueID, strata, chamberType, lightCondition))
 
 
-# Plots results ----------------------------------------------------------------
-# ?flux.plot
-# ?flux2pdf
+# Plots results
 
 # Make a list of plots of all measurements, for each gastype
 CO2_flux_plots <- flux.plot(CO2_flux_res, mydata_manID, "CO2dry_ppm")
-CH4_flux_plots <- flux.plot(CH4_flux_res, mydata_manID, "CH4dry_ppb")
 H2O_flux_plots <- flux.plot(H2O_flux_res, mydata_manID, "H2O_ppm")
 
 # Combine plot lists into one list
-flux_plot.ls <- c(CO2_flux_plots, CH4_flux_plots, H2O_flux_plots)
+flux_plot.ls <- c(CO2_flux_plots, H2O_flux_plots)
 
 # Save plots to pdf
 # flux2pdf(flux_plot.ls, outfile = "demo.results.pdf")
-
 
 ggplot(CO2_flux_res, aes(lightCondition, best.flux, fill = lightCondition))+
   geom_boxplot(alpha=0.2)+geom_jitter(width = 0.2)+
@@ -276,5 +270,81 @@ ggplot(CO2_flux_res, aes(lightCondition, best.flux, fill = lightCondition))+
 
 
 
+
+#----- computing CH4 fluxes -----
+
+
+# Define the measurements' window of observation
+mydata_ow <- obs.win(inputfile = mydata_imp, auxfile = auxfile,
+                     obs.length = auxfile$duration, shoulder = 30)
+
+
+# Manually identify start/end CH4 measurements by clicking on the start and end points
+mydata_manID <- lapply(seq_along(mydata_ow), click.peak.loop,
+                       flux.unique = mydata_ow,
+                       gastype = "CH4dry_ppb",
+                       plot.lim = c(1900,4000)) %>%
+  map_df(., ~as.data.frame(.x))
+
+# linking window of start/end time to mydata_ow list
+i=0
+for (id in unique(mydata_manID$UniqueID)){
+  i=i+1
+  mydata_ow[[i]]$start.time <- unique(mydata_manID$start.time_corr[mydata_manID$UniqueID == id])
+  mydata_ow[[i]]$end.time <- unique(mydata_manID$end.time[mydata_manID$UniqueID == id])
+  mydata_ow[[i]]$duration <- as.numeric(mydata_ow[[i]]$end.time) - as.numeric(mydata_ow[[i]]$start.time)
+  mydata_ow[[i]]$c0 <- first(mydata_manID$c0[mydata_manID$UniqueID == id])
+
+  auxfile$c0[i] <- first(mydata_manID$c0[mydata_manID$UniqueID == id])
+  auxfile$cf[i] <- first(mydata_manID$cf[mydata_manID$UniqueID == id])
+}
+
+# Manually identify diffusive (more or less linear) CH4 behaviors by clicking on the start and end points
+myCH4_diffusion <- lapply(seq_along(mydata_ow), click.peak.loop,
+                       flux.unique = mydata_ow,
+                       gastype = "CH4dry_ppb",
+                       plot.lim = c(1900,4000)) %>%
+  map_df(., ~as.data.frame(.x))
+
+
+# Calculate fluxes for CH4
+CH4_results_diffusion <- goFlux(myCH4_diffusion, "CH4dry_ppb")
+
+# Use best.flux to select the best flux estimates (LM or HM)
+# based on a list of criteria
+criteria <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
+
+CH4_flux_res <- best.flux(CH4_results_diffusion, criteria)
+
+CH4_flux_plots <- flux.plot(CH4_flux_res, myCH4_diffusion, "CH4dry_ppb")
+CH4_flux_plots
+
+
+table_results <- auxfile %>%
+  left_join(CH4_flux_res %>% select(UniqueID, best.flux, model))
+
+
+
+# Estimating ebullitive component
+i=0
+for (id in unique(mydata_manID$UniqueID)){
+  i=i+1
+
+  CH4_final <- table_results$cf[i]
+  CH4_initial <-  table_results$c0[i]
+  incubation_time <- first(mydata_ow[[i]]$duration)
+
+  H2O_mol = mydata_ow[[i]]$H2O_ppm / (1000*1000)
+  myfluxterm <- flux.term(table_results$Vtot[i], table_results$Pcham[i], table_results$Area[i],
+            table_results$Tcham[i], first(H2O_mol))
+
+  CH4_flux_total <- (CH4_final-CH4_initial)/incubation_time*myfluxterm # ppb/m2/s
+
+
+  CH4_ebullition <- CH4_flux_total - CH4_flux_res$best.flux[i] # total flux - diffusive term
+  CH4_ebullition[CH4_ebullition<0] <- 0
+
+  table_results$CH4_ebullition[i] <- CH4_ebullition
+}
 
 
