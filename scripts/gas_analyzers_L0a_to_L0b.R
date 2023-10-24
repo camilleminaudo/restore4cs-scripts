@@ -49,15 +49,34 @@ path_to_L0b <- paste0(dropbox_root,"/GHG/Processed data")
 setwd(datapath)
 
 # ---- SETTINGS ----
-analyser <- "Los Gatos" # Licor | Los Gatos | Picarro
 site_ID <- "S1-CU"
-subsite_ID <- "S1-CU-A1"
-# file_to_read <- "S1-CU-A2.data"
+subsite_ID <- "S1-CU-A2"
+file_to_read <- "S1-CU-A2.data"
 who_runs_this <- "Camille Minaudo"
 
 
+# Read corresponding Fieldsheet
+path2file <- paste0(fieldsheetpath,"/",site_ID,"/",subsite_ID,"-Fieldsheet-GHG.xlsx")
+fieldsheet_temp <- readxl::read_xlsx(path2file,
+                                     col_names = T)
+fieldsheet <- readxl::read_xlsx(path2file,
+                                skip = 2, col_names = F)
+names(fieldsheet) <- names(fieldsheet_temp)
+
+fieldsheet$unix_start_time <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$start_time)
+fieldsheet$unix_end_time <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$end_time)
+# head(fieldsheet)
+
+analyser <- first(fieldsheet$gas_analyzer) # this could create a problem if
+                                           # several gas analyzers are used in
+                                           # the same day at the same subsite
+
+
+
+
+
 # Read gas analyser's file
-if(analyser == "Licor"){
+if(analyser == "LI-COR"){
   directory_analyser <- "RAW Data Licor-7810"
   # my_data <- read_Licor(file = paste(datapath,directory_analyser,file_to_read, sep = "/"))
 
@@ -90,18 +109,6 @@ if(analyser == "Licor"){
 
 
 
-
-# Read corresponding Fieldsheet
-path2file <- paste0(fieldsheetpath,"/",site_ID,"/",subsite_ID,"-Fieldsheet-GHG.xlsx")
-fieldsheet_temp <- readxl::read_xlsx(path2file,
-                                     col_names = T)
-fieldsheet <- readxl::read_xlsx(path2file,
-                                skip = 2, col_names = F)
-names(fieldsheet) <- names(fieldsheet_temp)
-
-fieldsheet$unix_start_time <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$start_time)
-fieldsheet$unix_end_time <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$end_time)
-# head(fieldsheet)
 
 # --- Read corresponding Loggers data ----
 SN_logger_float <- first(fieldsheet$logger_floating_chamber)
@@ -345,7 +352,7 @@ ggplot(table_results_CH4, aes(lightCondition, best.flux, fill = lightCondition))
 #----- joining CO2 and CH4 fluxes estimates into a single table -----
 
 
-table_results <- auxfile[,-which(names(auxfile) == c("c0","cf"))] %>%
+table_results <- auxfile[,-c(which(names(auxfile) =="c0"),which(names(auxfile) =="cf"))] %>%
   left_join(CO2_flux_res %>% select(UniqueID, best.flux, model, quality.check)) %>%
   rename(CO2_flux = best.flux, CO2_model = model, CO2_quality.check = quality.check) %>%
   left_join(CH4_flux_res %>% select(UniqueID, best.flux, model, quality.check)) %>%
@@ -405,6 +412,7 @@ plot_path <- paste0(path_to_L0b,"/plots_",subsite_ID)
 dir.create(plot_path)
 setwd(plot_path)
 myfilename <- paste(subsite_ID, as.character(as.Date(first(table_results$start.time))),analyser,sep="_")
+myfilename <- gsub("-","", myfilename)
 flux2pdf(flux_plot.ls, outfile = paste0(myfilename,".pdf"))
 
 
