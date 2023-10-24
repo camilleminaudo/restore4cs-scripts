@@ -208,8 +208,7 @@ myCO2data_manID <- myCO2data_manID %>%
 # saving CO2 timeseries file (L0B)
 setwd(path_to_L0b)
 myfilename <- paste(subsite_ID, as.character(as.Date(first(myCO2data_manID$DATE))),analyser,"CO2",sep="_")
-myfilename <- paste0(myfilename, ".csv")
-write.csv(x = myCO2data_manID, file = myfilename, sep = ";", dec = ".", row.names = F, col.names = T)
+write.csv(x = myCO2data_manID, file = paste0(myfilename, ".csv"), sep = ";", dec = ".", row.names = F, col.names = T)
 
 
 # Calculate fluxes for CO2 and H2O
@@ -228,19 +227,18 @@ CO2_flux_res <- CO2_flux_res %>%
 
 
 # Plots results
-
 # Make a list of plots of all measurements, for each gastype
 CO2_flux_plots <- flux.plot(CO2_flux_res, myCO2data_manID, "CO2dry_ppm")
-CO2_flux_plots
+# CO2_flux_plots
 H2O_flux_plots <- flux.plot(H2O_flux_res, myCO2data_manID, "H2O_ppm")
 
-# Combine plot lists into one list
-flux_plot.ls <- c(CO2_flux_plots, H2O_flux_plots)
-
-# Save plots to pdf
-# flux2pdf(flux_plot.ls, outfile = "demo.results.pdf")
-
+# a simple boxplot for CO2 fluxes
 ggplot(CO2_flux_res, aes(lightCondition, best.flux, fill = lightCondition))+
+  geom_boxplot(alpha=0.2)+geom_jitter(width = 0.2)+
+  theme_article()+facet_wrap(.~strata, scales = "free")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)
+
+ggplot(H2O_flux_res, aes(lightCondition, best.flux, fill = lightCondition))+
   geom_boxplot(alpha=0.2)+geom_jitter(width = 0.2)+
   theme_article()+facet_wrap(.~strata, scales = "free")+
   scale_fill_viridis_d(begin = 0.2, end = 0.9)
@@ -302,7 +300,7 @@ criteria <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
 CH4_flux_res <- best.flux(CH4_results_diffusion, criteria)
 
 CH4_flux_plots <- flux.plot(CH4_flux_res, myCH4_diffusion, "CH4dry_ppb")
-CH4_flux_plots
+# CH4_flux_plots
 
 
 table_results_CH4 <- auxfile %>%
@@ -393,5 +391,20 @@ myfilename <- paste(subsite_ID, as.character(as.Date(first(table_results$start.t
 myfilename <- paste0(myfilename, ".csv")
 write.csv(x = table_results, file = myfilename, sep = ";", dec = ".", row.names = F, col.names = T)
 
+
+
+#----- joining CO2 and CH4 fluxes estimates into a single table -----
+
+
+# Combine plot lists into one list
+flux_plot.ls <- c(CO2_flux_plots, CH4_flux_plots, H2O_flux_plots)
+
+# Save plots to pdf
+plot_path <- paste0(path_to_L0b,"/plots_",subsite_ID)
+
+dir.create(plot_path)
+setwd(plot_path)
+myfilename <- paste(subsite_ID, as.character(as.Date(first(table_results$start.time))),analyser,sep="_")
+flux2pdf(flux_plot.ls, outfile = paste0(myfilename,".pdf"))
 
 
