@@ -44,6 +44,8 @@ datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 loggerspath <- paste0(datapath,"/RAW Data Logger")
 
+path_to_L0b <- paste0(dropbox_root,"/GHG/Processed data")
+
 setwd(datapath)
 
 # ---- SETTINGS ----
@@ -133,8 +135,8 @@ if(SN_logger_tube != "NA"){
 # requires start.time and UniqueID.
 # start.time must be in the format "%Y-%m-%d %H:%M:%S"
 auxfile <- NULL
-for (i in 1:3){
-  # for (i in seq_along(fieldsheet$pilot_site)){
+# for (i in 1:3){
+for (i in seq_along(fieldsheet$pilot_site)){
 
   my_sel <- mydata_imp[as.numeric(mydata_imp$POSIX.time)>= (fieldsheet$unix_start_time[i]) & as.numeric(mydata_imp$POSIX.time)<= (fieldsheet$unix_end_time[i]),]
 
@@ -191,20 +193,27 @@ mydata_ow <- obs.win(inputfile = mydata_imp, auxfile = auxfile,
                      obs.length = auxfile$duration, shoulder = 30)
 
 # Manually identify measurements by clicking on the start and end points
-mydata_manID <- lapply(seq_along(mydata_ow), click.peak.loop,
+myCO2data_manID <- lapply(seq_along(mydata_ow), click.peak.loop,
                        flux.unique = mydata_ow,
                        gastype = "CO2dry_ppm",
                        plot.lim = c(200,1000)) %>%
   map_df(., ~as.data.frame(.x))
 
 # Additional auxiliary data required for flux calculation.
-mydata_manID <- mydata_manID %>%
+myCO2data_manID <- myCO2data_manID %>%
   left_join(auxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
 
 
+# saving CO2 timeseries file (L0B)
+setwd(path_to_L0b)
+myfilename <- paste(subsite_ID, as.character(as.Date(first(myCO2data_manID$DATE))),analyser,"CO2",sep="_")
+myfilename <- paste0(myfilename, ".csv")
+write.csv(x = myCO2data_manID, file = myfilename, sep = ";", dec = ".", row.names = F, col.names = T)
+
+
 # Calculate fluxes for CO2 and H2O
-CO2_results <- goFlux(mydata_manID, "CO2dry_ppm")
-H2O_results <- goFlux(mydata_manID, "H2O_ppm")
+CO2_results <- goFlux(myCO2data_manID, "CO2dry_ppm")
+H2O_results <- goFlux(myCO2data_manID, "H2O_ppm")
 
 # Use best.flux to select the best flux estimates (LM or HM)
 # based on a list of criteria
@@ -220,9 +229,9 @@ CO2_flux_res <- CO2_flux_res %>%
 # Plots results
 
 # Make a list of plots of all measurements, for each gastype
-CO2_flux_plots <- flux.plot(CO2_flux_res, mydata_manID, "CO2dry_ppm")
+CO2_flux_plots <- flux.plot(CO2_flux_res, myCO2data_manID, "CO2dry_ppm")
 CO2_flux_plots
-H2O_flux_plots <- flux.plot(H2O_flux_res, mydata_manID, "H2O_ppm")
+H2O_flux_plots <- flux.plot(H2O_flux_res, myCO2data_manID, "H2O_ppm")
 
 # Combine plot lists into one list
 flux_plot.ls <- c(CO2_flux_plots, H2O_flux_plots)
@@ -247,23 +256,31 @@ mydata_ow <- obs.win(inputfile = mydata_imp, auxfile = auxfile,
 
 
 # Manually identify start/end CH4 measurements by clicking on the start and end points
-mydata_manID <- lapply(seq_along(mydata_ow), click.peak.loop,
+myCH4data_manID <- lapply(seq_along(mydata_ow), click.peak.loop,
                        flux.unique = mydata_ow,
                        gastype = "CH4dry_ppb",
                        plot.lim = c(1900,max(fieldsheet$final_ch4)*1000)) %>%
   map_df(., ~as.data.frame(.x))
 
+
+# saving CH4 timeseries file (L0B)
+setwd(path_to_L0b)
+myfilename <- paste(subsite_ID, as.character(as.Date(first(myCH4data_manID$DATE))),analyser,"CH4",sep="_")
+myfilename <- paste0(myfilename, ".csv")
+write.csv(x = myCH4data_manID, file = myfilename, sep = ";", dec = ".", row.names = F, col.names = T)
+
+
 # linking window of start/end time to mydata_ow list
 i=0
-for (id in unique(mydata_manID$UniqueID)){
+for (id in unique(myCH4data_manID$UniqueID)){
   i=i+1
-  mydata_ow[[i]]$start.time <- unique(mydata_manID$start.time_corr[mydata_manID$UniqueID == id])
-  mydata_ow[[i]]$end.time <- unique(mydata_manID$end.time[mydata_manID$UniqueID == id])
+  mydata_ow[[i]]$start.time <- unique(myCH4data_manID$start.time_corr[myCH4data_manID$UniqueID == id])
+  mydata_ow[[i]]$end.time <- unique(myCH4data_manID$end.time[myCH4data_manID$UniqueID == id])
   mydata_ow[[i]]$duration <- as.numeric(mydata_ow[[i]]$end.time) - as.numeric(mydata_ow[[i]]$start.time)
-  mydata_ow[[i]]$c0 <- first(mydata_manID$c0[mydata_manID$UniqueID == id])
+  mydata_ow[[i]]$c0 <- first(myCH4data_manID$c0[myCH4data_manID$UniqueID == id])
 
-  auxfile$c0[i] <- first(mydata_manID$c0[mydata_manID$UniqueID == id])
-  auxfile$cf[i] <- first(mydata_manID$cf[mydata_manID$UniqueID == id])
+  auxfile$c0[i] <- first(myCH4data_manID$c0[myCH4data_manID$UniqueID == id])
+  auxfile$cf[i] <- first(myCH4data_manID$cf[myCH4data_manID$UniqueID == id])
 }
 
 # Manually identify diffusive (more or less linear) CH4 behaviors by clicking on the start and end points
@@ -287,23 +304,23 @@ CH4_flux_plots <- flux.plot(CH4_flux_res, myCH4_diffusion, "CH4dry_ppb")
 CH4_flux_plots
 
 
-table_results <- auxfile %>%
+table_results_CH4 <- auxfile %>%
   left_join(CH4_flux_res %>% select(UniqueID, best.flux, model))
 
 
 
-# Estimating ebullitive component
+# Estimating ebullition component
 i=0
-for (id in unique(mydata_manID$UniqueID)){
+for (id in unique(myCH4data_manID$UniqueID)){
   i=i+1
 
-  CH4_final <- table_results$cf[i]
-  CH4_initial <-  table_results$c0[i]
+  CH4_final <- table_results_CH4$cf[i]
+  CH4_initial <-  table_results_CH4$c0[i]
   incubation_time <- first(mydata_ow[[i]]$duration)
 
   H2O_mol = mydata_ow[[i]]$H2O_ppm / (1000*1000)
-  myfluxterm <- flux.term(table_results$Vtot[i], table_results$Pcham[i], table_results$Area[i],
-                          table_results$Tcham[i], first(H2O_mol))
+  myfluxterm <- flux.term(table_results_CH4$Vtot[i], table_results_CH4$Pcham[i], table_results_CH4$Area[i],
+                          table_results_CH4$Tcham[i], first(H2O_mol))
 
   CH4_flux_total <- (CH4_final-CH4_initial)/incubation_time*myfluxterm # ppb/m2/s
 
@@ -311,7 +328,58 @@ for (id in unique(mydata_manID$UniqueID)){
   CH4_ebullition <- CH4_flux_total - CH4_flux_res$best.flux[i] # total flux - diffusive term
   CH4_ebullition[CH4_ebullition<0] <- 0
 
-  table_results$CH4_ebullition[i] <- CH4_ebullition
+  table_results_CH4$CH4_ebullition[i] <- CH4_ebullition
 }
 
+
+
+ggplot(table_results_CH4, aes(lightCondition, best.flux, fill = lightCondition))+
+  geom_boxplot(alpha=0.2)+geom_jitter(width = 0.2)+
+  theme_article()+facet_wrap(.~strata, scales = "free")+
+  ylab("CH4 flux nmol/m2/s")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)
+
+
+
+
+
+#----- joining CO2 and CH4 fluxes estimates into a single table -----
+
+
+table_results <- auxfile[,-which(names(auxfile) == c("c0","cf"))] %>%
+  left_join(CO2_flux_res %>% select(UniqueID, best.flux, model, quality.check)) %>%
+  rename(CO2_flux = best.flux, CO2_model = model, CO2_quality.check = quality.check) %>%
+  left_join(CH4_flux_res %>% select(UniqueID, best.flux, model, quality.check)) %>%
+  rename(CH4_diffusive_flux = best.flux, CH4_model = model, CH4_quality.check = quality.check) %>%
+  left_join(table_results_CH4 %>% select(UniqueID, CH4_ebullition)) %>%
+  rename(CH4_ebullition_flux = CH4_ebullition)
+
+
+plt_CO2 <- ggplot(table_results, aes(lightCondition, CO2_flux, fill = lightCondition))+
+  geom_hline(yintercept = 0)+
+  geom_boxplot(alpha=0.2)+geom_jitter(width = 0.2)+
+  theme_article()+facet_wrap(.~strata, scales = "free")+
+  ylab("CO2 flux mmol/m2/s")+
+  ggtitle(paste0(subsite_ID,", CO2 flux"))+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)
+
+
+plt_CH4diff <- ggplot(table_results, aes(lightCondition, CH4_diffusive_flux, fill = lightCondition))+
+  geom_hline(yintercept = 0)+
+  geom_boxplot(alpha=0.2)+geom_jitter(width = 0.2)+
+  theme_article()+facet_wrap(.~strata, scales = "free")+
+  ylab("CH4 flux nmol/m2/s")+
+  ggtitle(paste0(subsite_ID,", CH4 diffusive flux"))+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)
+
+
+plt_CH4ebull <- ggplot(table_results, aes(lightCondition, CH4_ebullition_flux, fill = lightCondition))+
+  geom_hline(yintercept = 0)+
+  geom_boxplot(alpha=0.2)+geom_jitter(width = 0.2)+
+  theme_article()+facet_wrap(.~strata, scales = "free")+
+  ylab("CH4 flux nmol/m2/s")+
+  ggtitle(paste0(subsite_ID,", CH4 ebullition"))+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)
+
+ggarrange(plt_CO2, plt_CH4diff, plt_CH4ebull, ncol = 1)
 
