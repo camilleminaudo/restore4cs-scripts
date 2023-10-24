@@ -16,7 +16,7 @@ rm(list = ls()) # clear workspace
 cat("/014") # clear console
 
 
-# packages
+# ---- packages ----
 library(tidyverse)
 library(readxl)
 library(lubridate)
@@ -32,10 +32,12 @@ require(purrr)
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/click.peak.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/click.peak.loop.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/flux.term.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_Licor.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
 
 
 
-# Directories
+# ---- Directories ----
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
@@ -43,39 +45,12 @@ loggerspath <- paste0(datapath,"/RAW Data Logger")
 
 setwd(datapath)
 
-# --- SETTINGS
+# ---- SETTINGS ----
 analyser <- "Licor"
 site_ID <- "S1-CU"
-subsite_ID <- "S1-CU-P2"
-file_to_read <- "S1-CU-P2.data"
+subsite_ID <- "S1-CU-A2"
+file_to_read <- "S1-CU-A2.data"
 who_runs_this <- "Camille Minaudo"
-
-# --- Some functions
-read_Licor <- function(file){
-  message(paste0("reading ",file_to_read," with script for ",analyser," gas analyser"))
-  filename <- paste(datapath,directory_analyser,file_to_read, sep = "/")
-  data_raw <- read_lines(filename)
-  prefix <- substr(data_raw, start = 1,stop = 5) # isolte first 5 characters for each line
-
-  # find line corresponding to headers
-  headers <- unlist(strsplit(data_raw[which(prefix == "DATAH")], "\t"))
-  units <- unlist(strsplit(data_raw[which(prefix == "DATAU")], "\t"))
-
-  data <- read.delim(filename, sep = "\t", header = F, skip = which(prefix == "DATAU"), na.strings = "nan")
-  names(data) <- headers
-
-  my_data <- data.frame(date = data$DATE,
-                        UTCtime = data$TIME,
-                        unixtime = data$SECONDS,
-                        H2O = data$H2O,
-                        CO2 = data$CO2,
-                        CH4 = data$CH4/1000, #ppm
-                        Press = data$CAVITY_P,
-                        label = data$REMARK)
-
-  return(my_data)
-}
-
 
 
 # Read gas analyser's file
@@ -101,12 +76,7 @@ fieldsheet <- readxl::read_xlsx(path2file,
                                 skip = 2, col_names = F)
 names(fieldsheet) <- names(fieldsheet_temp)
 
-get_unix_times <- function(mydate, mytime){
-  timestamp <- paste(hour(mytime),minute(mytime),0,sep = ":")
-  unix_time <- as.numeric(as.POSIXct(paste(as.Date(mydate),timestamp,
-                                           sep = " "), tz = 'UTC'))
-  return(unix_time)
-}
+
 
 fieldsheet$unix_start_time <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$start_time)
 fieldsheet$unix_end_time <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$end_time)
@@ -114,8 +84,8 @@ fieldsheet$unix_end_time <- get_unix_times(mydate = fieldsheet$date, mytime = fi
 
 
 # Read corresponding Loggers data
-SN_logger_float <- unique(fieldsheet$logger_floating_chamber)
-SN_logger_tube <- unique(fieldsheet$logger_transparent_chamber)
+SN_logger_float <- first(fieldsheet$logger_floating_chamber)
+SN_logger_tube <- first(fieldsheet$logger_transparent_chamber)
 
 if(SN_logger_float != "NA"){
   is_data_logger_float = T
@@ -139,7 +109,7 @@ if(SN_logger_tube != "NA"){
   }
 }
 
-#
+# ---- hidden lines, making overview plots ----
 # for (i in  seq(1,length(fieldsheet$pilot_site))){ # for each incubation, proceed with...
 #
   # my_sel <- my_data[my_data$unixtime>= (fieldsheet$unix_start_time[i]-30) & my_data$unixtime<= (fieldsheet$unix_end_time[i]+60),]
@@ -165,17 +135,17 @@ if(SN_logger_tube != "NA"){
 # }
 
 
-# load Li-COR file with GoFluxYourself package
+# --- load Li-COR file with GoFluxYourself package ----
 
 mydata_imp <- LI7810_import(inputfile = paste(datapath,directory_analyser,file_to_read, sep = "/"))
 
 
-
+# Create an auxfile table, made of fieldsheet, adding important variables
 # The auxfile requires start.time and UniqueID
 # start.time must be in the format "%Y-%m-%d %H:%M:%S"
 auxfile <- NULL
-# for (i in 15){
-for (i in seq_along(fieldsheet$pilot_site)){
+for (i in 1:3){
+# for (i in seq_along(fieldsheet$pilot_site)){
 
   my_sel <- my_data[my_data$unixtime>= (fieldsheet$unix_start_time[i]) & my_data$unixtime<= (fieldsheet$unix_end_time[i]),]
   my_label <- unique(my_sel$label)
@@ -249,6 +219,7 @@ CO2_flux_res <- CO2_flux_res %>%
 
 # Make a list of plots of all measurements, for each gastype
 CO2_flux_plots <- flux.plot(CO2_flux_res, mydata_manID, "CO2dry_ppm")
+CO2_flux_plots
 H2O_flux_plots <- flux.plot(H2O_flux_res, mydata_manID, "H2O_ppm")
 
 # Combine plot lists into one list
@@ -265,12 +236,6 @@ ggplot(CO2_flux_res, aes(lightCondition, best.flux, fill = lightCondition))+
 
 
 
-
-
-
-
-
-
 #----- computing CH4 fluxes -----
 
 
@@ -283,7 +248,7 @@ mydata_ow <- obs.win(inputfile = mydata_imp, auxfile = auxfile,
 mydata_manID <- lapply(seq_along(mydata_ow), click.peak.loop,
                        flux.unique = mydata_ow,
                        gastype = "CH4dry_ppb",
-                       plot.lim = c(1900,4000)) %>%
+                       plot.lim = c(1900,max(fieldsheet$final_ch4)*1000)) %>%
   map_df(., ~as.data.frame(.x))
 
 # linking window of start/end time to mydata_ow list
@@ -303,7 +268,7 @@ for (id in unique(mydata_manID$UniqueID)){
 myCH4_diffusion <- lapply(seq_along(mydata_ow), click.peak.loop,
                        flux.unique = mydata_ow,
                        gastype = "CH4dry_ppb",
-                       plot.lim = c(1900,4000)) %>%
+                       plot.lim = c(1900,max(fieldsheet$final_ch4)*1000)) %>%
   map_df(., ~as.data.frame(.x))
 
 
