@@ -169,6 +169,7 @@ for (i in seq_along(fieldsheet$pilot_site)){
   }
 
   auxfile_tmp <- data.frame(UniqueID = UniqueID,
+                            gas_analiser = analyser,
                             start.time = as.POSIXct((fieldsheet$unix_start_time[i]-30), tz = "UTC"),
                             duration = (fieldsheet$unix_end_time[i]+30) - (fieldsheet$unix_start_time[i]-30),
                             Area = myArea,
@@ -382,4 +383,15 @@ plt_CH4ebull <- ggplot(table_results, aes(lightCondition, CH4_ebullition_flux, f
   scale_fill_viridis_d(begin = 0.2, end = 0.9)
 
 ggarrange(plt_CO2, plt_CH4diff, plt_CH4ebull, ncol = 1)
+
+
+
+
+# saving fluxes estimates
+setwd(path_to_L0b)
+myfilename <- paste(subsite_ID, as.character(as.Date(first(table_results$start.time))),analyser,"fluxes",sep="_")
+myfilename <- paste0(myfilename, ".csv")
+write.csv(x = table_results, file = myfilename, sep = ";", dec = ".", row.names = F, col.names = T)
+
+
 
