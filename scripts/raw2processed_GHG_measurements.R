@@ -1,6 +1,6 @@
 
 # ---
-# Authors: Camille Minaudo, Benjamin Misteli
+# Authors: Camille Minaudo
 # Project: "RESTORE4Cs"
 # date: "Oct 2023"
 # https://github.com/camilleminaudo/restore4cs-scripts
@@ -142,7 +142,7 @@ if(SN_logger_tube != "NA"){
 # requires start.time and UniqueID.
 # start.time must be in the format "%Y-%m-%d %H:%M:%S"
 auxfile <- NULL
-for (i in 1:3){
+for (i in 4:5){
 # for (i in seq_along(fieldsheet$pilot_site)){
 
   my_sel <- mydata_imp[as.numeric(mydata_imp$POSIX.time)>= (fieldsheet$unix_start_time[i]) & as.numeric(mydata_imp$POSIX.time)<= (fieldsheet$unix_end_time[i]),]
