@@ -25,8 +25,6 @@ library(grid)
 library(egg)
 library(sp)
 library(sf)
-library(readxl)
-
 
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
 
@@ -119,5 +117,5 @@ ggplot(data = world) +
   geom_sf(data = my_shp, color = "red") +
 
   # coord_sf(crs = st_crs(3035))+
-  coord_sf(xlim = c(-10, 44), ylim = c(24, 56), expand = FALSE)
+  coord_sf(xlim = c(-10, 44), ylim = c(38, 56), expand = FALSE)
 
