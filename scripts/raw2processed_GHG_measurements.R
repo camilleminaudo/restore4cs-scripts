@@ -50,8 +50,8 @@ setwd(datapath)
 
 # ---- SETTINGS ----
 site_ID <- "S1-CU"
-subsite_ID <- "S1-CU-A2"
-file_to_read <- "S1-CU-A2.data"
+subsite_ID <- "S1-CU-R2"
+file_to_read <- "S1-CU-R2 and Cores.data"
 who_runs_this <- "Camille Minaudo"
 
 
@@ -116,7 +116,7 @@ SN_logger_tube <- first(fieldsheet$logger_transparent_chamber)
 
 if(SN_logger_float != "NA"){
   is_data_logger_float = T
-  data_logger_float <- readxl::read_xlsx(paste0(loggerspath,"/",site_ID,"-",SN_logger_float,".xlsx"),col_names = T)
+  data_logger_float <- readxl::read_xlsx(paste0(loggerspath,"/",site_ID,"/",site_ID,"-",SN_logger_float,".xlsx"),col_names = T)
   data_logger_float$unixtime <- as.numeric(data_logger_float$`Date/hour (UTC)`)
 } else {
   message("no data logger linked to the floating chamber!")
@@ -124,7 +124,7 @@ if(SN_logger_float != "NA"){
 
 if(SN_logger_tube != "NA"){
   is_data_logger_tube = T
-  data_logger_tube <- readxl::read_xlsx(paste0(loggerspath,"/",site_ID,"-",SN_logger_tube,".xlsx"),col_names = T)
+  data_logger_tube <- readxl::read_xlsx(paste0(loggerspath,"/",site_ID,"/",site_ID,"-",SN_logger_tube,".xlsx"),col_names = T)
   data_logger_tube$unixtime <- as.numeric(data_logger_tube$`Date/hour (UTC)`)
 } else {
   is_data_logger_tube = F
