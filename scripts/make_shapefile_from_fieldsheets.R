@@ -30,15 +30,15 @@ source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_time
 
 
 # ---- Directories ----
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
+dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/"
 
 
 # list files in Dropbox
-f <- list.files(dropbox_root, pattern = "ieldsheet", all.files = T, full.names = T, recursive = T)
+f <- list.files(dropbox_root, pattern = "Fieldsheet", all.files = T, full.names = T, recursive = T)
 i <- grep(pattern = ".xlsx", x = f)
 f <- f[i]
-r <- grep(pattern = "template",x=f)
-f <- f[-r]
+# r <- grep(pattern = "template",x=f)
+# f <- f[-r]
 r <- grep(pattern = "Scans",x=f)
 f <- f[-r]
 r <- grep(pattern = "exetainer",x=f)
@@ -91,6 +91,36 @@ for (f in myfiles){
   }
 }
 
+
+setwd(dropbox_root)
+filename_w <- paste0(dropbox_root,"Water/Water sampling and filtration_all data.xlsx")
+
+# load file
+fieldsheet_water <- readxl::read_xlsx(filename_w,
+                                      col_names = T, n_max = 3*6*6*4,
+                                      sheet = "Water_sampling_master_ONLINE", skip = 8,
+                                      col_types = c(rep("text",7),rep("numeric",17),rep("text",4)))
+
+fieldsheet_water$date <- as.Date(as.numeric(fieldsheet_water$`Date dd/mm/yyyy`), origin = "1899-12-30")
+myhour <- (floor(fieldsheet_water$`Sampling time (Local)`*24))
+myminutes <- (round((fieldsheet_water$`Sampling time (Local)`*24 - floor(fieldsheet_water$`Sampling time (Local)`*24))*60))
+
+
+shp_data_water <- data.frame(long = fieldsheet_water$`Longitude X °E (decimal)`,
+                             lat = fieldsheet_water$`Latitude Y °N (decimal)`,
+                             variable = "water",
+                             sampleID = fieldsheet_water$`Label Sample ID`,
+                             filename = basename(filename_w),
+                             water_depth = fieldsheet_water$`Water depth (m)`,
+                             strata = "open water",
+                             date = fieldsheet_water$date,
+                             unix_time_utc = NA)
+
+
+
+shp_data <- rbind(shp_data,shp_data_water)
+
+
 dim(shp_data)
 
 
@@ -119,3 +149,5 @@ ggplot(data = world) +
   # coord_sf(crs = st_crs(3035))+
   coord_sf(xlim = c(-10, 44), ylim = c(38, 56), expand = FALSE)
 
+shp_data$water_depth <- as.numeric(shp_data$water_depth)
+ggplot(shp_data[!is.na(shp_data$water_depth),])+geom_density(aes(water_depth))+theme_article()
