@@ -120,13 +120,11 @@ shp_data_water <- data.frame(long = fieldsheet_water$`Longitude X °E (decimal)`
 
 shp_data <- rbind(shp_data,shp_data_water)
 
-
+shp_data <- shp_data[!is.na(shp_data$long),]
 dim(shp_data)
 
 
-
 # ------------ Create a GIS file and save it ----------------
-
 
 my_shp <- st_as_sf(shp_data[!is.na(shp_data$long),],
          coords = c("long", "lat"),
@@ -151,3 +149,11 @@ ggplot(data = world) +
 
 shp_data$water_depth <- as.numeric(shp_data$water_depth)
 ggplot(shp_data[!is.na(shp_data$water_depth),])+geom_density(aes(water_depth))+theme_article()
+
+
+
+
+# some statistics
+message(paste(dim(shp_data[shp_data$variable=="chamber_measurement",])[1],"GHG chamber plots"))
+message(paste(dim(shp_data[shp_data$variable=="chamber_measurement",])[1],"GHG chamber plots"))
+
