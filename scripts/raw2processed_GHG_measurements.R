@@ -34,6 +34,8 @@ source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/click.peak.lo
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/flux.term.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_Licor.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/G2508_import.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/import2RData.R"))
 
 
 
@@ -49,9 +51,9 @@ path_to_L0b <- paste0(dropbox_root,"/GHG/Processed data")
 setwd(datapath)
 
 # ---- SETTINGS ----
-site_ID <- "S1-CU"
-subsite_ID <- "S1-CU-R2"
-file_to_read <- "S1-CU-R2 and Cores.data"
+site_ID <- "S1-VA"
+subsite_ID <- "S1-VA-P2"
+# file_to_read <- "S1-CU-R2 and Cores.data"
 who_runs_this <- "Camille Minaudo"
 
 
@@ -70,10 +72,6 @@ fieldsheet$unix_end_time <- get_unix_times(mydate = fieldsheet$date, mytime = fi
 analyser <- first(fieldsheet$gas_analyzer) # this could create a problem if
                                            # several gas analyzers are used in
                                            # the same day at the same subsite
-
-
-
-
 
 # Read gas analyser's file
 if(analyser == "LI-COR"){
@@ -102,8 +100,25 @@ if(analyser == "LI-COR"){
   }
 
 } else if (analyser == "Picarro"){
-  directory_analyser <- "RAW Data Picarro"
-  mydata_imp <- G2508_import(inputfile = paste(datapath,directory_analyser,file_to_read, sep = "/"))
+  directory_analyser <- paste(datapath,"RAW Data Picarro",subsite_ID,sep="/")
+  setwd(directory_analyser)
+  import2RData(path = directory_analyser, instrument = "G2508", date.format = "ymd", timezone = 'UTC')
+
+  # load all these R.Data
+  file_list <- list.files(path = paste(directory_analyser,"RData",sep="/"), full.names = T)
+  isF <- T
+  for(i in seq_along(file_list)){
+    load(file_list[i])
+    if(isF){
+      isF <- F
+      mydata_imp <- data.raw
+    } else {
+      mydata_imp <- rbind(mydata_imp, data.raw)
+    }
+    rm(data.raw)
+  }
+
+
 }
 
 
@@ -117,7 +132,9 @@ SN_logger_tube <- first(fieldsheet$logger_transparent_chamber)
 if(SN_logger_float != "NA"){
   is_data_logger_float = T
   data_logger_float <- readxl::read_xlsx(paste0(loggerspath,"/",site_ID,"/",site_ID,"-",SN_logger_float,".xlsx"),col_names = T)
-  data_logger_float$unixtime <- as.numeric(data_logger_float$`Date/hour (UTC)`)
+  names(data_logger_float) <- c("sn","datetime","temperature","unixtime")
+  data_logger_float$sn <- SN_logger_float
+  data_logger_float$unixtime <- as.numeric(data_logger_float[[2]])
 } else {
   message("no data logger linked to the floating chamber!")
   is_data_logger_float = F}
@@ -125,7 +142,10 @@ if(SN_logger_float != "NA"){
 if(SN_logger_tube != "NA"){
   is_data_logger_tube = T
   data_logger_tube <- readxl::read_xlsx(paste0(loggerspath,"/",site_ID,"/",site_ID,"-",SN_logger_tube,".xlsx"),col_names = T)
-  data_logger_tube$unixtime <- as.numeric(data_logger_tube$`Date/hour (UTC)`)
+  data_logger_tube <- data_logger_tube[,seq(1,4)]
+  names(data_logger_tube) <- c("sn","datetime","temperature","light","unixtime")
+  data_logger_tube$sn <- SN_logger_tube
+  data_logger_tube$unixtime <- as.numeric(data_logger_tube[[2]])
 } else {
   is_data_logger_tube = F
   message("no data logger linked to the transparent tube chamber!")
@@ -136,16 +156,15 @@ if(SN_logger_tube != "NA"){
   }
 }
 
-
 # --- Create auxfile table ----
 # An auxfile table, made of fieldsheet, adding important variables. The auxfile
 # requires start.time and UniqueID.
 # start.time must be in the format "%Y-%m-%d %H:%M:%S"
 auxfile <- NULL
-for (i in 4:5){
+for (i in 5:10){
 # for (i in seq_along(fieldsheet$pilot_site)){
 
-  my_sel <- mydata_imp[as.numeric(mydata_imp$POSIX.time)>= (fieldsheet$unix_start_time[i]) & as.numeric(mydata_imp$POSIX.time)<= (fieldsheet$unix_end_time[i]),]
+  my_sel <- mydata_imp[as.numeric(mydata_imp$POSIX.time)>= (fieldsheet$unix_start_time[i]+30) & as.numeric(mydata_imp$POSIX.time)<= (fieldsheet$unix_end_time[i]-30),]
 
   UniqueID = paste("plot",fieldsheet$plot_id[i],"_",fieldsheet$chamber_type[i],"_",fieldsheet$transparent_dark[i],
                    sep = "")
@@ -156,9 +175,9 @@ for (i in 4:5){
     myTcham = 15
   } else {
     if (fieldsheet$chamber_type[i] == "floating"){
-      my_sel$temperature <- approx(data_logger_float$unixtime, data_logger_float$`Ch:1 - Temperature   (°C)`, xout = as.numeric(my_sel$POSIX.time))$y
+      my_sel$temperature <- approx(data_logger_float$unixtime, data_logger_float[[3]], xout = as.numeric(my_sel$POSIX.time))$y
     } else if (fieldsheet$chamber_type[i] == "tube"){
-      my_sel$temperature <- approx(data_logger_tube$unixtime, data_logger_tube$`Ch:1 - Temperature   (°C)`, xout = as.numeric(my_sel$POSIX.time))$y
+      my_sel$temperature <- approx(data_logger_tube$unixtime, data_logger_tube[[3]], xout = as.numeric(my_sel$POSIX.time))$y
     } else {
       warning("chamber type not correct!")
     }
