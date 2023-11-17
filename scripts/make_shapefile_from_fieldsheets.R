@@ -28,14 +28,15 @@ library(sf)
 
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
 
-
-# ---- Directories ----
+# ---- Settings ----
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/"
-
+sampling <- "S1"
 
 # list files in Dropbox
 f <- list.files(dropbox_root, pattern = "Fieldsheet", all.files = T, full.names = T, recursive = T)
 i <- grep(pattern = ".xlsx", x = f)
+f <- f[i]
+i <- grep(pattern = sampling, x = f) # selecting the files corresponding to the selected sampling campaign
 f <- f[i]
 # r <- grep(pattern = "template",x=f)
 # f <- f[-r]
@@ -127,11 +128,24 @@ dim(shp_data)
 # ------------ Create a GIS file and save it ----------------
 
 my_shp <- st_as_sf(shp_data[!is.na(shp_data$long),],
-         coords = c("long", "lat"),
-         crs = 4326)
+                   coords = c("long", "lat"),
+                   crs = 4326)
+
 
 setwd(paste0(dropbox_root,"/GIS"))
-st_write(my_shp, dsn = "sampling_points_S1.shp", layer = "sampling_points_S1.shp", driver = "ESRI Shapefile")
+
+myfilename <- "sampling_points_S1"
+
+# removing files if this layer was already created before
+extensions <- c("shp","dbf","prj","shx")
+if(file.exists(paste0(myfilename,".shp"))){
+  for(extension in extensions){
+    file.remove(paste0(myfilename,extension))
+  }
+}
+
+# writing shp file to GIS directory
+st_write(my_shp, dsn = myfilename, layer = myfilename, driver = "ESRI Shapefile")
 
 
 
@@ -147,13 +161,20 @@ ggplot(data = world) +
   # coord_sf(crs = st_crs(3035))+
   coord_sf(xlim = c(-10, 44), ylim = c(38, 56), expand = FALSE)
 
-shp_data$water_depth <- as.numeric(shp_data$water_depth)
-ggplot(shp_data[!is.na(shp_data$water_depth),])+geom_density(aes(water_depth))+theme_article()
+# shp_data$water_depth <- as.numeric(shp_data$water_depth)
+# ggplot(shp_data[!is.na(shp_data$water_depth),])+geom_density(aes(water_depth))+theme_article()
 
 
 
 
 # some statistics
 message(paste(dim(shp_data[shp_data$variable=="chamber_measurement",])[1],"GHG chamber plots"))
-message(paste(dim(shp_data[shp_data$variable=="chamber_measurement",])[1],"GHG chamber plots"))
+message(paste(dim(shp_data[shp_data$variable=="water",])[1],"water samples"))
+message(paste(dim(shp_data[shp_data$variable=="sediment",])[1],"sediment samples"))
+
+
+ggplot(shp_data, aes(variable))+geom_bar()+theme_bw()
+
+
+
 
