@@ -213,8 +213,21 @@ import2RData <- function(path, instrument, date.format, timezone = "UTC"){
   # Los Gatos Research ####
   if(instrument == "LGR"){
 
+    # unzipp all zipped folders
+    file_list_zip <- list.files(path = path, pattern = "\\.zip", full.names = TRUE)
+    if(length(file_list_zip)>0){
+      require(utils)
+      for(fzip in file_list_zip){
+        unzip(zipfile = fzip, exdir=path)  # unzip your file
+      }
+    }
+
     # List all the files contained in the specified path
     file_list <- list.files(path = path, pattern = "\\.txt", full.names = TRUE)
+    r <- grep(pattern = ".zip",x=file_list)
+    file_list <- file_list[-r]
+    f_info <- file.info(file_list)
+    file_list <- file_list[f_info$size>0]
 
     # Loop through files in "file_list" and apply import functions
     pblapply(seq_along(file_list), function(i) {
