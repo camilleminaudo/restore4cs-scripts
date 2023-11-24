@@ -52,6 +52,7 @@ for (f in myfieldsheets_list){
   fieldsheet_temp <- fieldsheet_temp[!is.na(fieldsheet_temp$plot_id),]
   fieldsheet_temp$date <- as.Date( fieldsheet_temp$date, tryFormats = c("%d.%m.%Y", "%d/%m/%Y"))
   fieldsheet_temp$subsite <- gsub(pattern = "-Fieldsheet-GHG.xlsx",replacement = "",x = basename(f))
+  fieldsheet_temp$water_depth <- as.numeric(fieldsheet_temp$water_depth)
 
   if(isF){
     isF <- F
@@ -80,17 +81,18 @@ as.data.frame(fieldsheet[ind_erronous_times,c("pilot_site","subsite","start_time
 ind_suspicious_ch4 <- which(fieldsheet$final_ch4 > 2000)
 
 message("the following rows show suspicious methane levels")
-as.data.frame(fieldsheet[ind_suspicious_ch4,c("pilot_site","subsite","start_time","final_ch4")])
+as.data.frame(fieldsheet[ind_suspicious_ch4,c("pilot_site","subsite","plot_id","final_ch4")])
 
 
 
 # --------- rows with depth possibly reported in m instead of cm
-ind_suspicious_depth <- which((fieldsheet$water_depth > 0) & (fieldsheet$water_depth < 2))
+fieldsheet_not_dry <- fieldsheet[fieldsheet$water_depth != 0,]
+ind_suspicious_depth <- which(fieldsheet_not_dry$water_depth < 2)
 
-message("the following rows show suspicious water depth")
-as.data.frame(fieldsheet[ind_suspicious_depth,c("pilot_site","subsite","start_time","water_depth")])
-
-
+message("the following rows show suspicious water depth ranges:")
+as.data.frame(fieldsheet_not_dry[ind_suspicious_depth,c("pilot_site","subsite","plot_id","water_depth")])
+message("which corresponds to the following subsites:")
+unique(fieldsheet_not_dry$subsite[ind_suspicious_depth])
 
 
 
