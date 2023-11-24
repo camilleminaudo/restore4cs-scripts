@@ -64,6 +64,7 @@ fieldsheet_temp <- readxl::read_xlsx(path2file,
 fieldsheet <- readxl::read_xlsx(path2file,
                                 skip = 2, col_names = F)
 names(fieldsheet) <- names(fieldsheet_temp)
+fieldsheet$date <- as.Date( fieldsheet$date, tryFormats = c("%d.%m.%y", "%d/%m/%y"))
 
 fieldsheet$unix_start_time <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$start_time)
 fieldsheet$unix_end_time <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$end_time)
