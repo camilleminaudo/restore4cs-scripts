@@ -62,7 +62,7 @@ for (f in myfieldsheets_list){
   fieldsheet_temp <- readxl::read_xlsx(f, col_names = F, range = "A3:V30")
   names(fieldsheet_temp) <- my_headers
   fieldsheet_temp <- fieldsheet_temp[!is.na(fieldsheet_temp$plot_id),]
-  fieldsheet_temp$date <- as.Date( fieldsheet_temp$date, tryFormats = c("%d.%m.%y", "%d/%m/%y"))
+  fieldsheet_temp$date <- as.Date(fieldsheet_temp$date, tryFormats = c("%d.%m.%Y", "%d/%m/%Y"))
   fieldsheet_temp$subsiteID <- gsub(pattern = "-Fieldsheet-GHG.xlsx", replacement = "", x = basename(f))
 
 
@@ -93,7 +93,7 @@ map_analysers <- data.frame(instrument = c("LI-7810"),
 
 mainDirRData = paste(datapath,"/RData",sep="")
 
-for (data_folder in data_folders[2]){
+for (data_folder in data_folders){
   setwd(data_folder)
   import2RData(path = data_folder, instrument = map_analysers$instrument,
                date.format = map_analysers$date.format, timezone = 'UTC')
