@@ -35,19 +35,30 @@ source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_GHG_fiel
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
+plots_path <- paste0(dropbox_root,"/GHG/Processed data/plots_all_incubations/")
 
-# ---- List GHG chamber fieldsheets in Dropbox ----
+# ---- List GHG chamber fieldsheets in Dropbox and read them ---
+# list filenames
 myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx", all.files = T, full.names = T, recursive = T)
-
-
-# ---- Read all fieldsheets and put them in a single dataframe ----
-
+# Read all fieldsheets and put them in a single dataframe
 fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 
+
+# ---- function to save a list of plots into pdf file ----
+
+gg_save_pdf = function(list, filename) {
+  pdf(filename)
+  for (p in list) {
+    print(p)
+  }
+  dev.off()
+  invisible(NULL)
+}
 
 # ---- Go through each incubation in fieldsheet and make a plot, organized by subsite ----
 
 for (subsite in unique(fieldsheet$subsite)){
+  message("Now processing ",subsite)
 
   corresp_fs <- fieldsheet[fieldsheet$subsite == subsite,]
   gs <- first(corresp_fs$gas_analyzer)
@@ -66,18 +77,7 @@ for (subsite in unique(fieldsheet$subsite)){
   setwd(path2data)
   load(file = paste0("data_",subsite,".RData"))
 
-
-
-
-
-  # # Create a list of dataframe (by UniqueID)
-  # data_split <- mydata %>%
-  #   right_join(corresp_fs, by = c("UniqueID")) %>% group_by(UniqueID) %>%
-  #   group_split()
-
-
-
-
+  plt_list <- vector('list', length(corresp_fs$plot_id))
   for (incub in seq_along(corresp_fs$plot_id)){
     my_incub <- mydata[as.numeric(mydata$POSIX.time)> corresp_fs$unix_start[incub] &
                          as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop[incub],]
@@ -88,7 +88,7 @@ for (subsite in unique(fieldsheet$subsite)){
       ylab("CO2dry [ppm]")+
       ggtitle(paste0(subsite," plot ",
                      corresp_fs$plot_id[incub]," ",corresp_fs$strata[incub]," ",
-                     corresp_fs$transparent_dark[incub]))
+                     corresp_fs$transparent_dark[incub], ", depth = ",corresp_fs$water_depth[incub], " cm"))
     plt_CH4 <- ggplot(my_incub, aes(POSIX.time, CH4dry_ppb))+geom_line()+
       theme_article()+
       xlab("time UTC")+
@@ -98,34 +98,12 @@ for (subsite in unique(fieldsheet$subsite)){
       xlab("time UTC")+
       ylab("H2O [ppm]")
 
-    plt <- ggarrange(plt_CO2, plt_CH4, plt_H2O, ncol = 1)
-    plt
+    # plt <- ggarrange(plt_CO2, plt_CH4, plt_H2O, ncol = 1)
+    plt_list[[incub]] <- ggarrange(plt_CO2, plt_CH4, plt_H2O, ncol = 1)
   }
-
-
-
-
-
-
-
-  isFincub <- T
-  for (incub in seq_along(corresp_fs$plot_id)){
-    my_incub <- mydata[as.numeric(mydata$POSIX.time)> corresp_fs$unix_start[incub] &
-                         as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop[incub],]
-    my_incub$UniqueID <- paste0(subsite,"-plot",
-                                corresp_fs$plot_id[incub],"-",corresp_fs$strata[incub],"-",
-                                corresp_fs$transparent_dark[incub])
-    if(isFincub){
-      isFincub = F
-      my_incub_all <- my_incub
-    } else {
-      my_incub_all <- rbind(my_incub_all, my_incub)
-    }
-  }
-
-
-
-
+  # Print pdf
+  setwd(plots_path)
+  gg_save_pdf(list = plt_list, filename = paste0(subsite,".pdf"))
 
 }
 

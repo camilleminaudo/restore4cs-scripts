@@ -23,7 +23,6 @@ read_GHG_fieldsheets <- function(myfieldsheets_list){
     fieldsheet_temp <- fieldsheet_temp[!is.na(fieldsheet_temp$plot_id),]
     fieldsheet_temp$date <- as.Date( fieldsheet_temp$date, tryFormats = c("%d.%m.%Y", "%d/%m/%Y"))
     fieldsheet_temp$subsite <- gsub(pattern = "-Fieldsheet-GHG.xlsx",replacement = "",x = basename(f))
-    fieldsheet_temp$water_depth <- as.numeric(fieldsheet_temp$water_depth)
 
     if(isF){
       isF <- F
@@ -34,6 +33,8 @@ read_GHG_fieldsheets <- function(myfieldsheets_list){
   }
 
   fieldsheet <- fieldsheet[!is.na(fieldsheet$longitude),]
+
+  fieldsheet$water_depth <- as.numeric(fieldsheet$water_depth)
 
   fieldsheet$unix_start <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$start_time)
   fieldsheet$unix_stop <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$end_time)

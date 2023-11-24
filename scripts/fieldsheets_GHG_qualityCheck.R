@@ -45,7 +45,7 @@ fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 ind_erronous_times <- which(fieldsheet$unix_stop < fieldsheet$unix_start)
 
 message("the following rows show erronous start/stop times")
-as.data.frame(fieldsheet[ind_erronous_times,c("pilot_site","subsite","start_time","end_time")])
+as.data.frame(fieldsheet[ind_erronous_times,c("pilot_site","subsite","plot_id","start_time","end_time")])
 
 
 # --------- rows with possible error with CH4 units (ppb instead of ppm)

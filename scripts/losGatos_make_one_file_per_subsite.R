@@ -66,31 +66,37 @@ mainDirRData = paste(datapath,"/RData",sep="")
 
 for (data_folder in data_folders){
   setwd(data_folder)
+  subsite = basename(data_folder)
   message(paste0("processing folder ",basename(data_folder)))
   import2RData(path = data_folder, instrument = map_analysers$instrument,
                date.format = map_analysers$date.format, timezone = 'UTC')
 
   # load all these R.Data into a single dataframe
   file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
-  isF <- T
-  for(i in seq_along(file_list)){
-    load(file_list[i])
-    if(isF){
-      isF <- F
-      mydata_imp <- data.raw
-    } else {
-      mydata_imp <- rbind(mydata_imp, data.raw)
+  if(length(file_list)>0){
+    isF <- T
+    for(i in seq_along(file_list)){
+      load(file_list[i])
+      if(isF){
+        isF <- F
+        mydata_imp <- data.raw
+      } else {
+        mydata_imp <- rbind(mydata_imp, data.raw)
+      }
+      rm(data.raw)
     }
-    rm(data.raw)
+
+    # get read of possible duplicated data
+    is_duplicate <- duplicated(mydata_imp$POSIX.time)
+    mydata <- mydata_imp[!is_duplicate,]
+
+    # creating a folder where to put this data
+    dir.create(file.path(mainDirRData,subsite))
+    setwd(file.path(mainDirRData, subsite))
+
+    # save this dataframe as a new RData file
+    save(mydata, file = paste0("data_",subsite,".RData"))
   }
-
-  # get read of possible duplicated data
-  is_duplicate <- duplicated(mydata_imp$POSIX.time)
-  mydata_imp_clean <- mydata_imp[!is_duplicate,]
-
-  # save this dataframe as a new RData file
-  setwd(mainDirRData)
-  save(mydata_imp_clean, file = paste0(basename(data_folder),"_data_clean.RData"))
 }
 
 

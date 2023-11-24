@@ -67,6 +67,7 @@ mainDirRData = paste(datapath,"/RData",sep="")
 
 for (data_folder in data_folders){
   setwd(data_folder)
+  subsite = basename(data_folder)
   message(paste0("processing folder ",basename(data_folder)))
   import2RData(path = data_folder, instrument = map_analysers$instrument,
                date.format = map_analysers$date.format, timezone = 'UTC')
@@ -87,11 +88,14 @@ for (data_folder in data_folders){
 
   # get read of possible duplicated data
   is_duplicate <- duplicated(mydata_imp$POSIX.time)
-  mydata_imp_clean <- mydata_imp[!is_duplicate,]
+  mydata <- mydata_imp[!is_duplicate,]
+
+  # creating a folder where to put this data
+  dir.create(file.path(mainDirRData, subsite))
+  setwd(file.path(mainDirRData, subsite))
 
   # save this dataframe as a new RData file
-  setwd(mainDirRData)
-  save(mydata_imp_clean, file = paste0(basename(data_folder),"_data_clean.RData"))
+  save(mydata, file = paste0("data_",subsite,".RData"))
 }
 
 
