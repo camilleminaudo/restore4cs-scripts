@@ -7,9 +7,9 @@
 # ---
 
 # --- Description of this script
-# This script loads all raw measurement files (data level L0a) from one of the gas
-# analyzers used in the project, transform it into a unified harmonized csv
-# file, and saves a separate file + a pdf plot out of each incubation performed.
+# This script loads all LICOR raw measurements (data level L0a) from a given folder
+# and produces RData archives (data level L0b), stored with a dedicated folder per
+# by campaign-subsite
 
 
 rm(list = ls()) # clear workspace
