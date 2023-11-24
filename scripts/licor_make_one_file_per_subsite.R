@@ -51,7 +51,6 @@ myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx"
 
 # ---- Read all fieldsheets and put them in a single dataframe ----
 
-
 # Read the first one to get the headers
 fieldsheet_temp <- readxl::read_xlsx(myfieldsheets_list[1],
                                      col_names = T)

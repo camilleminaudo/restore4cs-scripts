@@ -33,7 +33,7 @@ source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_time
 
 
 campaign <- "S1"
-site <- "CU"
+site <- "DA"
 subsites <- c("P1","P2","A1","A2","R1","R2")
 
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/"
@@ -69,7 +69,7 @@ join_fieldsheets <- function(exetainers_fieldsheetpath, ghg_fieldsheetpath){
 
 
   # provide a unique identification for each chamber incubation
-  ghg_fieldsheet$unique_id <- paste("plot",ghg_fieldsheet$plot_id,ghg_fieldsheet$strata,ghg_fieldsheet$transparent_dark, sep = "_")
+  ghg_fieldsheet$unique_id <- paste("plot",ghg_fieldsheet$plot_id,ghg_fieldsheet$strata, tolower(ghg_fieldsheet$transparent_dark), sep = "_")
 
   exetainers_fieldsheet$unique_id <- paste("plot",exetainers_fieldsheet$PlotID,exetainers_fieldsheet$Strata,exetainers_fieldsheet$transparent_dark, sep = "_")
 
@@ -108,10 +108,10 @@ for(subsite in subsites){
   df <- join_fieldsheets(exetainers_fieldsheetpath, ghg_fieldsheetpath)
 
 
-
-  setwd(path2output)
-  myfilename <- paste0(campaign,"-",site,"-",subsite,"-exetainers_co2_ch4_concentrations.csv")
-  write.csv(x = df, file = myfilename, sep = ";", dec = ".", row.names = F, col.names = T)
+#
+#   setwd(path2output)
+#   myfilename <- paste0(campaign,"-",site,"-",subsite,"-exetainers_co2_ch4_concentrations.csv")
+#   write.csv(x = df, file = myfilename, sep = ";", dec = ".", row.names = F, col.names = T)
 
 
   if(isF){
@@ -128,5 +128,11 @@ write.csv(x = df_all, file = myfilename, sep = ";", dec = ".", row.names = F, co
 
 
 
+plt_co2 <- ggplot(df_all, aes(expected_co2_ppm))+geom_density()+theme_article()+
+  ggtitle(paste0("expected CO2 range = ", min(df_all$expected_co2_ppm, na.rm = T)," to ", max(df_all$expected_co2_ppm, na.rm = T)," ppm"))
+plt_ch4 <- ggplot(df_all, aes(expected_ch4_ppm))+geom_density()+theme_article()+
+  ggtitle(paste0("expected CH4 range = ", min(df_all$expected_ch4_ppm, na.rm = T)," to ", max(df_all$expected_ch4_ppm, na.rm = T)," ppm"))+scale_x_log10()
 
+myplt <- ggarrange(plt_co2, plt_ch4, nrow = 1)
 
+ggsave(plot = myplt, filename = paste0(campaign,"-",site,"-density_plots.jpg"), path = path2output, width = 12, height = 4, dpi = 150)

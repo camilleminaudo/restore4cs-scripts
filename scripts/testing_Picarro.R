@@ -14,20 +14,22 @@ library(egg)
 library(GoFluxYourself)
 require(dplyr)
 require(purrr)
+require(pbapply)
 
 
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/click.peak.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/click.peak.loop.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/flux.term.R"))
-source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_Licor.R"))
+# source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_Licor.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/G2508_import.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/import2RData.R"))
 
 
 
 # ---- Directories ----
 
-datapath <- "C:/Users/Camille Minaudo/OneDrive - Universitat de Barcelona/Documentos/data/RESTORE4Cs/raw/Picarro_examples"
+datapath <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/GHG/RAW data/RAW Data Picarro/S1-CA-P1/"
 fieldsheetpath <- datapath
 # loggerspath <- paste0(datapath,"/RAW Data Logger")
 
@@ -38,12 +40,12 @@ setwd(datapath)
 # ---- SETTINGS ----
 # site_ID <- "S1-CU"
 # subsite_ID <- "S1-CU-A2"
-file_to_read <- "NOMAD-20230627-085354Z-DataLog_User_Minimal.dat"
+# file_to_read <- "NOMAD-20231108-094148Z-DataLog_User_Minimal.dat"
 who_runs_this <- "Camille Minaudo"
 
 
 # Read corresponding Fieldsheet
-path2file <- paste0(fieldsheetpath,"/","Fuirosos_20220720_20230627_085338.csv")
+path2file <- paste0(fieldsheetpath,"/","MONISTROL_20231031_085029.csv")
 fieldsheet <- read.csv(file = path2file,
                                      header = T)
 
@@ -57,8 +59,24 @@ analyser <- "Picarro" # this could create a problem if
 # several gas analyzers are used in
 # the same day at the same subsite
 
-mydata_imp <- G2508_import(inputfile = file_to_read, timezone = "UTC")
+# mydata_imp <- G2508_import(inputfile = file_to_read, timezone = "UTC")
 
+setwd(datapath)
+import2RData(path = datapath, instrument = "G2508", date.format = "ymd", timezone = 'UTC')
+
+# load all these R.Data
+file_list <- list.files(path = paste(datapath,"RData",sep="/"), full.names = T)
+isF <- T
+for(i in seq_along(file_list)){
+  load(file_list[i])
+  if(isF){
+    isF <- F
+    mydata_imp <- data.raw
+  } else {
+    mydata_imp <- rbind(mydata_imp, data.raw)
+  }
+  rm(data.raw)
+}
 
 
 
@@ -67,7 +85,7 @@ mydata_imp <- G2508_import(inputfile = file_to_read, timezone = "UTC")
 # requires start.time and UniqueID.
 # start.time must be in the format "%Y-%m-%d %H:%M:%S"
 auxfile <- NULL
-for (i in c(1)){
+for (i in c(1,2,3,4)){
 # for (i in seq_along(fieldsheet$Time.Code)){
 
   # my_sel <- mydata_imp[as.numeric(mydata_imp$POSIX.time)>= (fieldsheet$unix_start_time[i]) & as.numeric(mydata_imp$POSIX.time)<= (fieldsheet$unix_end_time[i]),]
@@ -97,12 +115,12 @@ for (i in c(1)){
   }
 }
 
-
 #----- compute CO2 fluxes -----
 
 # Define the measurements' window of observation
-mydata_ow <- obs.win(inputfile = mydata_imp, auxfile = auxfile,
+mydata_ow <- obs.win(inputfile = mydata_imp, auxfile = auxfile, gastype = "CO2dry_ppm",
                      obs.length = auxfile$duration, shoulder = 30)
+mydata_ow
 
 # Manually identify measurements by clicking on the start and end points
 myCO2data_manID <- lapply(seq_along(mydata_ow), click.peak.loop,

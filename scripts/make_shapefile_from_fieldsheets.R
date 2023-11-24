@@ -136,13 +136,19 @@ setwd(paste0(dropbox_root,"/GIS"))
 
 myfilename <- "sampling_points_S1"
 
-# removing files if this layer was already created before
-extensions <- c("shp","dbf","prj","shx")
-if(file.exists(paste0(myfilename,".shp"))){
-  for(extension in extensions){
-    file.remove(paste0(myfilename,extension))
-  }
+
+if(dir.exists(myfilename)){
+  require(fs)
+  dir_delete(myfilename)
 }
+#
+# # removing files if this layer was already created before
+# extensions <- c("shp","dbf","prj","shx")
+# if(file.exists(paste0(myfilename,".shp"))){
+#   for(extension in extensions){
+#     file.remove(paste0(myfilename,extension))
+#   }
+# }
 
 # writing shp file to GIS directory
 st_write(my_shp, dsn = myfilename, layer = myfilename, driver = "ESRI Shapefile")
