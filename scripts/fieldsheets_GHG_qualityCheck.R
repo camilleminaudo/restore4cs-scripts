@@ -7,9 +7,9 @@
 # ---
 
 # --- Description of this script
-# This script loads all raw measurement files (data level L0a) from one of the gas
-# analyzers used in the project, transform it into a unified harmonized csv
-# file, and saves a separate file + a pdf plot out of each incubation performed.
+# This script loads all GHG chamber measurement fieldsheets and runs a simple quality check:
+# ==> makes sure that end time is always > start time
+#
 
 
 rm(list = ls()) # clear workspace
@@ -24,7 +24,6 @@ library(zoo)
 library(ggplot2)
 library(grid)
 library(egg)
-library(GoFluxYourself)
 require(dplyr)
 require(purrr)
 
@@ -32,7 +31,6 @@ source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_time
 
 # ---- Directories ----
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
-datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
 # ---- List GHG chamber fieldsheets in Dropbox ----
@@ -40,7 +38,6 @@ myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx"
 
 
 # ---- Read all fieldsheets and put them in a single dataframe ----
-
 
 # Read the first one to get the headers
 fieldsheet_temp <- readxl::read_xlsx(myfieldsheets_list[1],
@@ -69,54 +66,31 @@ fieldsheet <- fieldsheet[!is.na(fieldsheet$longitude),]
 fieldsheet$unix_start <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$start_time)
 fieldsheet$unix_stop <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$end_time)
 
+fieldsheet$start_time <- strftime(fieldsheet$start_time, format="%H:%M:%S", tz = 'utc')
+fieldsheet$end_time <- strftime(fieldsheet$end_time, format="%H:%M:%S", tz = 'utc')
+
+# --------- rows with stop time < start time
+ind_erronous_times <- which(fieldsheet$unix_stop < fieldsheet$unix_start)
+
+message("the following rows show erronous start/stop times")
+as.data.frame(fieldsheet[ind_erronous_times,c("pilot_site","subsite","start_time","end_time")])
 
 
-# ---- Go through each incubation in fieldsheet and make a plot, organized by subsite ----
+# --------- rows with possible error with CH4 units (ppb instead of ppm)
+ind_suspicious_ch4 <- which(fieldsheet$final_ch4 > 2000)
 
-for (subsite in unique(fieldsheet$subsite)){
+message("the following rows show suspicious methane levels")
+as.data.frame(fieldsheet[ind_suspicious_ch4,c("pilot_site","subsite","start_time","final_ch4")])
 
-  corresp_fs <- fieldsheet[fieldsheet$subsite == subsite,]
-  gs <- first(corresp_fs$gas_analyzer)
 
-  if(gs == "LI-COR"){
-    gs_folder <- "RAW Data Licor-7810"
-  } else if (gs == "Los Gatos"){
-    gs_folder <- "RAW Data Los Gatos"
-  } else if (gs == "Picarro"){
-    gs_folder <- "RAW Data Picarro"
-  } else{
-    warning("------------> gas analyser not properly detected!")
-  }
 
-  path2data <- paste0(datapath,"/",gs_folder,"/RData/",subsite)
-  setwd(path2data)
-  load(file = paste0("data_",subsite,".RData"))
+# --------- rows with depth possibly reported in m instead of cm
+ind_suspicious_depth <- which((fieldsheet$water_depth > 0) & (fieldsheet$water_depth < 2))
 
-  for (incub in seq_along(corresp_fs$plot_id)){
-    my_incub <- mydata[as.numeric(mydata$POSIX.time)> corresp_fs$unix_start[incub] &
-                         as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop[incub],]
+message("the following rows show suspicious water depth")
+as.data.frame(fieldsheet[ind_suspicious_depth,c("pilot_site","subsite","start_time","water_depth")])
 
-    plt_CO2 <- ggplot(my_incub, aes(POSIX.time, CO2dry_ppm))+geom_line()+
-      theme_article()+
-      xlab("time UTC")+
-      ylab("CO2dry [ppm]")+
-      ggtitle(paste0(subsite," plot ",
-                     corresp_fs$plot_id[incub]," ",corresp_fs$strata[incub]," ",
-                     corresp_fs$transparent_dark[incub]))
-    plt_CH4 <- ggplot(my_incub, aes(POSIX.time, CH4dry_ppb))+geom_line()+
-      theme_article()+
-      xlab("time UTC")+
-      ylab("CH4dry [ppm]")
-    plt_H2O <- ggplot(my_incub, aes(POSIX.time, H2O_ppm))+geom_line()+
-      theme_article()+
-      xlab("time UTC")+
-      ylab("H2O [ppm]")
 
-    plt <- ggarrange(plt_CO2, plt_CH4, plt_H2O, nrow = 2, ncol = 2)
-    plt
-
-  }
-}
 
 
 
