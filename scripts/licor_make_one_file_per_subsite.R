@@ -35,8 +35,8 @@ source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/click.peak.lo
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/flux.term.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_Licor.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
-source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/G2508_import.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/import2RData.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_GHG_fieldsheets.R"))
 
 
 
@@ -45,37 +45,12 @@ dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
 datapath <- paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
-# ---- List GHG chamber fieldsheets in Dropbox ----
+
+# ---- List GHG chamber fieldsheets in Dropbox and read them ---
+# list filenames
 myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx", all.files = T, full.names = T, recursive = T)
-
-
-# ---- Read all fieldsheets and put them in a single dataframe ----
-
-# Read the first one to get the headers
-fieldsheet_temp <- readxl::read_xlsx(myfieldsheets_list[1],
-                                     col_names = T)
-my_headers <- names(fieldsheet_temp)
-
-# Go through them all and keep the info
-isF <- T
-for (f in myfieldsheets_list){
-  fieldsheet_temp <- readxl::read_xlsx(f, col_names = F, range = "A3:V30")
-  names(fieldsheet_temp) <- my_headers
-  fieldsheet_temp <- fieldsheet_temp[!is.na(fieldsheet_temp$plot_id),]
-  fieldsheet_temp$date <- as.Date(fieldsheet_temp$date, tryFormats = c("%d.%m.%Y", "%d/%m/%Y"))
-  fieldsheet_temp$subsiteID <- gsub(pattern = "-Fieldsheet-GHG.xlsx", replacement = "", x = basename(f))
-
-
-  if(isF){
-    isF <- F
-    fieldsheet <- fieldsheet_temp
-  } else {
-    fieldsheet <- rbind(fieldsheet, fieldsheet_temp)
-  }
-}
-
-
-fieldsheet <- fieldsheet[!is.na(fieldsheet$longitude),]
+# Read all fieldsheets and put them in a single dataframe
+fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 
 fieldsheet_licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
 
