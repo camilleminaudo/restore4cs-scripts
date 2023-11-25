@@ -81,25 +81,28 @@ for (subsite in unique(fieldsheet$subsite)){
   for (incub in seq_along(corresp_fs$plot_id)){
     my_incub <- mydata[as.numeric(mydata$POSIX.time)> corresp_fs$unix_start[incub] &
                          as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop[incub],]
+    my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
+    if (dim(my_incub)[1]>0){
+      plt_CO2 <- ggplot(my_incub, aes(POSIX.time, CO2dry_ppm))+geom_line()+
+        theme_article()+
+        xlab("time UTC")+
+        ylab("CO2dry [ppm]")+
+        ggtitle(paste0(subsite," plot ",
+                       corresp_fs$plot_id[incub]," ",corresp_fs$strata[incub]," ",
+                       corresp_fs$transparent_dark[incub], ", depth = ",corresp_fs$water_depth[incub], " cm"))
+      plt_CH4 <- ggplot(my_incub, aes(POSIX.time, CH4dry_ppb))+geom_line()+
+        theme_article()+
+        xlab("time UTC")+
+        ylab("CH4dry [ppm]")
+      plt_H2O <- ggplot(my_incub, aes(POSIX.time, H2O_ppm))+geom_line()+
+        theme_article()+
+        xlab("time UTC")+
+        ylab("H2O [ppm]")
 
-    plt_CO2 <- ggplot(my_incub, aes(POSIX.time, CO2dry_ppm))+geom_line()+
-      theme_article()+
-      xlab("time UTC")+
-      ylab("CO2dry [ppm]")+
-      ggtitle(paste0(subsite," plot ",
-                     corresp_fs$plot_id[incub]," ",corresp_fs$strata[incub]," ",
-                     corresp_fs$transparent_dark[incub], ", depth = ",corresp_fs$water_depth[incub], " cm"))
-    plt_CH4 <- ggplot(my_incub, aes(POSIX.time, CH4dry_ppb))+geom_line()+
-      theme_article()+
-      xlab("time UTC")+
-      ylab("CH4dry [ppm]")
-    plt_H2O <- ggplot(my_incub, aes(POSIX.time, H2O_ppm))+geom_line()+
-      theme_article()+
-      xlab("time UTC")+
-      ylab("H2O [ppm]")
+      # plt <- ggarrange(plt_CO2, plt_CH4, plt_H2O, ncol = 1)
+      plt_list[[incub]] <- ggarrange(plt_CO2, plt_CH4, plt_H2O, ncol = 1)
+    }
 
-    # plt <- ggarrange(plt_CO2, plt_CH4, plt_H2O, ncol = 1)
-    plt_list[[incub]] <- ggarrange(plt_CO2, plt_CH4, plt_H2O, ncol = 1)
   }
   # Print pdf
   setwd(plots_path)
