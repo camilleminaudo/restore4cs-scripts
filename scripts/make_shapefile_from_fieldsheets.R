@@ -180,7 +180,8 @@ ggplot(data = world) +
 # some statistics
 message(paste(dim(shp_data[shp_data$variable=="chamber_measurement",])[1],"GHG chamber plots"))
 message(paste(dim(shp_data[shp_data$variable=="water",])[1],"water samples"))
-message(paste(dim(shp_data[shp_data$variable=="sediment",])[1],"sediment samples"))
+message(paste(dim(shp_data[shp_data$variable_2=="sediment sample",])[1],"sediment samples"))
+message(paste(dim(shp_data[shp_data$variable_2=="core",])[1],"cores incubated"))
 
 
 ggplot(shp_data, aes(variable))+geom_bar()+theme_bw()
