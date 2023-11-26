@@ -29,7 +29,8 @@ library(sf)
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
 
 # ---- Settings ----
-dropbox_root <- "D:/Dropbox/RESTORE4Cs - Fieldwork/Data/"
+dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/"
+# dropbox_root <- "D:/Dropbox/RESTORE4Cs - Fieldwork/Data/"
 sampling <- "S1"
 
 # list files in Dropbox
@@ -53,7 +54,7 @@ for (f in myfiles){
 
   # load file
   fieldsheet_temp <- readxl::read_xlsx(f,col_names = T)
-  fieldsheet <- readxl::read_xlsx(f,skip = 2, col_names = F)
+  fieldsheet <- readxl::read_xlsx(f,skip = 2, col_names = F, n_max = 100)
   names(fieldsheet) <- tolower(names(fieldsheet_temp))
   fieldsheet$date <- as.Date(fieldsheet$date, tryFormats = c("%d.%m.%Y", "%d/%m/%Y"))
 
