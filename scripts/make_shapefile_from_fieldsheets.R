@@ -55,26 +55,27 @@ for (f in myfiles){
   fieldsheet_temp <- readxl::read_xlsx(f,col_names = T)
   fieldsheet <- readxl::read_xlsx(f,skip = 2, col_names = F)
   names(fieldsheet) <- tolower(names(fieldsheet_temp))
-  fieldsheet$date <- as.Date( fieldsheet$date, tryFormats = c("%d.%m.%y", "%d/%m/%y"))
+  fieldsheet$date <- as.Date(fieldsheet$date, tryFormats = c("%d.%m.%y", "%d/%m/%y"))
 
   indSed <- grep(pattern = "Sediment", x=f)
   indGHG <- grep(pattern = "GHG", x=f)
 
   if(length(indSed) > 0){
-    shp_data_temp <- data.frame(long = fieldsheet[[8]],
-                                lat = fieldsheet[[9]],
+    shp_data_temp <- data.frame(long = fieldsheet[[9]],
+                                lat = fieldsheet[[10]],
                                 variable = "sediment",
-                                type = fieldsheet[[6]],
+                                variable_2 = fieldsheet[[6]],
                                 sampleID = fieldsheet[[5]],
                                 filename = basename(f),
                                 water_depth = fieldsheet[[11]],
                                 strata = fieldsheet$strata,
                                 date = fieldsheet$date,
-                                unix_time_utc = get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet[[7]]))
+                                unix_time_utc = get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet[[8]]))
   } else if(length(indGHG) > 0){
     shp_data_temp <- data.frame(long = fieldsheet$longitude,
                                 lat = fieldsheet$latitude,
                                 variable = "chamber_measurement",
+                                variable_2 = fieldsheet$strata,
                                 sampleID = paste(gsub(x = basename(f), pattern = "-Fieldsheet-GHG.xlsx", replacement = ""), "-plot",fieldsheet$plot_id,sep = ""),
                                 filename = basename(f),
                                 water_depth = fieldsheet$water_depth,
@@ -111,6 +112,7 @@ myminutes <- (round((fieldsheet_water$`Sampling time (Local)`*24 - floor(fieldsh
 shp_data_water <- data.frame(long = fieldsheet_water$`Longitude X °E (decimal)`,
                              lat = fieldsheet_water$`Latitude Y °N (decimal)`,
                              variable = "water",
+                             variable_2 = "water",
                              sampleID = fieldsheet_water$`Label Sample ID`,
                              filename = basename(filename_w),
                              water_depth = fieldsheet_water$`Water depth (m)`,
