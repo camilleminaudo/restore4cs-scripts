@@ -18,7 +18,7 @@ read_GHG_fieldsheets <- function(myfieldsheets_list){
   # Go through them all and keep the info
   isF <- T
   for (f in myfieldsheets_list){
-    fieldsheet_temp <- readxl::read_xlsx(f, col_names = F, range = "A3:V30")
+    fieldsheet_temp <- readxl::read_xlsx(f, col_names = F, range = "A3:V30", n_max = 100)
     names(fieldsheet_temp) <- my_headers
     fieldsheet_temp <- fieldsheet_temp[!is.na(fieldsheet_temp$plot_id),]
     fieldsheet_temp$date <- as.Date( fieldsheet_temp$date, tryFormats = c("%d.%m.%Y", "%d/%m/%Y"))
