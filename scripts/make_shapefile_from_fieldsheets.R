@@ -29,7 +29,7 @@ library(sf)
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
 
 # ---- Settings ----
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/"
+dropbox_root <- "D:/Dropbox/RESTORE4Cs - Fieldwork/Data/"
 sampling <- "S1"
 
 # list files in Dropbox
@@ -64,9 +64,10 @@ for (f in myfiles){
     shp_data_temp <- data.frame(long = fieldsheet[[8]],
                                 lat = fieldsheet[[9]],
                                 variable = "sediment",
+                                type = fieldsheet[[6]],
                                 sampleID = fieldsheet[[5]],
                                 filename = basename(f),
-                                water_depth = fieldsheet[[10]],
+                                water_depth = fieldsheet[[11]],
                                 strata = fieldsheet$strata,
                                 date = fieldsheet$date,
                                 unix_time_utc = get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet[[7]]))
