@@ -55,7 +55,7 @@ for (f in myfiles){
   fieldsheet_temp <- readxl::read_xlsx(f,col_names = T)
   fieldsheet <- readxl::read_xlsx(f,skip = 2, col_names = F)
   names(fieldsheet) <- tolower(names(fieldsheet_temp))
-  fieldsheet$date <- as.Date(fieldsheet$date, tryFormats = c("%d.%m.%y", "%d/%m/%y"))
+  fieldsheet$date <- as.Date(fieldsheet$date, tryFormats = c("%d.%m.%Y", "%d/%m/%Y"))
 
   indSed <- grep(pattern = "Sediment", x=f)
   indGHG <- grep(pattern = "GHG", x=f)
