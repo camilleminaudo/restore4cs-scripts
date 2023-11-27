@@ -69,7 +69,7 @@ fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 path2processed <- paste0(dropbox_root,"/GHG/Processed data")
 
 # ---- List folders with Picarro data in Dropbox ----
-data_folders <- list.dirs(datapath, full.names = T, recursive = F)
+data_folders <- list.dirs(datapath, full.names = T, recursive = F)[-1]
 subsites <- basename(data_folders)
 
 k=0
@@ -87,10 +87,10 @@ for (subsite in subsites){
 
   fieldsheet <- readxl::read_xlsx(f_name, col_names = T)# Read it first to get the headers
   my_headers <- names(fieldsheet)
-  fieldsheet <- readxl::read_xlsx(f_name, col_names = F, range = "A3:V50")# re-read and affect correctly the headers
+  fieldsheet <- readxl::read_xlsx(f_name, col_names = F, range = "A3:V50", n_max = 100)# re-read and affect correctly the headers
   names(fieldsheet) <- my_headers
   fieldsheet <- fieldsheet[!is.na(fieldsheet$plot_id),]
-  fieldsheet$date <- as.Date( fieldsheet$date, tryFormats = c("%d.%m.%y", "%d/%m/%y"))
+  fieldsheet$date <- as.Date( fieldsheet$date, tryFormats = c("%d.%m.%Y", "%d/%m/%Y"))
 
 
   fieldsheet$unix_start <- get_unix_times(mydate = fieldsheet$date, mytime = fieldsheet$start_time)
