@@ -19,6 +19,7 @@ library(SIBER)
 library(dplyr)
 library(ggplot2)
 library(gridExtra)
+library(ggpubr)
 
 # ---- Settings ----
 dropbox_root <- "D:/Dropbox/RESTORE4Cs - Fieldwork/Data/"
@@ -28,7 +29,7 @@ dropbox_root <- "C:/Users/misteli/Dropbox/RESTORE4Cs - Fieldwork/Data/"
 
 datapath <- paste0(dropbox_root,"/Water/Stable Isotopes")
 setwd(datapath)
-water_isotopes <- readxl::read_xlsx("Water_Isotopes_S1.xlsx",
+water_isotopes <- readxl::read_xlsx("Water_Isotopes_S1_LT.xlsx",
                                      col_names = T)
 
 water_isotopes <- water_isotopes %>% mutate(conservation = factor(Conservation), 
@@ -93,5 +94,9 @@ for (case_pilot in unique_case_pilot) {
   ggsave(filename, second_plot, width = 10, height = 8, units = "in", dpi = 300)
 }
 
-combined_plots <- do.call(grid.arrange, c(plot_list, ncol = 2))
-ggsave("S1_combined_plots.png", combined_plots, width = 12, height = 10, units = "in", dpi = 300)
+combined_plots <- ggarrange(plotlist = plot_list, ncol = 2, nrow=3, common.legend = TRUE, legend = "right")
+png(filename = "S1_combined_plots.png",
+    width = 12, height = 10, units = "in", res=300)
+combined_plots
+dev.off()
+
