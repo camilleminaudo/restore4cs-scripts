@@ -21,9 +21,6 @@ library(ggplot2)
 library(gridExtra)
 library(ggpubr)
 
-# ---- Settings ----
-dropbox_root <- "D:/Dropbox/RESTORE4Cs - Fieldwork/Data/"
-
 # ---- Directories ----
 dropbox_root <- "C:/Users/misteli/Dropbox/RESTORE4Cs - Fieldwork/Data/"
 
@@ -50,8 +47,8 @@ for (case_pilot in unique_case_pilot) {
   
   # Create a plot for the current country
   plot <- ggplot(data = country_data, 
-                 aes(x = d2H, 
-                     y = d18O)) + 
+                 aes(x = d18O, 
+                     y = d2H)) + 
     geom_point(aes(color = conservation, shape = number), size = 5) +
     ylab(expression(paste(delta^{2}, "H (permille)"))) +
     xlab(expression(paste(delta^{18}, "O (permille)"))) + 
@@ -63,10 +60,10 @@ for (case_pilot in unique_case_pilot) {
   summary_data <- country_data %>% 
     group_by(conservation, number) %>% 
     summarise(count = n(),
-              mC = mean(d2H), 
-              sdC = sd(d2H), 
-              mN = mean(d18O), 
-              sdN = sd(d18O))
+              mC = mean(d18O), 
+              sdC = sd(d18O),
+              mN = mean(d2H), 
+              sdN = sd(d2H))
   
   # Create plot for the current country
   second_plot <- plot +
@@ -85,7 +82,8 @@ for (case_pilot in unique_case_pilot) {
                                         fill = conservation), 
                color = "black", shape = 22, size = 5,
                alpha = 0.7, show.legend = FALSE) + 
-    scale_fill_viridis_d()
+    scale_fill_viridis_d()+  
+    geom_abline(intercept = 10.8, slope =  8.2, color = "red", linetype = "dashed")
   
   plot_list[[case_pilot]] <- second_plot
   
@@ -100,3 +98,52 @@ png(filename = "S1_combined_plots.png",
 combined_plots
 dev.off()
 
+water_isotopes_1 <- readxl::read_xlsx("Water_Isotopes_S1_LT.xlsx",
+                                     col_names = T)
+
+water_isotopes_1 <- water_isotopes_1 %>% mutate(CasePilot = factor(`Case Pilot`), 
+                                            conservation = factor(Conservation),
+                                            d2H = `δ2H, in ‰`, 
+                                            d18O = `δ18O, in ‰`,
+                                            .keep = "unused") 
+
+
+
+
+plot <- ggplot(data = water_isotopes_1, 
+               aes(x = d18O, 
+                   y = d2H)) + 
+  geom_point(aes(color = CasePilot, shape = conservation), size = 4) +
+  ylab(expression(paste(delta^{2}, "H (permille)"))) +
+  xlab(expression(paste(delta^{18}, "O (permille)"))) + 
+  theme(text = element_text(size = 16)) + 
+  scale_color_viridis_d() 
+
+summary_data <- water_isotopes_1 %>% 
+  group_by(CasePilot, conservation) %>% 
+  summarise(count = n(),
+            mC = mean(d18O), 
+            sdC = sd(d18O), 
+            mN = mean(d2H), 
+            sdN = sd(d2H))
+
+second_plot <- plot +
+  geom_errorbar(data = summary_data, 
+                mapping = aes(x = mC, y = mN,
+                              ymin = mN - 1.96 * sdN, 
+                              ymax = mN + 1.96 * sdN), 
+                width = 0) +
+  geom_errorbarh(data = summary_data, 
+                 mapping = aes(x = mC, y = mN,
+                               xmin = mC - 1.96 * sdC,
+                               xmax = mC + 1.96 * sdC),
+                 height = 0) + 
+  geom_point(data = summary_data, aes(x = mC, 
+                                      y = mN,
+                                      fill = conservation), 
+             color = "black", shape = 22, size = 5,
+             alpha = 0.7, show.legend = FALSE) + 
+  scale_fill_viridis_d()+  
+  geom_abline(intercept = 10.8, slope =  8.2, color = "red", linetype = "dashed")
+
+ggsave("S1_all_in_one.png", second_plot, width = 10, height = 8, units = "in", dpi = 300)
