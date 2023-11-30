@@ -39,6 +39,7 @@ dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 corrfieldsheetpath <- paste0(dropbox_root,"/GHG/Processed data/corrected_fieldsheets")
+loggerspath <- paste0(datapath,"/RAW Data Logger")
 plots_path <- paste0(dropbox_root,"/GHG/Processed data/plots_all_incubations/")
 results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
@@ -99,6 +100,72 @@ for (subsite in subsites){
     warning("------> gas analyser not properly detected!")
   }
 
+
+  # read corresponding temperature logger file and keep initial temperature
+
+  # --- Read corresponding Loggers data ----
+  SN_logger_float <- first(corresp_fs$logger_floating_chamber)
+  SN_logger_tube <- first(corresp_fs$logger_transparent_chamber)
+  site_ID <- str_sub(subsite, start = 1, end = 5)
+
+  # finding out if corresponding file exists, and its extension
+  require(tools)
+  dir_exists_loggdata <- dir.exists(paste0(loggerspath,"/",site_ID,"/"))
+  if(dir_exists_loggdata){
+    f <- list.files(paste0(loggerspath,"/",site_ID,"/"), full.names = T)
+    r <- grep(pattern = ".hobo", x = f)
+    if(length(r)>0){f <- f[-r]}
+    r <- grep(pattern = ".txt", x = f)
+    if(length(r)>0){f <- f[-r]}
+    f_ext <- file_ext(f)
+    i_f_float <- grep(pattern = SN_logger_float, x = f)[1]
+    i_f_tube <- grep(pattern = SN_logger_tube, x = f)[1]
+  }
+
+  if(!is.na(SN_logger_float) & !is.na(i_f_float)){
+    is_data_logger_float = T
+    message("...reading corresponding temperature logger file for floating chamber")
+    if(f_ext[i_f_float]=="xlsx"){
+      data_logger_float <- readxl::read_xlsx(f[i_f_float],col_names = T)
+    } else if(f_ext[i_f_float]=="csv"){
+      data_logger_float <- read.csv(f[i_f_float], header = T)
+    }
+    data_logger_float <- data_logger_float[,seq(1,3)]
+    names(data_logger_float) <- c("sn","datetime","temperature")
+    data_logger_float$sn <- SN_logger_float
+    if(is.character(data_logger_float$datetime)){
+      data_logger_float$datetime <- as.POSIXct(data_logger_float$datetime, tz = 'utc', tryFormats = c("%m/%d/%y %r", "%d/%m/%Y %H:%M"))
+    }
+    data_logger_float$unixtime <- as.numeric(data_logger_float$datetime)
+  } else {
+    message("===> no data logger linked to the floating chamber!")
+    is_data_logger_float = F}
+
+  if(!is.na(SN_logger_tube) & !is.na(i_f_tube)){
+    is_data_logger_tube = T
+    message("...reading corresponding temperature logger file for tube chamber")
+    if(f_ext[i_f_tube]=="xlsx"){
+      data_logger_tube <- readxl::read_xlsx(f[i_f_tube],col_names = T)
+    } else if(f_ext[i_f_tube]=="csv"){
+      data_logger_tube <- read.csv(f[i_f_tube], header = T, fill = T)
+    }
+    data_logger_tube <- data_logger_tube[,seq(1,4)]
+    names(data_logger_tube) <- c("sn","datetime","temperature","light")
+    data_logger_tube$sn <- SN_logger_tube
+    if(is.character(data_logger_tube$datetime)){
+      if(length(grep(pattern = "AM", x = first(data_logger_tube$datetime)))>0 | length(grep(pattern = "PM", x = first(data_logger_tube$datetime)))>0){
+        data_logger_tube$datetime <- as.POSIXct(data_logger_tube$datetime, tz = 'UTC', format = c("%m/%d/%y %r"))
+      } else {
+        data_logger_tube$datetime <- as.POSIXct(data_logger_tube$datetime, tz = 'UTC', format = "%m/%d/%Y %H:%M")
+      }
+    }
+    data_logger_tube$unixtime <- as.numeric(data_logger_tube$datetime)
+  } else {
+    is_data_logger_tube = F
+    message("===> no data logger linked to the tube chamber!")
+  }
+
+
   path2data <- paste0(datapath,"/",gs_folder,"/RData/",subsite)
   if(dir.exists(path2data)){
     setwd(path2data)
@@ -136,22 +203,30 @@ for (subsite in subsites){
 
         }
 
-        # Compute Area and Volume from fieldsheet info
+        # Compute Temperature, Area and Volume from fieldsheet info
+        myTemp <- 15 # a default temperature to run the flux calculation...
         if (corresp_fs$chamber_type[incub] == "floating"){
+          if(is_data_logger_float){
+            myTemp <- median(approx(data_logger_float$unixtime, data_logger_float$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
+          }
           myArea = 14365.4439 # cm2
           myVtot = 115 # L
         } else if (corresp_fs$chamber_type[incub] == "tube"){
+          if(is_data_logger_tube){
+            myTemp <- median(approx(data_logger_tube$unixtime, data_logger_tube$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
+          }
           myArea = pi*12.1**2 # cm2
           myVtot = myArea*as.numeric(corresp_fs$chamber_height_cm[incub])*1e-3 # L
         } else {
           warning("chamber type not correct!")
         }
 
+
         # Fit a simple linear model using functions from GoFluxYourself package
         myfluxterm <- flux.term(V_L = myArea,
                                 P_kPa = 100,
                                 A_cm2 = myArea,
-                                T_C = 15,
+                                T_C = myTemp,
                                 H2O_mol = first(my_incub$H2O_ppm)/(1000*1000))
         lm_co2 <- LM.flux(gas.meas = my_incub$CO2dry_ppm,
                           time.meas = my_incub$elapsed_time,
@@ -188,6 +263,13 @@ write.csv(x = flux_table_incub_all, file = paste0(myfilename,".csv"), row.names 
 
 
 # ---- Some plots ----
+
+ggplot(flux_table_incub_all, aes(LM.r2_co2, fill = strata))+geom_density(alpha=0.5)+
+  theme_article()
+
+ggplot(flux_table_incub_all, aes(LM.r2_ch4, fill = strata))+geom_density(alpha=0.5)+
+  theme_article()
+
 
 ggplot(flux_table_incub_all[flux_table_incub_all$LM.r2_co2>0.5,], aes(subsite, LM.flux_co2, colour = transparent_dark))+
   geom_hline(yintercept = 0, alpha = 0.2)+
