@@ -1,5 +1,5 @@
 # ---
-# Authors: Camille Minaudo
+# Authors: Benjamin Misteli
 # Project: "RESTORE4Cs"
 # date: "Oct 2023"
 # https://github.com/camilleminaudo/restore4cs-scripts
@@ -25,7 +25,6 @@ library(egg)
 library(sp)
 library(sf)
 library(openxlsx)
-library(chron)
 
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
 
@@ -66,4 +65,38 @@ merged_data <- merged_data %>%
   arrange(desc(package_arrived))
 
 write.xlsx(merged_data, file = "Lab data/test.xlsx")
+
+test <- readxl::read_xlsx("Lab data/test.xlsx", col_names = TRUE)
+
+# Define the columns for which you want to create boxplots
+columns_of_interest <- c("oc_content", "dry_weight_percentage", "ash_free_dry_mass_percentage")  # Add columns as needed
+
+# Extract unique values of 'pilot_site'
+unique_pilot_site <- unique(test$pilot_site)
+
+for (column in columns_of_interest) {
+  plot_list <- list()
+  
+  for (CP in unique_pilot_site) {
+    # Filter data for the current pilot_site and column
+    country_data <- filter(test, pilot_site == CP)
+    
+    # Create a plot for the current column and pilot_site
+    boxplot <- ggplot(data = country_data, aes(x = subsite, y = .data[[column]])) + 
+      geom_boxplot() + 
+      theme(text = element_text(size = 16)) + 
+      scale_color_viridis_d() +
+      ggtitle(paste("Case Pilot:", CP))
+    
+    plot_list[[as.character(CP)]] <- boxplot
+  }
+  
+  # Arrange the combined plots for the current column
+  combined_plots <- ggpubr::ggarrange(plotlist = plot_list, ncol = 2, nrow = 3, common.legend = TRUE, legend = "right")
+  
+  # Save the combined plots for the current column
+  png(filename = paste0(column, "_Boxplots.png"), width = 12, height = 10, units = "in", res = 300)
+  print(combined_plots)  # Use print() to display and save the plot
+  dev.off()
+}
 
