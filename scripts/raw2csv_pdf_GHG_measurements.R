@@ -25,9 +25,12 @@ library(egg)
 library(GoFluxYourself)
 require(dplyr)
 require(purrr)
+require(msm)
 
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_GHG_fieldsheets.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/flux.term.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/LM.flux.R"))
 
 
 
@@ -74,6 +77,7 @@ for (subsite in subsites[31:36]){
   # check if there is a corresponding corrected fielsheet for this subsite
   existsCorr_fs <- which(subsites_corrected_fs == subsite)
   if (length(existsCorr_fs) > 0){
+    message("using exact incubation start and stop times")
     fs_corr <- read.csv(file = myfieldsheets_corrected_list[existsCorr_fs])
     corresp_fs$unix_start <- fs_corr$unix_start_corrected[match(corresp_fs$start_time, fs_corr$start_time)]
     corresp_fs$unix_stop <- fs_corr$unix_stop_corrected[match(corresp_fs$start_time, fs_corr$start_time)]
@@ -101,6 +105,9 @@ for (subsite in subsites[31:36]){
                            as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop[incub],]
       my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
       if (dim(my_incub)[1]>0){
+
+        my_incub$elapsed_time <- as.numeric(my_incub$POSIX.time - corresp_fs$unix_start[incub])
+
         plt_CO2 <- ggplot(my_incub, aes(POSIX.time, CO2dry_ppm))+geom_line()+
           theme_article()+
           xlab("time UTC")+
@@ -119,6 +126,7 @@ for (subsite in subsites[31:36]){
 
         # plt <- ggarrange(plt_CO2, plt_CH4, plt_H2O, ncol = 1)
         plt_list[[incub]] <- ggarrange(plt_CO2, plt_CH4, plt_H2O, ncol = 1)
+
       }
     }
     # Print pdf
