@@ -30,7 +30,8 @@ source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_time
 
 # ---- Settings ----
 #dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/" #Camille Minaudo
-dropbox_root <- "D:/Dropbox/RESTORE4Cs - Fieldwork/Data/Sediment/" #Benjamin Misteli
+#dropbox_root <- "D:/Dropbox/RESTORE4Cs - Fieldwork/Data/Sediment/" #Benjamin Misteli PC
+dropbox_root <- "C:/Users/misteli/Dropbox/RESTORE4Cs - Fieldwork/Data/Sediment" #Benjamin Misteli Laptop
 sampling <- "S1"
 setwd(dropbox_root)
 
@@ -57,29 +58,31 @@ complete_list_sediments <- complete_list %>%
   filter(type == "sediment sample")
 
 datasheet_wcl_names <- readxl::read_xlsx("Lab data/Datasheet-Sediment.xlsx",col_names = T)
-datasheet_wcl <- readxl::read_xlsx("Lab data/Datasheet-Sediment.xlsx",skip = 2,col_names = F, n_max = 100)
+datasheet_wcl <- readxl::read_xlsx("Lab data/Datasheet-Sediment.xlsx",skip = 2,col_names = F)
 names(datasheet_wcl) <- tolower(names(datasheet_wcl_names))
+
+datasheet_wcl <- datasheet_wcl[, -c(2:12)]
+datasheet_wcl <- datasheet_wcl[!is.na(datasheet_wcl[, 2]), ]
 
 merged_data <- merge(complete_list_sediments, datasheet_wcl, by = "sample_id", all = TRUE)
 merged_data <- merged_data %>%
   arrange(desc(package_arrived))
 
-write.xlsx(merged_data, file = "Lab data/test.xlsx")
+write.xlsx(merged_data, file = "Lab data/Datasheet-Sediment.xlsx")
 
-test <- readxl::read_xlsx("Lab data/test.xlsx", col_names = TRUE)
 
 # Define the columns for which you want to create boxplots
 columns_of_interest <- c("oc_content", "dry_weight_percentage", "ash_free_dry_mass_percentage")  # Add columns as needed
 
 # Extract unique values of 'pilot_site'
-unique_pilot_site <- unique(test$pilot_site)
+unique_pilot_site <- unique(merged_data$pilot_site)
 
 for (column in columns_of_interest) {
   plot_list <- list()
   
   for (CP in unique_pilot_site) {
     # Filter data for the current pilot_site and column
-    country_data <- filter(test, pilot_site == CP)
+    country_data <- filter(merged_data, pilot_site == CP)
     
     # Create a plot for the current column and pilot_site
     boxplot <- ggplot(data = country_data, aes(x = subsite, y = .data[[column]])) + 
