@@ -7,7 +7,6 @@
 
 
 
-
 read_GHG_fieldsheets <- function(myfieldsheets_list){
 
   # Read the first one to get the headers
