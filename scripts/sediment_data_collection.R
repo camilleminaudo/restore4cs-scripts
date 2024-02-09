@@ -62,7 +62,7 @@ datasheet_wcl <- readxl::read_xlsx("Lab data/Datasheet-Sediment.xlsx",skip = 2,c
 names(datasheet_wcl) <- tolower(names(datasheet_wcl_names))
 
 datasheet_wcl <- datasheet_wcl[, -c(2:12)]
-datasheet_wcl <- datasheet_wcl[!is.na(datasheet_wcl[, 2]), ]
+datasheet_wcl <- datasheet_wcl[!is.na(datasheet_wcl[, 1]), ]
 
 merged_data <- merge(complete_list_sediments, datasheet_wcl, by = "sample_id", all = TRUE)
 merged_data <- merged_data %>%
