@@ -114,10 +114,10 @@ setwd(dropbox_root)
 filename_w <- paste0(dropbox_root,"Water/Water sampling and filtration_all data.xlsx")
 
 # load file
-fieldsheet_water <- readxl::read_xlsx(filename_w,
+fieldsheet_water <- readxl::read_xlsx(filename_w, 
                                       col_names = T, n_max = 3*6*6*4,
                                       sheet = "Water_sampling_master_ONLINE", skip = 8,
-                                      col_types = c(rep("text",8),rep("numeric",19),rep("text",3)))
+                                      col_types = c(rep("text",8),rep("numeric",19),rep("text",4)))
 
 fieldsheet_water <- fieldsheet_water[fieldsheet_water$Survey==sampling,]
 
