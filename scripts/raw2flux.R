@@ -16,7 +16,7 @@ cat("/014") # clear console
 
 ############################################
    # USER, please specify if you want plots to be saved
-doPlot <- T
+doPlot <- F
 ############################################
 
 
@@ -381,54 +381,56 @@ plt_CH4diff <- ggplot(table_results_all, aes(subsite_short, CH4_LM.flux,
   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
   facet_grid(.~campaign_site)
 
-ggarrange(plt_CO2, plt_CH4diff, ncol = 1)
+plt_all <- ggarrange(plt_CO2, plt_CH4diff, ncol = 1)
 
+ggsave(plot = plt_all, filename = paste0(myfilename,".jpg"), path = results_path, 
+       width = 10, height = 8, dpi = 300, units = 'in')
 
-
-
-table_results_water <- table_results_all[table_results_all$strata=="open water",]
-
-plt_CO2 <- ggplot(table_results_water, aes(subsite_short, CO2_LM.flux,
-                                         fill = lightCondition))+
-  geom_hline(yintercept = 0)+
-  geom_boxplot(alpha=0.5)+
-  geom_jitter(width = 0.2, size=2)+
-  theme_article()+
-  xlab("subsite")+
-  ylab("CO2 flux mmol/m2/s")+
-  ggtitle("CO2 flux")+
-  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
-  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
-  facet_grid(.~campaign_site)
-
-
-plt_CH4diff <- ggplot(table_results_water, aes(subsite_short, CH4_LM.flux, 
-                                             fill = lightCondition))+
-  geom_hline(yintercept = 0)+
-  geom_boxplot(alpha=0.5)+
-  geom_jitter(width = 0.2, size=2)+
-  theme_article()+
-  xlab("subsite")+
-  ylab("CH4 flux nmol/m2/s")+
-  ggtitle("CH4 flux")+
-  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
-  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
-  facet_grid(.~campaign_site)
-
-ggarrange(plt_CO2, plt_CH4diff, ncol = 1)
-
-
-
-
-
-
-
-
-
-
-
-ggplot(table_results_all, aes(CO2_LM.flux, CO2_HM.flux, colour = strata))+
-  geom_abline(slope = 1, intercept = 0)+
-  geom_point(size=2, alpha=0.5)+
-  theme_article()+
-  scale_colour_viridis_d(begin = 0.2, end = 0.9)#+facet_grid(.~subsite)
+# 
+# 
+# table_results_water <- table_results_all[table_results_all$strata=="open water",]
+# 
+# plt_CO2 <- ggplot(table_results_water, aes(subsite_short, CO2_LM.flux,
+#                                          fill = lightCondition))+
+#   geom_hline(yintercept = 0)+
+#   geom_boxplot(alpha=0.5)+
+#   geom_jitter(width = 0.2, size=2)+
+#   theme_article()+
+#   xlab("subsite")+
+#   ylab("CO2 flux mmol/m2/s")+
+#   ggtitle("CO2 flux")+
+#   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+#   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
+#   facet_grid(.~campaign_site)
+# 
+# 
+# plt_CH4diff <- ggplot(table_results_water, aes(subsite_short, CH4_LM.flux, 
+#                                              fill = lightCondition))+
+#   geom_hline(yintercept = 0)+
+#   geom_boxplot(alpha=0.5)+
+#   geom_jitter(width = 0.2, size=2)+
+#   theme_article()+
+#   xlab("subsite")+
+#   ylab("CH4 flux nmol/m2/s")+
+#   ggtitle("CH4 flux")+
+#   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+#   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
+#   facet_grid(.~campaign_site)
+# 
+# ggarrange(plt_CO2, plt_CH4diff, ncol = 1)
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# ggplot(table_results_all, aes(CO2_LM.flux, CO2_HM.flux, colour = strata))+
+#   geom_abline(slope = 1, intercept = 0)+
+#   geom_point(size=2, alpha=0.5)+
+#   theme_article()+
+#   scale_colour_viridis_d(begin = 0.2, end = 0.9)#+facet_grid(.~subsite)
