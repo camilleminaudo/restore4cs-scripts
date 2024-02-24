@@ -396,7 +396,7 @@ for (cs in unique(table_results_all$campaign_site)){
                                            fill = lightCondition))+
     geom_hline(yintercept = 0)+
     geom_boxplot(alpha=0.5)+
-    # geom_jitter(width = 0.2, aes(colour = strata), size=2)+
+    geom_jitter(width = 0.2, size=2, alpha=0.5)+
     theme_article()+
     xlab("subsite")+
     ylab("CO2 flux mmol/m2/s")+
@@ -410,7 +410,7 @@ for (cs in unique(table_results_all$campaign_site)){
                                                fill = lightCondition))+
     geom_hline(yintercept = 0)+
     geom_boxplot(alpha=0.5)+
-    # geom_jitter(width = 0.2, aes(colour = strata), size=2)+
+    geom_jitter(width = 0.2, size=2, alpha=0.5)+
     theme_article()+
     xlab("subsite")+
     ylab("CH4 flux nmol/m2/s")+
@@ -424,7 +424,7 @@ for (cs in unique(table_results_all$campaign_site)){
   myfilename <- paste("000_fluxes",cs,min(as.Date(table_results_cs$start.time)), sep = "_")
   
   ggsave(plot = plt_cs, filename = paste0(myfilename,".jpg"), path = results_path, 
-         width = 10, height = 8, dpi = 300, units = 'in')
+         width = 6, height = 8, dpi = 300, units = 'in')
   
 }
 
