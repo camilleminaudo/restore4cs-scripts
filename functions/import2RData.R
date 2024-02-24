@@ -99,8 +99,6 @@
 #'
 #'
 
-source("C:/Projects/myGit/restore4cs-scripts/scripts/G2508_import.R")
-
 
 import2RData <- function(path, instrument, date.format, timezone = "UTC"){
 
