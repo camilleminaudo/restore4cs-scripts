@@ -14,6 +14,14 @@ rm(list = ls()) # clear workspace
 cat("/014") # clear console
 
 
+############################################
+   # USER, please specify if you want plots to be saved
+doPlot <- T
+############################################
+
+
+
+
 # ---- packages ----
 library(tidyverse)
 library(readxl)
@@ -44,12 +52,6 @@ loggerspath <- paste0(datapath,"/RAW Data Logger")
 plots_path <- paste0(dropbox_root,"/GHG/Processed data/plots_all_incubations/")
 results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
-
-
-
-############################################
-doPlot <- F
-############################################
 
 
 
@@ -168,10 +170,6 @@ for (subsite in subsites[1:36]){
   if(dir.exists(path2data)){
     setwd(path2data)
     load(file = paste0("data_",subsite,".RData"))
-    
-    if(doPlot){plt_list <- vector('list', length(corresp_fs$plot_id))}
-    
-    
     
     auxfile <- NULL
     
@@ -297,7 +295,7 @@ for (subsite in subsites[1:36]){
                              as.numeric(mydata$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
         my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
         # calling dedicated function
-        df_ebull <- separate_ebullition_from_diffusion(my_incub, UniqueID = auxfile$UniqueID[i], doPlot)
+        df_ebull <- separate_ebullition_from_diffusion(my_incub, UniqueID = auxfile$UniqueID[i], doPlot=F)
         # computing fluxes
         H2O_mol = my_incub$H2O_ppm / (1000*1000)
         myfluxterm <- flux.term(auxfile$Vtot[i], auxfile$Pcham[i], auxfile$Area[i],
@@ -360,11 +358,11 @@ plt_CO2 <- ggplot(table_results_all, aes(subsite_short, CO2_LM.flux,
                                          fill = lightCondition))+
   geom_hline(yintercept = 0)+
   geom_boxplot(alpha=0.5)+
-  geom_jitter(width = 0.2, aes(colour = strata), size=2)+
+  # geom_jitter(width = 0.2, aes(colour = strata), size=2)+
   theme_article()+
   xlab("subsite")+
   ylab("CO2 flux mmol/m2/s")+
-  ggtitle("CO2 flux")+
+  ggtitle("CO2 flux - Linear Model")+
   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
   facet_grid(.~campaign_site)
@@ -374,11 +372,11 @@ plt_CH4diff <- ggplot(table_results_all, aes(subsite_short, CH4_LM.flux,
                                              fill = lightCondition))+
   geom_hline(yintercept = 0)+
   geom_boxplot(alpha=0.5)+
-  geom_jitter(width = 0.2, aes(colour = strata), size=2)+
+  # geom_jitter(width = 0.2, aes(colour = strata), size=2)+
   theme_article()+
   xlab("subsite")+
   ylab("CH4 flux nmol/m2/s")+
-  ggtitle("CH4 flux")+
+  ggtitle("CH4 flux - Linear Model")+
   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
   facet_grid(.~campaign_site)
