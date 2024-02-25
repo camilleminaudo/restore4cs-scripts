@@ -99,8 +99,6 @@
 #'
 #'
 
-source("C:/Projects/myGit/restore4cs-scripts/scripts/G2508_import.R")
-
 
 import2RData <- function(path, instrument, date.format, timezone = "UTC"){
 
@@ -225,7 +223,8 @@ import2RData <- function(path, instrument, date.format, timezone = "UTC"){
     # List all the files contained in the specified path
     file_list <- list.files(path = path, pattern = "\\.txt", full.names = TRUE)
     r <- grep(pattern = ".zip",x=file_list)
-    file_list <- file_list[-r]
+    if(length(r)>0){file_list <- file_list[-r]}
+    
     f_info <- file.info(file_list)
     file_list <- file_list[f_info$size>0]
 

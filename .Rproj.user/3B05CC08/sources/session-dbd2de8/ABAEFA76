@@ -1,0 +1,26 @@
+{
+    "id": "ABAEFA76",
+    "path": "C:/Projects/myGit/restore4cs-scripts/scripts/raw2flux.R",
+    "project_path": "scripts/raw2flux.R",
+    "type": "r_source",
+    "hash": "3386124323",
+    "contents": "",
+    "dirty": false,
+    "created": 1708710170470.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "433,0",
+        "scrollLine": "416"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1708768710,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1708768710584,
+    "read_only": false,
+    "read_only_alternatives": []
+}
