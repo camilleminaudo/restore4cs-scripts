@@ -19,8 +19,9 @@ cat("/014") # clear console
 doPlot <- F
 ############################################
 
-
-
+# --- install GoFluxYourself if needed ---
+#library(devtools)
+#install_github("Qepanna/goFlux")
 
 # ---- packages ----
 library(tidyverse)
@@ -30,7 +31,7 @@ library(zoo)
 library(ggplot2)
 library(grid)
 library(egg)
-library(GoFluxYourself)
+library(goFlux)
 require(dplyr)
 require(purrr)
 require(msm)
@@ -44,7 +45,7 @@ for (f in files.sources){source(f)}
 
 
 # ---- Directories ----
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
+dropbox_root <- "C:/Users/misteli/Dropbox/RESTORE4Cs - Fieldwork/Data"
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 corrfieldsheetpath <- paste0(dropbox_root,"/GHG/Processed data/corrected_fieldsheets")
