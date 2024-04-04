@@ -32,7 +32,7 @@ source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_time
 
 # ---- Settings ----
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/" #Camille Minaudo
-# dropbox_root <- "D:/Dropbox/RESTORE4Cs - Fieldwork/Data/" #Benjamin Misteli
+# dropbox_root <- "C:/Users/misteli/Dropbox/RESTORE4Cs - Fieldwork/Data/" #Benjamin Misteli
 
 #################################
 sampling <- "S2"
