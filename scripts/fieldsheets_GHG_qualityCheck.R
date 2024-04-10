@@ -27,8 +27,11 @@ library(egg)
 require(dplyr)
 require(purrr)
 
-source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
-source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_GHG_fieldsheets.R"))
+
+source(paste0(dirname(dirname(rstudioapi::getSourceEditorContext()$path)),"/functions/get_unix_times.R"))
+source(paste0(dirname(dirname(rstudioapi::getSourceEditorContext()$path)),"/functions/read_GHG_fieldsheets.R"))
+
+
 
 # ---- Directories ----
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
@@ -37,6 +40,14 @@ fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 # ---- List GHG chamber fieldsheets in Dropbox and read them ---
 # list filenames
 myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx", all.files = T, full.names = T, recursive = T)
+
+#################################
+sampling <- "S1"
+#################################
+
+i <- grep(pattern = sampling, x = myfieldsheets_list) # selecting the files corresponding to the selected sampling campaign
+myfieldsheets_list <- myfieldsheets_list[i]
+
 # Read all fieldsheets and put them in a single dataframe
 fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 
