@@ -26,7 +26,7 @@ library(egg)
 library(sp)
 library(sf)
 
-source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
+source(paste0(dirname(dirname(rstudioapi::getSourceEditorContext()$path)),"/functions/get_unix_times.R"))
 
 
 
@@ -35,7 +35,7 @@ dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/" 
 # dropbox_root <- "D:/Dropbox/RESTORE4Cs - Fieldwork/Data/" #Benjamin Misteli
 
 #################################
-sampling <- "S2"
+sampling <- "S3"
 #################################
 
 # list files in Dropbox
