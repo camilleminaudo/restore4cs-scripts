@@ -2,14 +2,14 @@
 # ---
 # Authors: Camille Minaudo
 # Project: "RESTORE4Cs"
-# date: "Nov 2023"
+# date: "Oct 2023"
 # https://github.com/camilleminaudo/restore4cs-scripts
 # ---
 
 # --- Description of this script
-# This script loads all Picarro raw measurements (data level L0a) from a given folder
-# and produces RData archives (data level L0b), stored with a dedicated file per
-# campaign-subsite (e.g. S1-CA-P1)
+# This script loads all LICOR raw measurements (data level L0a) from a given folder
+# and produces RData archives (data level L0b), stored with a dedicated folder per
+# by campaign-subsite
 
 
 rm(list = ls()) # clear workspace
@@ -24,14 +24,17 @@ library(zoo)
 library(ggplot2)
 library(grid)
 library(egg)
-library(goFlux)
+library(GoFluxYourself)
 require(dplyr)
 require(purrr)
 require(pbapply)
 
 
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/click.peak.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/click.peak.loop.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/flux.term.R"))
+source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_Licor.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
-source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/G2508_import.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/import2RData.R"))
 source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_GHG_fieldsheets.R"))
 
@@ -39,7 +42,7 @@ source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/read_GHG_fiel
 
 # ---- Directories ----
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
-datapath <- paste0(dropbox_root,"/GHG/RAW data/RAW Data Picarro")
+datapath <- paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
 
@@ -49,7 +52,7 @@ myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx"
 # Read all fieldsheets and put them in a single dataframe
 fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 
-fieldsheet_picarro <- fieldsheet[fieldsheet$gas_analyzer=="Picarro",]
+fieldsheet_licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
 
 
 # ---- Import and store measurements to RData ----
@@ -60,15 +63,13 @@ data_folders <- data_folders[-r]
 message("Here is the list of data folders in here:")
 print(data_folders)
 
-map_analysers <- data.frame(instrument = c("G2508"),
+map_analysers <- data.frame(instrument = c("LI-7810"),
                             date.format = c("ymd"))
 
 mainDirRData = paste(datapath,"/RData",sep="")
 
 for (data_folder in data_folders){
   setwd(data_folder)
-  subsite = basename(data_folder)
-  message(paste0("processing folder ",basename(data_folder)))
   import2RData(path = data_folder, instrument = map_analysers$instrument,
                date.format = map_analysers$date.format, timezone = 'UTC')
 
@@ -88,14 +89,34 @@ for (data_folder in data_folders){
 
   # get read of possible duplicated data
   is_duplicate <- duplicated(mydata_imp$POSIX.time)
-  mydata <- mydata_imp[!is_duplicate,]
-
-  # creating a folder where to put this data
-  dir.create(file.path(mainDirRData, subsite))
-  setwd(file.path(mainDirRData, subsite))
+  mydata_imp_clean <- mydata_imp[!is_duplicate,]
 
   # save this dataframe as a new RData file
-  save(mydata, file = paste0("data_",subsite,".RData"))
+  setwd(mainDirRData)
+  save(mydata_imp_clean, file = paste0(basename(data_folder),"_data_clean.RData"))
+
+
+  # create separate folders for each subsite where data actually exists
+  for (subsite in unique(fieldsheet_licor$subsiteID)){
+    corresponding_date <- unique(fieldsheet_licor$date[fieldsheet_licor$subsiteID == subsite])
+
+    # check if we already have this data somewhere in the clean file
+    n_lines_d <- length(mydata_imp_clean$DATE[mydata_imp_clean$DATE == corresponding_date])
+
+    if(n_lines_d > 0){
+      message(paste0("... there is some data to store for subsite ",subsite))
+      mydata <- mydata_imp_clean[mydata_imp_clean$DATE == corresponding_date,]
+
+      # creating a folder where to put this data
+      dir.create(file.path(mainDirRData, subsite))
+      setwd(file.path(mainDirRData, subsite))
+
+
+      # save this dataframe as a new RData file
+      setwd(file.path(mainDirRData, subsite))
+      save(mydata, file = paste0("data_",subsite,".RData"))
+    }
+  }
 }
 
 

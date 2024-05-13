@@ -209,7 +209,7 @@ import2RData <- function(path, instrument, date.format, timezone = "UTC"){
   }
 
   # Los Gatos Research ####
-  if(instrument == "UGGA"){
+  if(instrument == "LGR"){
 
     # unzipp all zipped folders
     file_list_zip <- list.files(path = path, pattern = "\\.zip", full.names = TRUE)
@@ -233,7 +233,7 @@ import2RData <- function(path, instrument, date.format, timezone = "UTC"){
 
       withCallingHandlers(
 
-        import.UGGA(inputfile = file_list[i],
+        LGR_import(inputfile = file_list[i],
                    date.format = date.format,
                    timezone = timezone,
                    save = TRUE),
@@ -287,7 +287,7 @@ import2RData <- function(path, instrument, date.format, timezone = "UTC"){
 
       withCallingHandlers(
 
-        import.LI7810(inputfile = file_list[i],
+        LI7810_import(inputfile = file_list[i],
                       date.format = date.format,
                       timezone = timezone,
                       save = TRUE),

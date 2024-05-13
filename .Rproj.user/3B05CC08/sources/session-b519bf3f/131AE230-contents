@@ -287,7 +287,7 @@ import2RData <- function(path, instrument, date.format, timezone = "UTC"){
 
       withCallingHandlers(
 
-        import.LI7810(inputfile = file_list[i],
+        LI7810_import(inputfile = file_list[i],
                       date.format = date.format,
                       timezone = timezone,
                       save = TRUE),
