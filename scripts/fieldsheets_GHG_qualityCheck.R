@@ -42,7 +42,7 @@ fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx", all.files = T, full.names = T, recursive = T)
 
 #################################
-sampling <- "S1"
+sampling <- "S3"
 #################################
 
 i <- grep(pattern = sampling, x = myfieldsheets_list) # selecting the files corresponding to the selected sampling campaign
@@ -77,4 +77,10 @@ message("which corresponds to the following subsites:")
 unique(fieldsheet_not_dry$subsite[ind_suspicious_depth])
 
 
+
+# --------- missing logger data info
+ind_loggers <- which(is.na(fieldsheet$logger_floating_chamber) | is.na(fieldsheet$logger_transparent_chamber))
+
+message("the following rows do not have logger data info")
+as.data.frame(fieldsheet[ind_loggers,c("pilot_site","subsite","plot_id","start_time","end_time")])
 
