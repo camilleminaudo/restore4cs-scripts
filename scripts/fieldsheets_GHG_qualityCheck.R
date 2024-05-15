@@ -84,3 +84,13 @@ ind_loggers <- which(is.na(fieldsheet$logger_floating_chamber) | is.na(fieldshee
 message("the following rows do not have logger data info")
 as.data.frame(fieldsheet[ind_loggers,c("pilot_site","subsite","plot_id","start_time","end_time")])
 
+
+
+
+# --------- Possible mistake with chamber type or chamber_height
+message("")
+
+ind_suspicious_chamb_type <- which(fieldsheet$chamber_type=="tube"& fieldsheet$chamber_height_cm==0 & fieldsheet$strata=="open water")
+as.data.frame(fieldsheet[ind_suspicious_chamb_type,c("pilot_site","subsite","plot_id","chamber_type","strata","chamber_height_cm")])
+
+
