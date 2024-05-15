@@ -14,12 +14,7 @@ rm(list = ls()) # clear workspace
 cat("/014") # clear console
 
 
-############################################
-# USER, please specify if you want plots to be saved
-doPlot <- F
-############################################
-
-# --- install GoFluxYourself if needed ---
+# --- install goFlux if needed ---
 #library(devtools)
 #install_github("Qepanna/goFlux")
 
@@ -36,6 +31,7 @@ require(dplyr)
 require(purrr)
 require(msm)
 require(data.table)
+require(tools)
 
 require(pbapply)
 
@@ -46,6 +42,8 @@ for (f in files.sources){source(f)}
 
 #################################
 sampling <- "S2"
+# USER, please specify if you want plots to be saved
+doPlot <- T
 #################################
 
 
@@ -61,7 +59,7 @@ RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
 results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
 
-
+# ----- Data pre-processing and harmonization -----
 
 # ---- List GHG chamber fieldsheets in Dropbox and read them ---
 # list filenames
@@ -128,7 +126,7 @@ for (i in seq_along(fieldsheet_Picarro$plot_id)){
   if(length(ind)>0){
     if(abs(fieldsheet_Picarro$unix_start[i] - map_incubations$start[ind])<5*60){
       corresponding_row[i] <- ind
-      }
+    }
   }
 }
 
@@ -154,7 +152,6 @@ fieldsheet_Picarro$unix_start <- map_incubations$start[corresponding_row]
 fieldsheet_Picarro$unix_stop <- map_incubations$stop[corresponding_row]
 
 
-
 fieldsheet_Licor_LosGatos <- fieldsheet[fieldsheet$gas_analyzer!="Picarro",]
 
 fieldsheet <- rbind(fieldsheet_Licor_LosGatos, fieldsheet_Picarro)
@@ -167,13 +164,6 @@ fieldsheet$timestamp_stop <- as.POSIXct(fieldsheet$unix_stop, tz = "UTC", origin
 
 fieldsheet$start_time <- strftime(fieldsheet$timestamp_start, format="%H:%M:%S", tz = 'utc')
 fieldsheet$end_time <- strftime(fieldsheet$timestamp_stop, format="%H:%M:%S", tz = 'utc')
-
-
-
-
-
-
-
 
 
 # ---- Import and store measurements to RData ----
@@ -255,7 +245,7 @@ for (data_folder in data_folders[r_licor]){
   
   # get read of possible duplicated data
   is_duplicate <- duplicated(mydata_imp$POSIX.time)
-  mydata <- mydata_imp[!is_duplicate,]
+  mydata_imp <- mydata_imp[!is_duplicate,]
   
   
   r_site <- grep(pattern = basename(data_folder), x=list_subsites_Licor)
@@ -265,81 +255,39 @@ for (data_folder in data_folders[r_licor]){
     corresponding_date <- unique(fieldsheet_Licor$date[fieldsheet_Licor$subsite == subsite])
     
     # check if we already have this data somewhere in the clean file
-    n_lines_d <- length(mydata$DATE[mydata$DATE == corresponding_date])
+    n_lines_d <- length(mydata_imp$DATE[mydata_imp$DATE == corresponding_date])
     if(n_lines_d > 0){
       message(paste0("... there is some data to store for subsite ",subsite))
-      mydata_subsite <- mydata[mydata$DATE == corresponding_date,]
+      mydata <- mydata_imp[mydata_imp$DATE == corresponding_date,]
       
       setwd(RData_path)
       # save this dataframe as a new RData file
-      save(mydata_subsite, file = paste0(subsite,"_","LI-7810",".RData"))
+      save(mydata, file = paste0(subsite,"_","LI-7810",".RData"))
     }
   }
 }
 
 
 
+# ----- Flux calculation -----
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ---- Go through each incubation in fieldsheet and compute model for co2 and ch4 ----
-subsites <- unique(fieldsheet$subsite)
+# For each subsite in fieldsheet, go through each incubation and compute co2 and ch4 fluxes
+subsites <- unique(fieldsheet$subsite)[-c(13,15)] # remove [-c(13,15)] as soon as Benj fixed the issue with LosGatos S2-DA data
 isF_incub <- T
 isFsubsite <- T
-for (subsite in subsites[1:36]){
+for (subsite in subsites){
   message("Now processing ",subsite)
   
   corresp_fs <- fieldsheet[fieldsheet$subsite == subsite,]
   gs <- first(corresp_fs$gas_analyzer)
   
-  # check if there is a corresponding corrected fielsheet for this subsite
-  existsCorr_fs <- which(subsites_corrected_fs == subsite)
-  if (length(existsCorr_fs) > 0){
-    message("using exact incubation start and stop times")
-    fs_corr <- read.csv(file = myfieldsheets_corrected_list[existsCorr_fs])
-    corresp_fs$unix_start <- fs_corr$unix_start_corrected[match(corresp_fs$start_time, fs_corr$start_time)]
-    corresp_fs$unix_stop <- fs_corr$unix_stop_corrected[match(corresp_fs$start_time, fs_corr$start_time)]
-    corresp_fs <- corresp_fs[!is.na(corresp_fs$unix_start),]
-  }
-  
-  if(gs == "LI-COR"){
-    gs_folder <- "RAW Data Licor-7810"
-  } else if (gs == "Los Gatos"){
-    gs_folder <- "RAW Data Los Gatos"
-  } else if (gs == "Picarro"){
-    gs_folder <- "RAW Data Picarro"
-  } else{
-    warning("------> gas analyser not properly detected!")
-  }
-  
   
   # read corresponding temperature logger file and keep initial temperature
-  
-  # --- Read corresponding Loggers data ----
   SN_logger_float <- first(corresp_fs$logger_floating_chamber)
   SN_logger_tube <- first(corresp_fs$logger_transparent_chamber)
   site_ID <- str_sub(subsite, start = 1, end = 5)
   
   # finding out if corresponding file exists, and its extension
-  require(tools)
   dir_exists_loggdata <- dir.exists(paste0(loggerspath,"/",site_ID,"/"))
   if(dir_exists_loggdata){
     f <- list.files(paste0(loggerspath,"/",site_ID,"/"), full.names = T)
@@ -396,182 +344,190 @@ for (subsite in subsites[1:36]){
   }
   
   
-  path2data <- paste0(datapath,"/",gs_folder,"/RData/",subsite)
-  if(dir.exists(path2data)){
-    setwd(path2data)
-    load(file = paste0("data_",subsite,".RData"))
+  
+  setwd(RData_path)
+  if(gs== "LI-COR"){
+    gs_suffix <- "LI-7810"
+  } else {
+    gs_suffix <- gs
+  }
+  
+  
+  
+  load(file = paste0(subsite,"_",gs_suffix,".RData"))
+  
+  auxfile <- NULL
+  
+  for (incub in seq_along(corresp_fs$plot_id)){
+    my_incub <- mydata[as.numeric(mydata$POSIX.time)> corresp_fs$unix_start[incub] &
+                         as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop[incub],]
+    my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
     
-    auxfile <- NULL
-    
-    for (incub in seq_along(corresp_fs$plot_id)){
-      my_incub <- mydata[as.numeric(mydata$POSIX.time)> corresp_fs$unix_start[incub] &
-                           as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop[incub],]
-      my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
+    if (dim(my_incub)[1]>0){
       
-      if (dim(my_incub)[1]>0){
-        
-        # Compute Temperature, Area and Volume from fieldsheet info
-        myTemp <- 15 # a default temperature to run the flux calculation...
-        if (corresp_fs$chamber_type[incub] == "floating"){
-          if(is_data_logger_float){
-            myTemp <- median(approx(data_logger_float$unixtime, data_logger_float$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
-          }
-          myArea = 14365.4439 # cm2
-          myVtot = 115/2 # L
-        } else if (corresp_fs$chamber_type[incub] == "tube"){
-          if(is_data_logger_tube){
-            myTemp <- median(approx(data_logger_tube$unixtime, data_logger_tube$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
-          }
-          myArea = pi*12.1**2 # cm2
-          myVtot = myArea*as.numeric(corresp_fs$chamber_height_cm[incub])*1e-3 # L
-        } else {
-          warning("chamber type not correct!")
+      # Compute Temperature, Area and Volume from fieldsheet info
+      myTemp <- 15 # a default temperature to run the flux calculation...
+      if (corresp_fs$chamber_type[incub] == "floating"){
+        if(is_data_logger_float){
+          myTemp <- median(approx(data_logger_float$unixtime, data_logger_float$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
         }
-        myPcham <- 100.1 #kPa
-        
-        # --- Create auxfile table ----
-        # An auxfile table, made of fieldsheet, adding important variables. The auxfile
-        # requires start.time and UniqueID.
-        # start.time must be in the format "%Y-%m-%d %H:%M:%S"
-        
-        UniqueID = paste(subsite, seq_along(corresp_fs$pilot_site),corresp_fs$strata,corresp_fs$transparent_dark,sep = "-")[incub]
-        
-        auxfile_tmp <- data.frame(subsite = subsite,
-                                  UniqueID = gsub(" ", "", UniqueID, fixed = TRUE),
-                                  gas_analiser = gs,
-                                  start.time = as.POSIXct((corresp_fs$unix_start[incub]), tz = "UTC"),
-                                  duration = (corresp_fs$unix_stop[incub]) - (corresp_fs$unix_start[incub]),
-                                  water_depth = corresp_fs$water_depth[incub],
-                                  Area = myArea,
-                                  Vtot = myVtot,
-                                  Tcham = myTemp,
-                                  Pcham = myPcham,
-                                  strata = corresp_fs$strata[incub],
-                                  chamberType = corresp_fs$chamber_type[incub],
-                                  lightCondition = corresp_fs$transparent_dark[incub])
-        if(is.null(auxfile)){
-          auxfile <- auxfile_tmp
-        } else {
-          auxfile <- rbind(auxfile, auxfile_tmp)
+        myArea = 14365.4439 # cm2
+        myVtot = 115/2 # L
+      } else if (corresp_fs$chamber_type[incub] == "tube"){
+        if(is_data_logger_tube){
+          myTemp <- median(approx(data_logger_tube$unixtime, data_logger_tube$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
         }
-        
-      }
-    }
-    
-    auxfile$Tcham[is.na(auxfile$Tcham)] <- mean(auxfile$Tcham, na.rm = T)
-    
-    auxfile <- auxfile[auxfile$duration>100,]
-    auxfile <- auxfile[!is.na(auxfile$Vtot),] # in case chamber height is not specified in the fieldsheet...
-    
-    # Define the measurements' window of observation
-    # auxfile <- auxfile
-    mydata_ow <- obs.win(inputfile = mydata, auxfile = auxfile,
-                         obs.length = auxfile$duration, shoulder = 2)
-    
-    # Join mydata_ow with info on start end incubation
-    mydata_auto <- lapply(seq_along(mydata_ow), join_auxfile_with_data.loop, flux.unique = mydata_ow) %>%
-      map_df(., ~as.data.frame(.x))
-    
-    # Additional auxiliary data required for flux calculation.
-    mydata_auto <- mydata_auto %>%
-      left_join(auxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
-    
-    # Add instrument precision for each gas
-    prec = c(3.5, 0.6, 0.4, 45, 45)
-    mydata_auto <- mydata_auto %>%
-      mutate(CO2_prec = prec[1], CH4_prec = prec[2], N2O_prec = prec[3],
-             H2O_prec = prec[4])
-    
-    # Calculate fluxes
-    CO2_results_auto <- goFlux(dataframe = mydata_auto, gastype = "CO2dry_ppm")
-    H2O_results_auto <- goFlux(mydata_auto, "H2O_ppm")
-    CH4_results_auto <- goFlux(mydata_auto, "CH4dry_ppb")
-    
-    # Use best.flux to select the best flux estimates (LM or HM)
-    # based on a list of criteria
-    criteria <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
-    
-    CO2_flux_res_auto <- best.flux(CO2_results_auto, criteria)
-    H2O_flux_res_auto <- best.flux(H2O_results_auto, criteria)
-    CH4_flux_res_auto <- best.flux(CH4_results_auto, criteria)
-    
-    if(doPlot){
-      # Plots results
-      # Make a list of plots of all measurements, for each gastype
-      CO2_flux_plots <- flux.plot(CO2_flux_res_auto, mydata_auto, "CO2dry_ppm")
-      H2O_flux_plots <- flux.plot(H2O_flux_res_auto, mydata_auto, "H2O_ppm")
-      CH4_flux_plots <- flux.plot(CH4_flux_res_auto, mydata_auto, "CH4dry_ppb")
-      
-      # Combine plot lists into one list
-      flux_plot.ls <- c(CO2_flux_plots, CH4_flux_plots, H2O_flux_plots)
-      
-      # Save plots to pdf
-      myfilename <- paste(subsite, as.character(as.Date(first(auxfile$start.time))),sep="_")
-      flux2pdf(flux_plot.ls, outfile = paste0(results_path,myfilename,".pdf"))
-      
-    }
-    
-    
-    # estimate ch4 diffusion and ebullition components---------| METHOD 1 |-----------
-    CH4_res_meth1 <- CH4_flux_res_auto
-    CH4_res_meth1$total_estimated <- NA
-    CH4_res_meth1$ebullition <- NA
-    CH4_res_meth1$diffusion <- NA
-    
-    
-    for (i in which(auxfile$water_depth>0)){
-      if(auxfile$water_depth[i]>0){
-        my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile$start.time[i] &
-                             as.numeric(mydata$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
-        my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
-        # calling dedicated function
-        df_ebull <- separate_ebullition_from_diffusion(my_incub, UniqueID = auxfile$UniqueID[i], doPlot=F)
-        # computing fluxes
-        H2O_mol = my_incub$H2O_ppm / (1000*1000)
-        myfluxterm <- flux.term(auxfile$Vtot[i], auxfile$Pcham[i], auxfile$Area[i],
-                                auxfile$Tcham[i], first(H2O_mol))
-        CH4_flux_total <- df_ebull$delta_ch4/df_ebull$duration*myfluxterm # nmol/m2/s
-        CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
-        CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
+        myArea = pi*12.1**2 # cm2
+        myVtot = myArea*as.numeric(corresp_fs$chamber_height_cm[incub])*1e-3 # L
       } else {
-        CH4_flux_total <- CH4_flux_ebull <- CH4_res_meth1$best.flux[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])]
-        CH4_flux_ebull <- 0
+        warning("chamber type not correct!")
       }
-      CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_total
-      CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_ebull
-      CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_diff
+      myPcham <- 100.1 #kPa
+      
+      # --- Create auxfile table ----
+      # An auxfile table, made of fieldsheet, adding important variables. The auxfile
+      # requires start.time and UniqueID.
+      # start.time must be in the format "%Y-%m-%d %H:%M:%S"
+      
+      UniqueID = paste(subsite, seq_along(corresp_fs$pilot_site),corresp_fs$strata,substr(corresp_fs$transparent_dark, 1, 1),sep = "-")[incub]
+      
+      auxfile_tmp <- data.frame(subsite = subsite,
+                                UniqueID = gsub(" ", "", UniqueID, fixed = TRUE),
+                                gas_analiser = gs,
+                                start.time = as.POSIXct((corresp_fs$unix_start[incub]), tz = "UTC"),
+                                duration = (corresp_fs$unix_stop[incub]) - (corresp_fs$unix_start[incub]),
+                                water_depth = corresp_fs$water_depth[incub],
+                                Area = myArea,
+                                Vtot = myVtot,
+                                Tcham = myTemp,
+                                Pcham = myPcham,
+                                strata = corresp_fs$strata[incub],
+                                chamberType = corresp_fs$chamber_type[incub],
+                                lightCondition = corresp_fs$transparent_dark[incub])
+      if(is.null(auxfile)){
+        auxfile <- auxfile_tmp
+      } else {
+        auxfile <- rbind(auxfile, auxfile_tmp)
+      }
+      
     }
+  }
+  
+  auxfile$Tcham[is.na(auxfile$Tcham)] <- mean(auxfile$Tcham, na.rm = T)
+  
+  # we only keep incubations longer than 100 secs
+  auxfile <- auxfile[auxfile$duration>100,]
+  # we only keep incubations where chamber dimensions are known
+  auxfile <- auxfile[!is.na(auxfile$Vtot),] # in case chamber height is not specified in the fieldsheet...
+  
+  # Define the measurements' window of observation
+  # auxfile <- auxfile
+  mydata_ow <- obs.win(inputfile = mydata, auxfile = auxfile,
+                       obs.length = auxfile$duration, shoulder = 2)
+  
+  # Join mydata_ow with info on start end incubation
+  mydata_auto <- lapply(seq_along(mydata_ow), join_auxfile_with_data.loop, flux.unique = mydata_ow) %>%
+    map_df(., ~as.data.frame(.x))
+  
+  # Additional auxiliary data required for flux calculation.
+  mydata_auto <- mydata_auto %>%
+    left_join(auxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
+  
+  # Add instrument precision for each gas
+  prec = c(3.5, 0.6, 0.4, 45, 45)
+  mydata_auto <- mydata_auto %>%
+    mutate(CO2_prec = prec[1], CH4_prec = prec[2], N2O_prec = prec[3],
+           H2O_prec = prec[4])
+  
+  # Calculate fluxes
+  CO2_results_auto <- goFlux(dataframe = mydata_auto, gastype = "CO2dry_ppm")
+  H2O_results_auto <- goFlux(mydata_auto, "H2O_ppm")
+  CH4_results_auto <- goFlux(mydata_auto, "CH4dry_ppb")
+  
+  # Use best.flux to select the best flux estimates (LM or HM)
+  # based on a list of criteria
+  criteria <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
+  
+  CO2_flux_res_auto <- best.flux(CO2_results_auto, criteria)
+  H2O_flux_res_auto <- best.flux(H2O_results_auto, criteria)
+  CH4_flux_res_auto <- best.flux(CH4_results_auto, criteria)
+  
+  if(doPlot){
+    # Plots results
+    # Make a list of plots of all measurements, for each gastype
+    CO2_flux_plots <- flux.plot(CO2_flux_res_auto, mydata_auto, "CO2dry_ppm")
+    H2O_flux_plots <- flux.plot(H2O_flux_res_auto, mydata_auto, "H2O_ppm")
+    CH4_flux_plots <- flux.plot(CH4_flux_res_auto, mydata_auto, "CH4dry_ppb")
     
-    CH4_res_meth1$ebullition[which(CH4_res_meth1$ebullition<0)] <- 0
+    # Combine plot lists into one list
+    flux_plot.ls <- c(CO2_flux_plots, CH4_flux_plots, H2O_flux_plots)
     
+    # Save plots to pdf
+    myfilename <- paste(subsite, as.character(as.Date(first(auxfile$start.time))),sep="_")
+    flux2pdf(flux_plot.ls, outfile = paste0(results_path,"/level_incubation/",myfilename,".pdf"))
     
-    setwd(results_path)
-    myfilenameCO2 <- paste("co2_fluxes",subsite, as.character(as.Date(first(auxfile$start.time))),sep="_")
-    myfilenameCH4 <- paste("ch4_fluxes",subsite, as.character(as.Date(first(auxfile$start.time))),sep="_")
-    write.csv(x = CO2_flux_res_auto, file = paste0(myfilenameCO2,".csv"), row.names = F)
-    write.csv(x = CH4_res_meth1, file = paste0(myfilenameCH4,".csv"), row.names = F)
-    
-    
-    table_results <- auxfile %>%
-      left_join(CO2_flux_res_auto %>% select(UniqueID, LM.flux, HM.flux, best.flux, model, quality.check)) %>%
-      rename(CO2_LM.flux = LM.flux, CO2_HM.flux = HM.flux, CO2_best.flux = best.flux, CO2_best.model = model,
-             CO2_quality.check = quality.check) %>%
-      left_join(CH4_res_meth1 %>% select(UniqueID, LM.flux, HM.flux, best.flux, best.flux, model, quality.check, 
-                                         diffusion, ebullition)) %>%
-      rename(CH4_LM.flux = LM.flux, CH4_HM.flux = HM.flux, CH4_best.flux = best.flux, CH4_best.model = model, 
-             CH4_quality.check = quality.check, CH4_diffusive_flux = diffusion, CH4_ebullitive_flux = ebullition)
-    
-    if (isFsubsite){
-      isFsubsite <- F
-      table_results_all <- table_results
+  }
+  
+  
+  # estimate ch4 diffusion and ebullition components---------| METHOD 1 |-----------
+  CH4_res_meth1 <- CH4_flux_res_auto
+  CH4_res_meth1$total_estimated <- NA
+  CH4_res_meth1$ebullition <- NA
+  CH4_res_meth1$diffusion <- NA
+  
+  
+  for (i in which(auxfile$water_depth>0)){
+    if(auxfile$water_depth[i]>0){
+      my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile$start.time[i] &
+                           as.numeric(mydata$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
+      my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
+      # calling dedicated function
+      df_ebull <- separate_ebullition_from_diffusion(my_incub, UniqueID = auxfile$UniqueID[i], doPlot=F)
+      # computing fluxes
+      H2O_mol = my_incub$H2O_ppm / (1000*1000)
+      myfluxterm <- flux.term(auxfile$Vtot[i], auxfile$Pcham[i], auxfile$Area[i],
+                              auxfile$Tcham[i], first(H2O_mol))
+      CH4_flux_total <- df_ebull$delta_ch4/df_ebull$duration*myfluxterm # nmol/m2/s
+      CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
+      CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
     } else {
-      table_results_all <- rbind(table_results_all, table_results)
+      CH4_flux_total <- CH4_flux_ebull <- CH4_res_meth1$best.flux[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])]
+      CH4_flux_ebull <- 0
     }
+    CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_total
+    CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_ebull
+    CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_diff
+  }
+  
+  CH4_res_meth1$ebullition[which(CH4_res_meth1$ebullition<0)] <- 0
+  
+  
+  setwd(paste0(results_path,"/level_incubation"))
+  myfilenameCO2 <- paste(subsite,"co2_fluxes", as.character(as.Date(first(auxfile$start.time))),sep="_")
+  myfilenameCH4 <- paste(subsite,"ch4_fluxes", as.character(as.Date(first(auxfile$start.time))),sep="_")
+  write.csv(x = CO2_flux_res_auto, file = paste0(myfilenameCO2,".csv"), row.names = F)
+  write.csv(x = CH4_res_meth1, file = paste0(myfilenameCH4,".csv"), row.names = F)
+  
+  
+  table_results <- auxfile %>%
+    left_join(CO2_flux_res_auto %>% select(UniqueID, LM.flux, HM.flux, best.flux, model, quality.check)) %>%
+    rename(CO2_LM.flux = LM.flux, CO2_HM.flux = HM.flux, CO2_best.flux = best.flux, CO2_best.model = model,
+           CO2_quality.check = quality.check) %>%
+    left_join(CH4_res_meth1 %>% select(UniqueID, LM.flux, HM.flux, best.flux, best.flux, model, quality.check, 
+                                       diffusion, ebullition)) %>%
+    rename(CH4_LM.flux = LM.flux, CH4_HM.flux = HM.flux, CH4_best.flux = best.flux, CH4_best.model = model, 
+           CH4_quality.check = quality.check, CH4_diffusive_flux = diffusion, CH4_ebullitive_flux = ebullition)
+  
+  if (isFsubsite){
+    isFsubsite <- F
+    table_results_all <- table_results
+  } else {
+    table_results_all <- rbind(table_results_all, table_results)
   }
 }
 
 setwd(results_path)
-myfilename <- paste("000_fluxes_all",min(as.Date(table_results_all$start.time)),
+myfilename <- paste(sampling,"fluxes",min(as.Date(table_results_all$start.time)),"to",
                     max(as.Date(table_results_all$start.time)), sep = "_")
 write.csv(x = table_results_all, file = paste0(myfilename,".csv"), row.names = F)
 
@@ -651,7 +607,10 @@ for (cs in unique(table_results_all$campaign_site)){
   
   plt_cs <- ggarrange(plt_CO2, plt_CH4diff, ncol = 2)
   
-  myfilename <- paste("000_fluxes",cs,min(as.Date(table_results_cs$start.time)), sep = "_")
+  
+  setwd(results_path)
+  myfilename <- paste(cs,"fluxes",min(as.Date(table_results_all$start.time)),"to",
+                      max(as.Date(table_results_all$start.time)), sep = "_")
   
   ggsave(plot = plt_cs, filename = paste0(myfilename,".jpg"), path = results_path, 
          width = 10, height = 5, dpi = 300, units = 'in')
