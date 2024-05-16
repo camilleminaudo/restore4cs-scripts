@@ -43,6 +43,7 @@ for (f in files.sources){source(f)}
 #################################
 sampling <- "S2"
 # USER, please specify if you want plots to be saved
+harmonize2RData <- F
 doPlot <- T
 #################################
 
@@ -152,42 +153,116 @@ fieldsheet_Picarro$unix_start <- map_incubations$start[corresponding_row]
 fieldsheet_Picarro$unix_stop <- map_incubations$stop[corresponding_row]
 
 
-fieldsheet_Licor_LosGatos <- fieldsheet[fieldsheet$gas_analyzer!="Picarro",]
 
-fieldsheet <- rbind(fieldsheet_Licor_LosGatos, fieldsheet_Picarro)
 
-fieldsheet$start_time <- format(as.POSIXct(fieldsheet$start_time, tz = 'utc', format = "%T"), "%H:%M:%S")
-fieldsheet$end_time <- format(as.POSIXct(fieldsheet$end_time, tz = 'utc', format = "%T"), "%H:%M:%S")
 
+
+# ---- Correct fieldsheets in the case of LiCOR data, whenever available ---
+
+# load incubation map (run get_exact_incubation_times_Licor.R to update it)
+map_incubations <- read.csv( file = paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810/map_incubations.csv"))
+# only select realistic start/stop
+map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$start < 15*60),]
+
+fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
+corresponding_row <- unix_start_corr <- unix_stop_corr <- NA*fieldsheet_Licor$unix_start
+
+
+for (i in seq_along(fieldsheet_Licor$plot_id)){
+  ind <- which.min(abs(fieldsheet_Licor$unix_start[i] - map_incubations$start))
+  if(length(ind)>0){
+    if(abs(fieldsheet_Licor$unix_start[i] - map_incubations$start[ind])<3*60){
+      corresponding_row[i] <- ind
+      unix_start_corr[i] <- map_incubations$start[ind]
+      unix_stop_corr[i] <- map_incubations$stop[ind]
+    }
+  }
+}
+ind_noNAs <- which(!is.na(corresponding_row))
+duration_fieldsheet <- fieldsheet_Licor$unix_stop - fieldsheet_Licor$unix_start
+fieldsheet_Licor$unix_start[ind_noNAs] <- unix_start_corr[ind_noNAs]
+fieldsheet_Licor$unix_stop <- fieldsheet_Licor$unix_start + duration_fieldsheet
+
+
+
+# ---- Merging fieldsheets into a single one ---
+fieldsheet_LosGatos <- fieldsheet[fieldsheet$gas_analyzer=="Los Gatos",]
+
+fieldsheet <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
+# recalculating start and stop in propre formats
 fieldsheet$timestamp_start <- as.POSIXct(fieldsheet$unix_start, tz = "UTC", origin = "1970-01-01")
 fieldsheet$timestamp_stop <- as.POSIXct(fieldsheet$unix_stop, tz = "UTC", origin = "1970-01-01")
 
 fieldsheet$start_time <- strftime(fieldsheet$timestamp_start, format="%H:%M:%S", tz = 'utc')
 fieldsheet$end_time <- strftime(fieldsheet$timestamp_stop, format="%H:%M:%S", tz = 'utc')
 
+fieldsheet <- fieldsheet[order(fieldsheet$subsite),]
+
+
 
 # ---- Import and store measurements to RData ----
-data_folders <- list.dirs(datapath, full.names = T, recursive = T)[-1]
-i <- grep(pattern = sampling, x = data_folders) # selecting the files corresponding to the selected sampling campaign
-data_folders <- data_folders[i]
-
-r <- grep(pattern = "RData",x=data_folders)
-if(length(r)>0){data_folders <- data_folders[-r]}
-
-message("Here is the list of data folders in here:")
-print(data_folders)
-
-
-# Import and store data for for Picarro and LosGatos data
-
-raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format){
-  r <- grep(pattern = instrument, x=data_folders)
-  for (data_folder in data_folders[r]){
+if(harmonize2RData){
+  data_folders <- list.dirs(datapath, full.names = T, recursive = T)[-1]
+  i <- grep(pattern = sampling, x = data_folders) # selecting the files corresponding to the selected sampling campaign
+  data_folders <- data_folders[i]
+  
+  r <- grep(pattern = "RData",x=data_folders)
+  if(length(r)>0){data_folders <- data_folders[-r]}
+  
+  message("Here is the list of data folders in here:")
+  print(data_folders)
+  
+  
+  # Import and store data for for Picarro and LosGatos data
+  
+  raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format){
+    r <- grep(pattern = instrument, x=data_folders)
+    for (data_folder in data_folders[r]){
+      setwd(data_folder)
+      subsite = basename(data_folder)
+      message(paste0("processing folder ",basename(data_folder)))
+      import2RData(path = data_folder, instrument = instrumentID,
+                   date.format = date.format, timezone = 'UTC')
+      
+      # load all these R.Data into a single dataframe
+      file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
+      isF <- T
+      for(i in seq_along(file_list)){
+        load(file_list[i])
+        if(isF){
+          isF <- F
+          mydata_imp <- data.raw
+        } else {
+          mydata_imp <- rbind(mydata_imp, data.raw)
+        }
+        rm(data.raw)
+      }
+      
+      # get read of possible duplicated data
+      is_duplicate <- duplicated(mydata_imp$POSIX.time)
+      mydata <- mydata_imp[!is_duplicate,]
+      
+      setwd(RData_path)
+      
+      # save this dataframe as a new RData file
+      save(mydata, file = paste0(subsite,"_",instrument,".RData"))
+    }
+  }
+  
+  raw2RData_P_LG(data_folders, instrument = "Picarro", instrumentID = "G2508", date.format = "ymd")
+  raw2RData_P_LG(data_folders, instrument = "Los Gatos", instrumentID = "LGR", date.format = "mdy")
+  
+  # Import and store data for LiCOR data
+  fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
+  list_subsites_Licor <- unique(fieldsheet_Licor$subsite)
+  
+  r_licor <- grep(pattern = "Licor",x=data_folders)
+  for (data_folder in data_folders[r_licor]){
     setwd(data_folder)
-    subsite = basename(data_folder)
     message(paste0("processing folder ",basename(data_folder)))
-    import2RData(path = data_folder, instrument = instrumentID,
-                 date.format = date.format, timezone = 'UTC')
+    
+    import2RData(path = data_folder, instrument = "LI-7810",
+                 date.format = "ymd", timezone = 'UTC')
     
     # load all these R.Data into a single dataframe
     file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
@@ -205,67 +280,29 @@ raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format){
     
     # get read of possible duplicated data
     is_duplicate <- duplicated(mydata_imp$POSIX.time)
-    mydata <- mydata_imp[!is_duplicate,]
+    mydata_imp <- mydata_imp[!is_duplicate,]
     
-    setwd(RData_path)
     
-    # save this dataframe as a new RData file
-    save(mydata, file = paste0(subsite,"_",instrument,".RData"))
-  }
-}
-
-raw2RData_P_LG(data_folders, instrument = "Picarro", instrumentID = "G2508", date.format = "ymd")
-raw2RData_P_LG(data_folders, instrument = "Los Gatos", instrumentID = "LGR", date.format = "mdy")
-
-# Import and store data for LiCOR data
-fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
-list_subsites_Licor <- unique(fieldsheet_Licor$subsite)
-
-r_licor <- grep(pattern = "Licor",x=data_folders)
-for (data_folder in data_folders[r_licor]){
-  setwd(data_folder)
-  message(paste0("processing folder ",basename(data_folder)))
-  
-  import2RData(path = data_folder, instrument = "LI-7810",
-               date.format = "ymd", timezone = 'UTC')
-  
-  # load all these R.Data into a single dataframe
-  file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
-  isF <- T
-  for(i in seq_along(file_list)){
-    load(file_list[i])
-    if(isF){
-      isF <- F
-      mydata_imp <- data.raw
-    } else {
-      mydata_imp <- rbind(mydata_imp, data.raw)
-    }
-    rm(data.raw)
-  }
-  
-  # get read of possible duplicated data
-  is_duplicate <- duplicated(mydata_imp$POSIX.time)
-  mydata_imp <- mydata_imp[!is_duplicate,]
-  
-  
-  r_site <- grep(pattern = basename(data_folder), x=list_subsites_Licor)
-  
-  # create separate folders for each subsite where data actually exists
-  for (subsite in list_subsites_Licor[r_site]){
-    corresponding_date <- unique(fieldsheet_Licor$date[fieldsheet_Licor$subsite == subsite])
+    # r_site <- grep(pattern = basename(data_folder), x=list_subsites_Licor)
     
-    # check if we already have this data somewhere in the clean file
-    n_lines_d <- length(mydata_imp$DATE[mydata_imp$DATE == corresponding_date])
-    if(n_lines_d > 0){
-      message(paste0("... there is some data to store for subsite ",subsite))
-      mydata <- mydata_imp[mydata_imp$DATE == corresponding_date,]
+    # create separate folders for each subsite where data actually exists
+    for (subsite in list_subsites_Licor){
+      corresponding_date <- unique(fieldsheet_Licor$date[fieldsheet_Licor$subsite == subsite])
       
-      setwd(RData_path)
-      # save this dataframe as a new RData file
-      save(mydata, file = paste0(subsite,"_","LI-7810",".RData"))
+      # check if we already have this data somewhere in the clean file
+      n_lines_d <- length(mydata_imp$DATE[mydata_imp$DATE == corresponding_date])
+      if(n_lines_d > 0){
+        message(paste0("... there is some data to store for subsite ",subsite))
+        mydata <- mydata_imp[mydata_imp$DATE == corresponding_date,]
+        
+        setwd(RData_path)
+        # save this dataframe as a new RData file
+        save(mydata, file = paste0(subsite,"_","LI-7810",".RData"))
+      }
     }
   }
 }
+
 
 
 
@@ -548,7 +585,7 @@ plt_CO2 <- ggplot(table_results_all, aes(subsite_short, CO2_LM.flux,
   theme_article()+
   xlab("subsite")+
   ylab("CO2 flux mmol/m2/s")+
-  ggtitle("CO2 flux - Linear Model")+
+  ggtitle("CO2 flux")+
   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
   facet_grid(.~campaign_site)
@@ -562,7 +599,7 @@ plt_CH4diff <- ggplot(table_results_all, aes(subsite_short, CH4_LM.flux,
   theme_article()+
   xlab("subsite")+
   ylab("CH4 flux nmol/m2/s")+
-  ggtitle("CH4 flux - Linear Model")+
+  ggtitle("CH4 flux")+
   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
   facet_grid(.~campaign_site)
@@ -586,7 +623,7 @@ for (cs in unique(table_results_all$campaign_site)){
     theme_article()+
     xlab("subsite")+
     ylab("CO2 flux mmol/m2/s")+
-    ggtitle(paste0(cs, " - Linear Model"))+
+    ggtitle(paste0(cs, ""))+
     scale_fill_viridis_d(begin = 0.2, end = 0.9)+
     scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
     # facet_grid(lightCondition~.)+
@@ -601,7 +638,7 @@ for (cs in unique(table_results_all$campaign_site)){
     theme_article()+
     xlab("subsite")+
     ylab("CH4 flux nmol/m2/s")+
-    # ggtitle("CH4 flux - Linear Model")+
+    # ggtitle("CH4 flux")+
     scale_fill_viridis_d(begin = 0.2, end = 0.9)+
     scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")
   
