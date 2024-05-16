@@ -66,6 +66,7 @@ for (f in fs){
     
     start <- min(data$unixtime[ind_corresp])
     stop <- max(data$unixtime[ind_corresp])
+    
 
     map_incubations_temp <- data.frame(date = first(data$date[ind_corresp]),
                                        label = label,
@@ -74,7 +75,8 @@ for (f in fs){
                                        time_start = strftime(start, format="%H:%M:%S", tz = 'utc'),
                                        time_stop = strftime(stop, format="%H:%M:%S", tz = 'utc'),
                                        folder = basename(dirname(f)),
-                                       file = basename(f))
+                                       file = basename(f),
+                                       path = f)
     if(isF){
       isF = F
       map_incubations <- map_incubations_temp
@@ -88,14 +90,16 @@ for (f in fs){
 # uniqueID <- paste0(map_incubations$date, map_incubations$label)
 map_incubations <- map_incubations[!duplicated(map_incubations$start),]
 map_incubations <- map_incubations[order(map_incubations$start),]
-map_incubations <- map_incubations[order(map_incubations$start),]
 
 # Save incubtion map to Dropbox
 write.csv(x = map_incubations, file = paste0(datapathRAW,"/map_incubations.csv"), row.names = F)
 
 
 
+ggplot(map_incubations, aes(start, stop-start))+geom_point()+theme_article()+scale_y_log10()+geom_hline(yintercept = 900)
 
+
+map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$start < 15*60),]
 
 
 # ---- Load fieldsheets ----
@@ -113,44 +117,90 @@ fieldsheet$uniqID <- tolower(paste(fieldsheet$subsite,fieldsheet$plot_id,substr(
 # check the closest incubation in map_incubations for each row in fieldsheet.
 # if more than 4 minutes apart, we consider the row in map_incubations out of sampling
 fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
-corresponding_row <- NA*fieldsheet_Licor$plot_id
+fieldsheet_Licor$corresponding_row <- NA
+fieldsheet_Licor$label <- "none"
+fieldsheet_Licor$unix_start_corr <- fieldsheet_Licor$unix_stop_corr <- NA
 
 
 for (i in seq_along(fieldsheet_Licor$plot_id)){
   ind <- which.min(abs(fieldsheet_Licor$unix_start[i] - map_incubations$start))
   if(length(ind)>0){
-    if(abs(fieldsheet_Licor$unix_start[i] - map_incubations$start[ind])<5*60){
-      corresponding_row[i] <- ind
+    if(abs(fieldsheet_Licor$unix_start[i] - map_incubations$start[ind])<3*60){
+      fieldsheet_Licor$corresponding_row[i] <- ind
+      fieldsheet_Licor$label[i] <- map_incubations$label[ind]
+      
+      # replacing unix_startand unix_stop with new values
+      fieldsheet_Licor$unix_start_corr[i] <- map_incubations$start[ind]
+      fieldsheet_Licor$unix_stop_corr[i] <- map_incubations$stop[ind]
     }
   }
 }
 
-# finding corresponding row in case of NA in corresponding_row
-if(sum(is.na(corresponding_row))>0){
-  ind_NAs <- which(is.na(corresponding_row))
-  # it is the most probable that the missing info is in-between two rows with all the data we need
-  interp <- approx(x = seq_along(fieldsheet_Licor$plot_id), y = corresponding_row, xout = ind_NAs)$y
-  is_integer <- (interp - floor(interp)) == 0
-  corresponding_row[ind_NAs][is_integer] <- interp[is_integer]
-}
-if(sum(is.na(corresponding_row))>0){
-  ind_NAs <- which(is.na(corresponding_row))
+
+# # finding corresponding row in case of NA in corresponding_row
+# if(sum(is.na(corresponding_row))>0){
+#   ind_NAs <- which(is.na(corresponding_row))
+#   # it is the most probable that the missing info is in-between two rows with all the data we need
+#   interp <- approx(x = seq_along(fieldsheet_Licor$plot_id), y = corresponding_row, xout = ind_NAs)$y
+#   is_integer <- (interp - floor(interp)) == 0
+#   corresponding_row[ind_NAs][is_integer] <- interp[is_integer]
+# }
+if(sum(is.na(fieldsheet_Licor$corresponding_row))>0){
+  ind_NAs <- which(is.na(fieldsheet_Licor$corresponding_row))
   message("Could not find a corresponding incubation map for the following incubations:")
   fieldsheet_Licor$uniqID[ind_NAs]
   # removing rows from fieldsheet_Licor with missing correspondance
-  fieldsheet_Licor <- fieldsheet_Licor[-ind_NAs,]
-  corresponding_row <- corresponding_row[-ind_NAs]
+  # fieldsheet_Licor <- fieldsheet_Licor[-ind_NAs,]
+  # corresponding_row <- corresponding_row[-ind_NAs]
 }
 
-# replacing unix_startand unix_stop with new values
-fieldsheet_Licor$unix_start <- map_incubations$start[corresponding_row]
-fieldsheet_Licor$unix_stop <- map_incubations$stop[corresponding_row]
+
+fieldsheet_Licor$error_time_start <- fieldsheet_Licor$unix_start_corr - fieldsheet_Licor$unix_start
+fieldsheet_Licor$error_time_stop <- fieldsheet_Licor$unix_stop_corr - fieldsheet_Licor$unix_stop
+
+
+p_start<- ggplot(fieldsheet_Licor, aes(error_time_start))+geom_density(fill="grey", alpha=0.2)+theme_article()+
+  xlab("Start in REMARK - Start in fieldsheet [secs]")+
+  geom_vline(xintercept = 0)+
+  ggtitle("Difference in start time - LI-COR")
+
+p_stop<- ggplot(fieldsheet_Licor, aes(error_time_stop))+geom_density(fill="grey", alpha=0.2)+theme_article()+
+  xlab("Stop in REMARK - Stop in fieldsheet [secs]")+
+  geom_vline(xintercept = 0)+
+  ggtitle("Difference in stop time - LI-COR")
+
+
+ggarrange(p_start, p_stop)
+
+
+as.data.frame(fieldsheet_Licor[which(abs(fieldsheet_Licor$error_time_stop)>500),])
 
 
 
+ggplot(fieldsheet_Licor,aes(unix_start, unix_start_corr))+geom_point()+theme_article()
+
+p_start<- ggplot(fieldsheet_Licor,aes(date, unix_start_corr-unix_start))+geom_point()+theme_article()+
+  ylab("Start in REMARK - Start in fieldsheet [secs]")+
+  geom_hline(yintercept = 0)+
+  ggtitle("Difference in start time - LI-COR")
+p_start
+
+p_stop<- ggplot(fieldsheet_Licor,aes(date, unix_stop_corr-unix_stop))+geom_point()+theme_article()+
+  ylab("Corrected stop - Start in fieldsheet [secs]")+geom_hline(yintercept = 0)+
+  ggtitle("stop")
 
 
+ggarrange(p_start, p_stop)
 
+
+fieldsheet_Licor$duration_fieldsheet <- fieldsheet_Licor$unix_stop-fieldsheet_Licor$unix_start
+fieldsheet_Licor$duration_corrected <- fieldsheet_Licor$unix_stop_corr-fieldsheet_Licor$unix_start_corr
+
+ggplot(fieldsheet_Licor,aes(duration_fieldsheet, duration_corrected))+geom_point()+theme_article()+geom_abline(slope = 1, intercept = 0)+
+  xlab("Duration in fieldsheet [secs]")+
+  ylab("Duration in REMARK [secs]")
+
+as.data.frame(fieldsheet_Licor[which(abs(fieldsheet_Licor$duration_corrected)<200),])
 
 
 
