@@ -28,17 +28,8 @@ require(data.table)
 require(tools)
 
 repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
-files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
-for (f in files.sources){source(f)}
-
-
-#################################
-sampling <- "S2"
-# USER, please specify if you want plots to be saved
-harmonize2RData <- F
-doPlot <- T
-#################################
-
+# files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
+# for (f in files.sources){source(f)}
 
 
 # ---- Directories and data loading ----
@@ -53,21 +44,60 @@ for (f in listf){
 }
 
 table_results_all$sampling <- str_sub(table_results_all$subsite, start = 1, 2)
+table_results_all$pilotsite <- str_sub(table_results_all$subsite, start = 4, 5)
+table_results_all$subsite <- str_sub(table_results_all$subsite, start = 7, 8)
+table_results_all$siteID <- str_sub(table_results_all$subsite, start = 4, 8)
+
+
+# table_results_all <- table_results_all[table_results_all$CO2_best.flux<1000,]
+
+
+
+listf <- list.files(path = paste0(results_path,"level_incubation"), pattern = ".csv", all.files = T, full.names = T, recursive = F)
+table_co2 <- NULL
+for (f in listf[grep(pattern = "co2", x = listf)]){
+  table_co2 <- rbind(table_co2, 
+                             read.csv(file = f, header = T))
+}
+table_co2$sampling <- str_sub(table_co2$UniqueID, start = 1, 2)
+table_co2$pilotsite <- str_sub(table_co2$UniqueID, start = 4, 5)
+table_co2$subsite <- str_sub(table_co2$UniqueID, start = 7, 8)
+table_co2$siteID <- str_sub(table_co2$UniqueID, start = 4, 8)
+
+ind_match <- match(table_co2$UniqueID, table_results_all$UniqueID)
+
+table_co2$strata <- table_results_all$strata[ind_match]
+table_co2$lightCondition <- table_results_all$lightCondition[ind_match]
+
 
 
 # ---- quality of model fits ----
 
-ggplot(table_results_all, aes())
+ggplot(table_co2[!is.na(ind_match),], aes(HM.RMSE, fill = lightCondition))+geom_density(alpha=0.5)+
+  theme_article()+
+  # facet_grid(.~strata)+
+  scale_x_log10()
+
+ggplot(table_co2[!is.na(ind_match),], aes(LM.flux, HM.flux, colour = model))+geom_point(alpha=0.5)+
+  theme_article()+
+  # facet_grid(.~strata)+
+  scale_x_log10()+
+  scale_y_log10()+
+  geom_abline(slope = 1, intercept = 0)
 
 
 
-# plot only water strata
 
 
-table_results_all
+# ---- Only open water + dark ----
+ind_sel <- which(table_results_all$water_depth>0 & table_results_all$lightCondition=='dark')
+
+table_water_d <- table_results_all[ind_sel,]
 
 
-
+ggplot(table_water_d, aes(subsite, CO2_best.flux, colour = sampling))+
+  geom_jitter()+geom_boxplot()+
+  theme_article()+facet_wrap(pilotsite~.)
 
 
 
