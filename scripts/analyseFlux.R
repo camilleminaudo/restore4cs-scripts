@@ -73,10 +73,16 @@ table_co2$lightCondition <- table_results_all$lightCondition[ind_match]
 
 # ---- quality of model fits ----
 
-ggplot(table_co2[!is.na(ind_match),], aes(HM.RMSE, fill = lightCondition))+geom_density(alpha=0.5)+
-  theme_article()+
+ggplot(table_co2[!is.na(ind_match),])+
+  geom_density(aes(LM.r2, fill = "LM"), alpha=0.5)+
+  geom_density(aes(HM.r2, fill = "HM"), alpha=0.5)+
+  theme_article()#+
   # facet_grid(.~strata)+
-  scale_x_log10()
+  # scale_x_log10()
+
+table_co2$UniqueID[table_co2$HM.r2<0.2]
+
+
 
 ggplot(table_co2[!is.na(ind_match),], aes(LM.flux, HM.flux, colour = model))+geom_point(alpha=0.5)+
   theme_article()+

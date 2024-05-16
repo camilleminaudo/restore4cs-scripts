@@ -41,7 +41,7 @@ for (f in files.sources){source(f)}
 
 
 #################################
-sampling <- "S1"
+sampling <- "S2"
 # USER, please specify if you want plots to be saved
 harmonize2RData <- F
 doPlot <- T
@@ -255,7 +255,7 @@ if(harmonize2RData){
   }
   
   raw2RData_P_LG(data_folders, instrument = "Picarro", instrumentID = "G2508", date.format = "ymd")
-  raw2RData_P_LG(data_folders, instrument = "Los Gatos", instrumentID = "LGR", date.format = "mdy")
+  raw2RData_P_LG(data_folders, instrument = "Los Gatos", instrumentID = "UGGA", date.format = "mdy")
   
   # Import and store data for LiCOR data
   fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
@@ -314,11 +314,8 @@ if(harmonize2RData){
 # ----- Flux calculation -----
 
 # For each subsite in fieldsheet, go through each incubation and compute co2 and ch4 fluxes
-if (sampling =="S2"){
-  subsites <- unique(fieldsheet$subsite)[-c(16,17,18)] # remove [-c(13,15)] as soon as Benj fixed the issue with LosGatos S2-DA data
-} else {
-  subsites <- unique(fieldsheet$subsite)
-}
+subsites <- unique(fieldsheet$subsite)
+
 isF_incub <- T
 isFsubsite <- T
 for (subsite in subsites){

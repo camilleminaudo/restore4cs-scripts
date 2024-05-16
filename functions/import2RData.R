@@ -14,7 +14,7 @@
 #'             files to be imported.
 #' @param instrument character string; specifies which instrument was used to
 #'                   generate the files contained in the folder path. Chose one
-#'                   of the following: "DX4015", "LGR", "G2508", "GAIA", "LI-6400",
+#'                   of the following: "DX4015", "UGGA", "G2508", "GAIA", "LI-6400",
 #'                   "LI-7810", "LI-7820", "LI-8100", or "LI-8200". For more
 #'                   information about an instrument, see the section "See also"
 #'                   below.
@@ -35,7 +35,7 @@
 #' \item DX4015: column Date
 #' \item G2508: column DATE
 #' \item GAIA: column Titles:
-#' \item LGR: column Time
+#' \item UGGA: column Time
 #' \item LI-7810: column DATE
 #' \item LI-7820: column DATE
 #' \item LI-8100: column Date
@@ -49,7 +49,7 @@
 #' @include DX4015_import.R
 #' @include G2508_import.R
 #' @include GAIA_import.R
-#' @include LGR_import.R
+#' @include UGGA_import.R
 #' @include LI6400_import.R
 #' @include LI7810_import.R
 #' @include LI7820_import.R
@@ -62,7 +62,7 @@
 #'          \code{\link[GoFluxYourself]{DX4015_import}},
 #'          \code{\link[GoFluxYourself]{G2508_import}},
 #'          \code{\link[GoFluxYourself]{GAIA_import}},
-#'          \code{\link[GoFluxYourself]{LGR_import}},
+#'          \code{\link[GoFluxYourself]{UGGA_import}},
 #'          \code{\link[GoFluxYourself]{LI6400_import}},
 #'          \code{\link[GoFluxYourself]{LI7810_import}},
 #'          \code{\link[GoFluxYourself]{LI7820_import}},
@@ -83,7 +83,7 @@
 #' import2RData(path = "inst/extdata/GAIA", instrument = "GAIA", date.format = "ymd")
 #'
 #' # with Los Gatos Research instruments (e.g. UGGA or m-GGA)
-#' import2RData(path = "inst/extdata/LGR", instrument = "LGR", date.format = "dmy")
+#' import2RData(path = "inst/extdata/UGGA", instrument = "UGGA", date.format = "dmy")
 #'
 #' # with LI-COR instruments
 #' import2RData(path = "inst/extdata/LI6400", instrument = "LI-6400", date.format = "mdy")
@@ -108,8 +108,8 @@ import2RData <- function(path, instrument, date.format, timezone = "UTC"){
   if(missing(instrument)) stop("'instrument' is required")
   if(length(instrument) != 1) stop("'instrument' must be of length 1")
   if(!any(grepl(paste("\\<", instrument, "\\>", sep = ""),
-                c("DX4015", "LGR", "G2508", "GAIA", "LI-6400", "LI-7810", "LI-7820", "LI-8100", "LI-8200")))){
-    stop("'instrument' must be of class character and one of the following: 'DX4015', 'LGR', 'G2508', 'GAIA', 'LI-6400', 'LI-7810', 'LI-7820', 'LI-8100', 'LI-8200'")}
+                c("DX4015", "UGGA", "G2508", "GAIA", "LI-6400", "LI-7810", "LI-7820", "LI-8100", "LI-8200")))){
+    stop("'instrument' must be of class character and one of the following: 'DX4015', 'UGGA', 'G2508', 'GAIA', 'LI-6400', 'LI-7810', 'LI-7820', 'LI-8100', 'LI-8200'")}
   if(!missing(date.format)){
     if(length(date.format) != 1) stop("'date.format' must be of length 1")
     if(!any(grepl(paste("\\<", date.format, "\\>", sep = ""), c("ymd", "dmy", "mdy")))){
