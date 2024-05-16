@@ -7,8 +7,8 @@
 # ---
 
 # --- Description of this script
-# This script
-
+# This script computes fluxes for all incubations present in the fieldsheet for a given sampling season
+# Use has to sepcify which sampling has to be processed, and all the rest is done automatically.
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -41,7 +41,7 @@ for (f in files.sources){source(f)}
 
 
 #################################
-sampling <- "S2"
+sampling <- "S1"
 # USER, please specify if you want plots to be saved
 harmonize2RData <- F
 doPlot <- T
@@ -315,7 +315,7 @@ if(harmonize2RData){
 
 # For each subsite in fieldsheet, go through each incubation and compute co2 and ch4 fluxes
 if (sampling =="S2"){
-  subsites <- unique(fieldsheet$subsite)[-c(13,15)] # remove [-c(13,15)] as soon as Benj fixed the issue with LosGatos S2-DA data
+  subsites <- unique(fieldsheet$subsite)[-c(16,17,18)] # remove [-c(13,15)] as soon as Benj fixed the issue with LosGatos S2-DA data
 } else {
   subsites <- unique(fieldsheet$subsite)
 }
@@ -459,117 +459,123 @@ for (subsite in subsites){
     }
   }
   
-  auxfile$Tcham[is.na(auxfile$Tcham)] <- mean(auxfile$Tcham, na.rm = T)
-  
-  # we only keep incubations longer than 100 secs
-  auxfile <- auxfile[auxfile$duration>100,]
-  # we only keep incubations where chamber dimensions are known
-  auxfile <- auxfile[!is.na(auxfile$Vtot),] # in case chamber height is not specified in the fieldsheet...
-  
-  # Define the measurements' window of observation
-  # auxfile <- auxfile
-  mydata_ow <- obs.win(inputfile = mydata, auxfile = auxfile,
-                       obs.length = auxfile$duration, shoulder = 2)
-  
-  # Join mydata_ow with info on start end incubation
-  mydata_auto <- lapply(seq_along(mydata_ow), join_auxfile_with_data.loop, flux.unique = mydata_ow) %>%
-    map_df(., ~as.data.frame(.x))
-  
-  # Additional auxiliary data required for flux calculation.
-  mydata_auto <- mydata_auto %>%
-    left_join(auxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
-  
-  # Add instrument precision for each gas
-  prec = c(3.5, 0.6, 0.4, 45, 45)
-  mydata_auto <- mydata_auto %>%
-    mutate(CO2_prec = prec[1], CH4_prec = prec[2], N2O_prec = prec[3],
-           H2O_prec = prec[4])
-  
-  # Calculate fluxes
-  CO2_results_auto <- goFlux(dataframe = mydata_auto, gastype = "CO2dry_ppm")
-  H2O_results_auto <- goFlux(mydata_auto, "H2O_ppm")
-  CH4_results_auto <- goFlux(mydata_auto, "CH4dry_ppb")
-  
-  # Use best.flux to select the best flux estimates (LM or HM)
-  # based on a list of criteria
-  criteria <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
-  
-  CO2_flux_res_auto <- best.flux(CO2_results_auto, criteria)
-  H2O_flux_res_auto <- best.flux(H2O_results_auto, criteria)
-  CH4_flux_res_auto <- best.flux(CH4_results_auto, criteria)
-  
-  if(doPlot){
-    # Plots results
-    # Make a list of plots of all measurements, for each gastype
-    CO2_flux_plots <- flux.plot(CO2_flux_res_auto, mydata_auto, "CO2dry_ppm")
-    H2O_flux_plots <- flux.plot(H2O_flux_res_auto, mydata_auto, "H2O_ppm")
-    CH4_flux_plots <- flux.plot(CH4_flux_res_auto, mydata_auto, "CH4dry_ppb")
+  if (length(auxfile)>1){
     
-    # Combine plot lists into one list
-    flux_plot.ls <- c(CO2_flux_plots, CH4_flux_plots, H2O_flux_plots)
+    auxfile$Tcham[is.na(auxfile$Tcham)] <- mean(auxfile$Tcham, na.rm = T)
     
-    # Save plots to pdf
-    myfilename <- paste(subsite, as.character(as.Date(first(auxfile$start.time))),sep="_")
-    flux2pdf(flux_plot.ls, outfile = paste0(results_path,"/level_incubation/",myfilename,".pdf"))
+    # we only keep incubations longer than 100 secs
+    auxfile <- auxfile[auxfile$duration>100,]
+    # we only keep incubations where chamber dimensions are known
+    auxfile <- auxfile[!is.na(auxfile$Vtot),] # in case chamber height is not specified in the fieldsheet...
     
-  }
-  
-  
-  # estimate ch4 diffusion and ebullition components---------| METHOD 1 |-----------
-  CH4_res_meth1 <- CH4_flux_res_auto
-  CH4_res_meth1$total_estimated <- NA
-  CH4_res_meth1$ebullition <- NA
-  CH4_res_meth1$diffusion <- NA
-  
-  
-  for (i in which(auxfile$water_depth>0)){
-    if(auxfile$water_depth[i]>0){
-      my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile$start.time[i] &
-                           as.numeric(mydata$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
-      my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
-      # calling dedicated function
-      df_ebull <- separate_ebullition_from_diffusion(my_incub, UniqueID = auxfile$UniqueID[i], doPlot=F)
-      # computing fluxes
-      H2O_mol = my_incub$H2O_ppm / (1000*1000)
-      myfluxterm <- flux.term(auxfile$Vtot[i], auxfile$Pcham[i], auxfile$Area[i],
-                              auxfile$Tcham[i], first(H2O_mol))
-      CH4_flux_total <- df_ebull$delta_ch4/df_ebull$duration*myfluxterm # nmol/m2/s
-      CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
-      CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
-    } else {
-      CH4_flux_total <- CH4_flux_ebull <- CH4_res_meth1$best.flux[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])]
-      CH4_flux_ebull <- 0
+    # Define the measurements' window of observation
+    # auxfile <- auxfile
+    mydata_ow <- obs.win(inputfile = mydata, auxfile = auxfile,
+                         obs.length = auxfile$duration, shoulder = 2)
+    
+    # Join mydata_ow with info on start end incubation
+    mydata_auto <- lapply(seq_along(mydata_ow), join_auxfile_with_data.loop, flux.unique = mydata_ow) %>%
+      map_df(., ~as.data.frame(.x))
+    
+    # Additional auxiliary data required for flux calculation.
+    mydata_auto <- mydata_auto %>%
+      left_join(auxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
+    
+    # Add instrument precision for each gas
+    prec = c(3.5, 0.6, 0.4, 45, 45)
+    mydata_auto <- mydata_auto %>%
+      mutate(CO2_prec = prec[1], CH4_prec = prec[2], N2O_prec = prec[3],
+             H2O_prec = prec[4])
+    
+    # Calculate fluxes
+    CO2_results_auto <- goFlux(dataframe = mydata_auto, gastype = "CO2dry_ppm")
+    H2O_results_auto <- goFlux(mydata_auto, "H2O_ppm")
+    CH4_results_auto <- goFlux(mydata_auto, "CH4dry_ppb")
+    
+    # Use best.flux to select the best flux estimates (LM or HM)
+    # based on a list of criteria
+    criteria <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
+    
+    CO2_flux_res_auto <- best.flux(CO2_results_auto, criteria)
+    H2O_flux_res_auto <- best.flux(H2O_results_auto, criteria)
+    CH4_flux_res_auto <- best.flux(CH4_results_auto, criteria)
+    
+    if(doPlot){
+      # Plots results
+      # Make a list of plots of all measurements, for each gastype
+      CO2_flux_plots <- flux.plot(CO2_flux_res_auto, mydata_auto, "CO2dry_ppm")
+      H2O_flux_plots <- flux.plot(H2O_flux_res_auto, mydata_auto, "H2O_ppm")
+      CH4_flux_plots <- flux.plot(CH4_flux_res_auto, mydata_auto, "CH4dry_ppb")
+      
+      # Combine plot lists into one list
+      flux_plot.ls <- c(CO2_flux_plots, CH4_flux_plots, H2O_flux_plots)
+      
+      # Save plots to pdf
+      myfilename <- paste(subsite, as.character(as.Date(first(auxfile$start.time))),sep="_")
+      flux2pdf(flux_plot.ls, outfile = paste0(results_path,"/level_incubation/",myfilename,".pdf"))
+      
     }
-    CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_total
-    CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_ebull
-    CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_diff
-  }
-  
-  CH4_res_meth1$ebullition[which(CH4_res_meth1$ebullition<0)] <- 0
-  
-  
-  setwd(paste0(results_path,"/level_incubation"))
-  myfilenameCO2 <- paste(subsite,"co2_fluxes", as.character(as.Date(first(auxfile$start.time))),sep="_")
-  myfilenameCH4 <- paste(subsite,"ch4_fluxes", as.character(as.Date(first(auxfile$start.time))),sep="_")
-  write.csv(x = CO2_flux_res_auto, file = paste0(myfilenameCO2,".csv"), row.names = F)
-  write.csv(x = CH4_res_meth1, file = paste0(myfilenameCH4,".csv"), row.names = F)
-  
-  
-  table_results <- auxfile %>%
-    left_join(CO2_flux_res_auto %>% select(UniqueID, LM.flux, HM.flux, best.flux, model, quality.check)) %>%
-    rename(CO2_LM.flux = LM.flux, CO2_HM.flux = HM.flux, CO2_best.flux = best.flux, CO2_best.model = model,
-           CO2_quality.check = quality.check) %>%
-    left_join(CH4_res_meth1 %>% select(UniqueID, LM.flux, HM.flux, best.flux, best.flux, model, quality.check, 
-                                       diffusion, ebullition)) %>%
-    rename(CH4_LM.flux = LM.flux, CH4_HM.flux = HM.flux, CH4_best.flux = best.flux, CH4_best.model = model, 
-           CH4_quality.check = quality.check, CH4_diffusive_flux = diffusion, CH4_ebullitive_flux = ebullition)
-  
-  if (isFsubsite){
-    isFsubsite <- F
-    table_results_all <- table_results
+    
+    
+    # estimate ch4 diffusion and ebullition components---------| METHOD 1 |-----------
+    CH4_res_meth1 <- CH4_flux_res_auto
+    CH4_res_meth1$total_estimated <- NA
+    CH4_res_meth1$ebullition <- NA
+    CH4_res_meth1$diffusion <- NA
+    
+    
+    for (i in which(auxfile$water_depth>0)){
+      if(auxfile$water_depth[i]>0){
+        my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile$start.time[i] &
+                             as.numeric(mydata$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
+        my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
+        # calling dedicated function
+        df_ebull <- separate_ebullition_from_diffusion(my_incub, UniqueID = auxfile$UniqueID[i], doPlot=F)
+        # computing fluxes
+        H2O_mol = my_incub$H2O_ppm / (1000*1000)
+        myfluxterm <- flux.term(auxfile$Vtot[i], auxfile$Pcham[i], auxfile$Area[i],
+                                auxfile$Tcham[i], first(H2O_mol))
+        CH4_flux_total <- df_ebull$delta_ch4/df_ebull$duration*myfluxterm # nmol/m2/s
+        CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
+        CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
+      } else {
+        CH4_flux_total <- CH4_flux_ebull <- CH4_res_meth1$best.flux[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])]
+        CH4_flux_ebull <- 0
+      }
+      CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_total
+      CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_ebull
+      CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_diff
+    }
+    
+    CH4_res_meth1$ebullition[which(CH4_res_meth1$ebullition<0)] <- 0
+    
+    
+    setwd(paste0(results_path,"/level_incubation"))
+    myfilenameCO2 <- paste(subsite,"co2_fluxes", as.character(as.Date(first(auxfile$start.time))),sep="_")
+    myfilenameCH4 <- paste(subsite,"ch4_fluxes", as.character(as.Date(first(auxfile$start.time))),sep="_")
+    write.csv(x = CO2_flux_res_auto, file = paste0(myfilenameCO2,".csv"), row.names = F)
+    write.csv(x = CH4_res_meth1, file = paste0(myfilenameCH4,".csv"), row.names = F)
+    
+    
+    table_results <- auxfile %>%
+      left_join(CO2_flux_res_auto %>% select(UniqueID, LM.flux, HM.flux, best.flux, model, quality.check)) %>%
+      rename(CO2_LM.flux = LM.flux, CO2_HM.flux = HM.flux, CO2_best.flux = best.flux, CO2_best.model = model,
+             CO2_quality.check = quality.check) %>%
+      left_join(CH4_res_meth1 %>% select(UniqueID, LM.flux, HM.flux, best.flux, best.flux, model, quality.check, 
+                                         diffusion, ebullition)) %>%
+      rename(CH4_LM.flux = LM.flux, CH4_HM.flux = HM.flux, CH4_best.flux = best.flux, CH4_best.model = model, 
+             CH4_quality.check = quality.check, CH4_diffusive_flux = diffusion, CH4_ebullitive_flux = ebullition)
+    
+    if (isFsubsite){
+      isFsubsite <- F
+      table_results_all <- table_results
+    } else {
+      table_results_all <- rbind(table_results_all, table_results)
+    }
   } else {
-    table_results_all <- rbind(table_results_all, table_results)
+    message("----- auxfile could not be built for this susbite. It seems data from ",gs," is missing.")
   }
+  
 }
 
 setwd(results_path)
