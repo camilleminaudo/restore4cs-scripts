@@ -59,6 +59,21 @@ message("the following rows show erronous start/stop times")
 as.data.frame(fieldsheet[ind_erronous_times,c("pilot_site","subsite","plot_id","start_time","end_time")])
 
 
+# rows with duration suspicious
+ind_duration_neg <- which(fieldsheet$unix_stop-fieldsheet$unix_start < 0)
+ind_duration_tooshort <- which(fieldsheet$unix_stop-fieldsheet$unix_start < 3*60)
+ind_duration_toolong <- which(fieldsheet$unix_stop-fieldsheet$unix_start > 15*60)
+
+ind_duration <- c(ind_duration_neg, ind_duration_tooshort, ind_duration_toolong)
+
+fieldsheet$duration <- fieldsheet$unix_stop-fieldsheet$unix_start
+
+message("the following rows show suspicious start/stop times")
+as.data.frame(fieldsheet[ind_duration,c("pilot_site","subsite","plot_id","start_time","end_time","duration")])
+
+
+
+
 # --------- rows with possible error with CH4 units (ppb instead of ppm)
 ind_suspicious_ch4 <- which(fieldsheet$final_ch4 > 2000)
 
