@@ -189,6 +189,11 @@ fieldsheet_Licor$unix_stop <- fieldsheet_Licor$unix_start + duration_fieldsheet
 fieldsheet_LosGatos <- fieldsheet[fieldsheet$gas_analyzer=="Los Gatos",]
 
 fieldsheet <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
+
+# taking a little margin to avoid critical moments of manipulation with the chamber and manual gas sampling
+fieldsheet$unix_start <- fieldsheet$unix_start+30
+fieldsheet$unix_stop <- fieldsheet$unix_stop-30
+
 # recalculating start and stop in propre formats
 fieldsheet$timestamp_start <- as.POSIXct(fieldsheet$unix_start, tz = "UTC", origin = "1970-01-01")
 fieldsheet$timestamp_stop <- as.POSIXct(fieldsheet$unix_stop, tz = "UTC", origin = "1970-01-01")
@@ -309,7 +314,11 @@ if(harmonize2RData){
 # ----- Flux calculation -----
 
 # For each subsite in fieldsheet, go through each incubation and compute co2 and ch4 fluxes
-subsites <- unique(fieldsheet$subsite)[-c(13,15)] # remove [-c(13,15)] as soon as Benj fixed the issue with LosGatos S2-DA data
+if (sampling =="S2"){
+  subsites <- unique(fieldsheet$subsite)[-c(13,15)] # remove [-c(13,15)] as soon as Benj fixed the issue with LosGatos S2-DA data
+} else {
+  subsites <- unique(fieldsheet$subsite)
+}
 isF_incub <- T
 isFsubsite <- T
 for (subsite in subsites){
