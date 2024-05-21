@@ -60,8 +60,8 @@ isF <- T
 for (f in myfiles){
 
   # load file
-  fieldsheet_temp <- readxl::read_xlsx(f,col_names = T, n_max = 1)
-  fieldsheet <- readxl::read_xlsx(f,skip = 2, col_names = F, n_max = 100)
+  fieldsheet_temp <- readxl::read_xlsx(f,col_names = T, n_max = 1, .name_repair = "unique_quiet")
+  fieldsheet <- readxl::read_xlsx(f,skip = 2, col_names = F, n_max = 100, .name_repair = "unique_quiet")
 
   if(dim(fieldsheet)[1]>1){
     names(fieldsheet) <- tolower(names(fieldsheet_temp))

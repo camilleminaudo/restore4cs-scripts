@@ -81,6 +81,32 @@ table_ch4 <- get_full_detailed_table(table_results_all, "ch4")
 
 # ---- quality of model fits ----
 
+n <- dim(table_co2)[1]
+ind_lm <- which(table_co2$model=="LM")
+in_hm <- which(table_co2$model=="HM")
+
+message("Fluxes calculated for ",n, " different incubations.")
+message("Timeseries could be fitted ")
+message("Best model is linear for ",round(length(ind_lm)/n*100*100)/100,"% of the measurements")
+
+ind_flagged <- which(table_co2$quality.check!="")
+table_co2$quality.check[ind_flagged]
+message(round(length(ind_flagged)/n*100*100)/100,"% of the measurements are flagged")
+
+table.flags <- NULL
+for(flag in unique(table_co2$quality.check[ind_flagged])){
+  ind_mdf <- which(table_co2$quality.check==flag)
+  message(round(length(ind_mdf)/n*100*100)/100,"% of the measurements are flagged because of ",flag)
+  
+  table.flags <- rbind(table.flags,
+                       data.frame(flag = flag,
+                                  n = length(ind_mdf)))
+}
+table.flags$perc <- round(table.flags$n/n*100*100)/100
+table.flags <- table.flags[order(table.flags$n, decreasing = T),]
+table.flags
+
+
 ggplot(table_co2)+
   geom_density(aes(LM.MAE, fill = "LM"), alpha=0.5)+
   geom_density(aes(HM.MAE, fill = "HM"), alpha=0.5)+

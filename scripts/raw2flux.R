@@ -70,8 +70,6 @@ myfieldsheets_list <- myfieldsheets_list[i]
 # Read all fieldsheets and put them in a single dataframe
 fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 
-fieldsheet$uniqID <- tolower(paste(fieldsheet$subsite,fieldsheet$plot_id,substr(fieldsheet$transparent_dark, 1, 1), sep = "-"))
-
 
 
 # ---- Correct fieldsheets in the case of Picarro data ---

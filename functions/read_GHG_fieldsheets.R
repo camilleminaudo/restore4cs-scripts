@@ -42,5 +42,13 @@ read_GHG_fieldsheets <- function(myfieldsheets_list){
   fieldsheet$start_time <- strftime(fieldsheet$start_time, format="%H:%M:%S", tz = 'utc')
   fieldsheet$end_time <- strftime(fieldsheet$end_time, format="%H:%M:%S", tz = 'utc')
 
+  
+  fieldsheet$initial_co2 <- as.numeric(fieldsheet$initial_co2)
+  fieldsheet$final_co2 <- as.numeric(fieldsheet$final_co2)
+  fieldsheet$initial_ch4 <- as.numeric(fieldsheet$initial_ch4)
+  fieldsheet$final_ch4 <- as.numeric(fieldsheet$final_ch4)
+  
+  fieldsheet$uniqID <- tolower(paste(fieldsheet$subsite,fieldsheet$plot_id,substr(fieldsheet$transparent_dark, 1, 1), sep = "-"))
+  
   return(fieldsheet)
 }
