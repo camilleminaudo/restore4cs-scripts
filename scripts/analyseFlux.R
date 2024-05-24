@@ -35,6 +35,10 @@ repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
 # ---- Directories and data loading ----
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
 results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
+
+plots_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/plots")
+
+
 setwd(results_path)
 listf <- list.files(path = results_path, pattern = ".csv", all.files = T, full.names = T, recursive = F)
 table_results_all <- NULL
@@ -86,12 +90,16 @@ ind_lm <- which(table_co2$model=="LM")
 in_hm <- which(table_co2$model=="HM")
 
 message("Fluxes calculated for ",n, " different incubations.")
-message("Timeseries could be fitted ")
-message("Best model is linear for ",round(length(ind_lm)/n*100*100)/100,"% of the measurements")
+message("Best model is non-linear for ",round(length(in_hm)/n*100*100)/100,"% of the measurements")
+
 
 ind_flagged <- which(table_co2$quality.check!="")
-table_co2$quality.check[ind_flagged]
+# table_co2$quality.check[ind_flagged]
 message(round(length(ind_flagged)/n*100*100)/100,"% of the measurements are flagged")
+
+
+in_hm_notflagged <- which(table_co2$model=="HM" & table_co2$quality.check=="")
+message("Best model is non-linear for ",round(length(in_hm_notflagged)/(n-length(ind_flagged))*100*100)/100,"% of the measurements not flagged")
 
 table.flags <- NULL
 for(flag in unique(table_co2$quality.check[ind_flagged])){
@@ -107,12 +115,134 @@ table.flags <- table.flags[order(table.flags$n, decreasing = T),]
 table.flags
 
 
-ggplot(table_co2)+
-  geom_density(aes(LM.MAE, fill = "LM"), alpha=0.5)+
-  geom_density(aes(HM.MAE, fill = "HM"), alpha=0.5)+
+
+table_co2[which(is.na(table_co2$quality.check)),]
+
+ggplot(table_co2[which(!is.na(table_co2$quality.check)),], 
+       aes(quality.check, (HM.flux-LM.flux)/HM.flux, fill = model))+
+  geom_hline(yintercept = c(-1,0,1), color = "grey70")+
+  geom_jitter(alpha=0.1, size=2, width = 0.1)+
+  geom_violin(alpha=0.2, scale = "width", draw_quantiles = c(0.5), aes(colour = model, fill = model))+
   theme_article()+
-  # facet_grid(.~strata)+
-  scale_x_log10()
+  # scale_x_log10()+
+  # scale_y_log10()+
+  ylim(c(-1,2))+
+  scale_fill_viridis_d(option = "A", end = 0.8, direction = -1)+
+  scale_colour_viridis_d(option = "A", end = 0.8, direction = -1)+
+  coord_flip()
+
+table_co2$diff_model <- (table_co2$HM.flux-table_co2$LM.flux)/table_co2$HM.flux
+
+n_less_1perc <- length(which(abs(table_co2$diff_model)<0.01))
+
+message("Linear and non-linear models have less than 1% difference for ",round(n_less_1perc/n*100*100)/100,"% of the measurements")
+
+ggplot(table_co2[order((table_co2$diff_model)),], aes(seq(1,n)/n*100, (diff_model)*100))+
+  geom_vline(xintercept = seq(0,100,50), color = "grey70")+
+  geom_hline(yintercept = c(-100,-10,0,10,100), color = "grey70")+
+  geom_point()+
+  # scale_y_log10()+
+  ylim(c(-50,120))+
+  xlab("Proportion of timeseries")+
+  ylab("Relative difference [% of HM flux]")+
+  theme_article()+ggtitle(paste0("HM-LM models difference is below 10% for ",round(n_less_1perc/n*100*10)/10,"% of the measurements"))
+
+
+ggplot(table_co2, aes(abs(best.flux), abs(diff_model)*100))+
+  # geom_vline(xintercept = seq(0,100,50), color = "grey70")+
+  geom_hline(yintercept = c(1,10,100), color = "grey70")+
+  geom_point(aes(colour = quality.check))+
+  scale_x_log10()+
+  scale_y_log10()+
+  # xlim(c(-50,50))+
+  # ylim(c(-50,120))+
+  # xlab("Proportion of timeseries")+
+  ylab("Relative difference [% of HM flux]")+
+  theme_article()+ggtitle(paste0("HM-LM models difference is below 1% for ",round(n_less_1perc/n*100*10)/10,"% of the measurements"))
+
+
+df_exceedance_co2 <- NULL
+for(thresh in c(0.1,0.5,seq(1,100))){
+  n_less <- length(which(abs(table_co2$diff_model)<thresh/100))
+  df_exceedance_co2 <- rbind(df_exceedance_co2,
+                         data.frame(t = thresh,
+                                    n = n_less,
+                                    p = n_less/dim(table_co2)[1]*100))
+}
+
+p_co2 <- ggplot(df_exceedance_co2, aes(t, p))+geom_path()+geom_point()+theme_article()+
+  geom_segment(aes(x=-0,xend=10,
+                   y=df_exceedance_co2$p[df_exceedance_co2$t==10], yend=df_exceedance_co2$p[df_exceedance_co2$t==10]))+
+  geom_segment(aes(x=10,xend=10,
+                   y=-Inf, yend=df_exceedance_co2$p[df_exceedance_co2$t==10]))+
+  scale_x_log10()+
+  ylab("Proportion of timeseries [%]")+
+  xlab("Relative difference [% of HM flux]")+
+  ggtitle(paste0("For CO2, HM-LM models difference is below 10% for ",round(df_exceedance_co2$p[df_exceedance_co2$t==10]),"% of the measurements"))
+
+
+table_ch4$diff_model <- (table_ch4$HM.flux-table_ch4$LM.flux)/table_ch4$HM.flux
+
+df_exceedance_ch4 <- NULL
+for(thresh in c(0.1,0.5,seq(1,100))){
+  n_less <- length(which(abs(table_ch4$diff_model)<thresh/100))
+  df_exceedance_ch4 <- rbind(df_exceedance_ch4,
+                             data.frame(t = thresh,
+                                        n = n_less,
+                                        p = n_less/dim(table_ch4)[1]*100))
+}
+
+p_ch4 <- ggplot(df_exceedance_ch4, aes(t, p))+geom_path()+geom_point()+theme_article()+
+  geom_segment(aes(x=-0,xend=10,
+                   y=df_exceedance_ch4$p[df_exceedance_ch4$t==10], yend=df_exceedance_ch4$p[df_exceedance_ch4$t==10]))+
+  geom_segment(aes(x=10,xend=10,
+                   y=-Inf, yend=df_exceedance_ch4$p[df_exceedance_ch4$t==10]))+
+  scale_x_log10()+
+  ylab("Proportion of timeseries [%]")+
+  xlab("Relative difference [% of HM flux]")+
+  ggtitle(paste0("For CH4, HM-LM models difference is below 10% for ",round(df_exceedance_ch4$p[df_exceedance_ch4$t==10]),"% of the measurements"))
+
+
+p_diff_models <- ggarrange(p_co2, p_ch4, ncol = 1)
+ggsave(plot = p_diff_models, filename = "HM-LM models difference.jpeg", path = plots_path, 
+       width = 7, height = 5, dpi = 300, units = 'in', scale = 1.1)
+
+
+ggplot(table_co2, aes(HM.MAE, diff_model))+geom_point(aes(colour = model))+
+  scale_colour_viridis_d("best model", option = "A", end = 0.8, direction = -1)+
+  theme_article()+ 
+  scale_x_log10()+  scale_y_log10()
+
+
+ggplot(table_ch4, aes(HM.MAE, diff_model))+geom_point(aes(colour = model))+
+  scale_colour_viridis_d("best model", option = "A", end = 0.8, direction = -1)+
+  theme_article()+ 
+  scale_x_log10()+  scale_y_log10()
+
+
+
+
+ggplot(table_co2)+
+  geom_point(aes(abs(best.flux), HM.MAE, colour = "HM"), alpha=0.2, size=3)+
+  geom_point(aes(abs(best.flux), LM.MAE, colour = "LM"), alpha=0.2, size=3)+
+  theme_article()+
+  # xlim(c(0,50))+
+  scale_x_log10()+
+  scale_y_log10()+
+  ylab("MAE")+
+  scale_colour_viridis_d("model", option = "A", end = 0.8, direction = -1)
+
+
+ggplot(table_ch4, aes(LM.MAE, HM.MAE, shape=model,colour = model))+
+  geom_point(alpha=0.4, size=3)+
+  theme_article()+
+  scale_x_log10()+
+  scale_y_log10()+
+  scale_colour_viridis_d("best model", option = "A", end = 0.8, direction = -1)
+
+
+
+
 
 ggplot(table_ch4)+
   geom_density(aes(LM.MAE, fill = "LM"), alpha=0.5)+
@@ -160,7 +290,7 @@ plot_overview <- function(mytable, label, title, variable){
   
   setwd(results_path)
   myfilename <- paste(variable,paste(unique(mytable$sampling), collapse = "_"), sep = "_")
-  ggsave(plot = plt, filename = paste0(myfilename,".jpg"), path = results_path, 
+  ggsave(plot = plt, filename = paste0(myfilename,".jpg"), path = plots_path, 
          width = 6, height = 6, dpi = 300, units = 'in', scale = 1.1)
   
   
@@ -178,9 +308,9 @@ plot_overview <- function(mytable, label, title, variable){
       scale_colour_viridis_d(begin = 0.2, end = 0.8, option = "C")+
       facet_grid(lightCondition~subsite, scales = "free_y")+theme(legend.position = "top")
     
-    setwd(results_path)
+    setwd(plots_path)
     myfilename <- paste(variable,ps,paste(unique(mytable$sampling), collapse = "_"), sep = "_")
-    ggsave(plot = plt, filename = paste0(myfilename,".jpg"), path = results_path, 
+    ggsave(plot = plt, filename = paste0(myfilename,".jpg"), path = plots_path, 
            width = 8, height = 5, dpi = 300, units = 'in', scale = 1.1)
   }
 }
@@ -259,7 +389,7 @@ plt_CH4diff <- ggplot(table_results_all, aes(subsite_short, CH4_LM.flux,
 
 plt_all <- ggarrange(plt_CO2, plt_CH4diff, ncol = 1)
 
-ggsave(plot = plt_all, filename = paste0(myfilename,".jpg"), path = results_path, 
+ggsave(plot = plt_all, filename = paste0(myfilename,".jpg"), path = plots_path, 
        width = 10, height = 8, dpi = 300, units = 'in')
 
 
@@ -298,10 +428,10 @@ for (cs in unique(table_results_all$campaign_site)){
   plt_cs <- ggarrange(plt_CO2, plt_CH4diff, ncol = 2)
   
   
-  setwd(results_path)
+  setwd(plots_path)
   myfilename <- paste(cs,"fluxes",min(as.Date(table_results_all$start.time)),"to",
                       max(as.Date(table_results_all$start.time)), sep = "_")
   
-  ggsave(plot = plt_cs, filename = paste0(myfilename,".jpg"), path = results_path, 
+  ggsave(plot = plt_cs, filename = paste0(myfilename,".jpg"), path = plots_path, 
          width = 10, height = 5, dpi = 300, units = 'in')
 }
