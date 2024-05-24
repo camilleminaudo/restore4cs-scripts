@@ -41,9 +41,9 @@ for (f in files.sources){source(f)}
 
 
 #################################
-sampling <- "S2"
+sampling <- "S3"
 # USER, please specify if you want plots to be saved
-harmonize2RData <- F
+harmonize2RData <- T
 doPlot <- T
 #################################
 
@@ -53,7 +53,6 @@ doPlot <- T
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
-corrfieldsheetpath <- paste0(dropbox_root,"/GHG/Processed data/corrected_fieldsheets")
 loggerspath <- paste0(datapath,"/RAW Data Logger")
 plots_path <- paste0(dropbox_root,"/GHG/Processed data/plots_all_incubations/")
 RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
@@ -218,17 +217,20 @@ if(harmonize2RData){
   
   # Import and store data for for Picarro and LosGatos data
   
-  raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format){
+  raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format, prec){
     r <- grep(pattern = instrument, x=data_folders)
     for (data_folder in data_folders[r]){
       setwd(data_folder)
       subsite = basename(data_folder)
       message(paste0("processing folder ",basename(data_folder)))
       import2RData(path = data_folder, instrument = instrumentID,
-                   date.format = date.format, timezone = 'UTC')
+                   date.format = date.format, timezone = 'UTC', keep_all = FALSE,
+                   prec = prec)
       
       # load all these R.Data into a single dataframe
       file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
+      z <- grep(pattern = instrumentID, x=file_list)
+      file_list <- file_list[z]
       isF <- T
       for(i in seq_along(file_list)){
         load(file_list[i])
@@ -252,8 +254,10 @@ if(harmonize2RData){
     }
   }
   
-  raw2RData_P_LG(data_folders, instrument = "Picarro", instrumentID = "G2508", date.format = "ymd")
-  raw2RData_P_LG(data_folders, instrument = "Los Gatos", instrumentID = "UGGA", date.format = "mdy")
+  raw2RData_P_LG(data_folders, instrument = "Picarro", instrumentID = "G4301", date.format = "ymd", prec=c(0.025, 0.1, 10))
+  raw2RData_P_LG(data_folders, instrument = "Los Gatos", instrumentID = "UGGA", date.format = "mdy", prec =  c(0.2, 1.4, 50))
+  
+  
   
   # Import and store data for LiCOR data
   fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
@@ -265,7 +269,8 @@ if(harmonize2RData){
     message(paste0("processing folder ",basename(data_folder)))
     
     import2RData(path = data_folder, instrument = "LI-7810",
-                 date.format = "ymd", timezone = 'UTC')
+                 date.format = "ymd", timezone = 'UTC', keep_all = FALSE, 
+                 prec = c(3.5, 0.6, 45))
     
     # load all these R.Data into a single dataframe
     file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
@@ -359,6 +364,10 @@ for (subsite in subsites){
   } else {
     message("===> no data logger linked to the floating chamber!")
     is_data_logger_float = F}
+  if(dim(data_logger_float)[1]<10){
+    message("===> not enough data could be linked to the floating chamber!")
+    is_data_logger_float = F
+    }
   
   if(!is.na(SN_logger_tube) & !is.na(i_f_tube)){
     is_data_logger_tube = T
@@ -383,6 +392,10 @@ for (subsite in subsites){
     is_data_logger_tube = F
     message("===> no data logger linked to the tube chamber!")
   }
+  if(dim(data_logger_tube)[1]<10){
+    message("===> not enough data could be linked to the tube chamber!")
+    is_data_logger_tube = F
+  }
   
   
   
@@ -394,65 +407,71 @@ for (subsite in subsites){
   }
   
   
-  
-  load(file = paste0(subsite,"_",gs_suffix,".RData"))
-  
   auxfile <- NULL
-  
-  for (incub in seq_along(corresp_fs$plot_id)){
-    my_incub <- mydata[as.numeric(mydata$POSIX.time)> corresp_fs$unix_start[incub] &
-                         as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop[incub],]
-    my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
+  if(file.exists(paste0(subsite,"_",gs_suffix,".RData"))){
+    load(file = paste0(subsite,"_",gs_suffix,".RData"))
     
-    if (dim(my_incub)[1]>0){
+    
+    for (incub in seq_along(corresp_fs$plot_id)){
+      my_incub <- mydata[as.numeric(mydata$POSIX.time)> corresp_fs$unix_start[incub] &
+                           as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop[incub],]
+      my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
       
-      # Compute Temperature, Area and Volume from fieldsheet info
-      myTemp <- 15 # a default temperature to run the flux calculation...
-      if (corresp_fs$chamber_type[incub] == "floating"){
-        if(is_data_logger_float){
-          myTemp <- median(approx(data_logger_float$unixtime, data_logger_float$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
+      if (dim(my_incub)[1]>0){
+        
+        # Compute Temperature, Area and Volume from fieldsheet info
+        myTemp <- 15 # a default temperature to run the flux calculation...
+        if (corresp_fs$chamber_type[incub] == "floating"){
+          if(is_data_logger_float){
+            myTemp <- median(approx(data_logger_float$unixtime, data_logger_float$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
+          }
+          myArea = 14365.4439 # cm2
+          myVtot = 115/2 # L
+        } else if (corresp_fs$chamber_type[incub] == "tube"){
+          if(is_data_logger_tube){
+            myTemp <- median(approx(data_logger_tube$unixtime, data_logger_tube$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
+          }
+          myArea = pi*12.1**2 # cm2
+          myVtot = myArea*as.numeric(corresp_fs$chamber_height_cm[incub])*1e-3 # L
+        } else {
+          warning("chamber type not correct!")
         }
-        myArea = 14365.4439 # cm2
-        myVtot = 115/2 # L
-      } else if (corresp_fs$chamber_type[incub] == "tube"){
-        if(is_data_logger_tube){
-          myTemp <- median(approx(data_logger_tube$unixtime, data_logger_tube$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
+        myPcham <- 100.1 #kPa
+        
+        # --- Create auxfile table ----
+        # An auxfile table, made of fieldsheet, adding important variables. The auxfile
+        # requires start.time and UniqueID.
+        # start.time must be in the format "%Y-%m-%d %H:%M:%S"
+        
+        UniqueID = paste(subsite, seq_along(corresp_fs$pilot_site),corresp_fs$strata,substr(corresp_fs$transparent_dark, 1, 1),sep = "-")[incub]
+        
+        auxfile_tmp <- data.frame(subsite = subsite,
+                                  UniqueID = gsub(" ", "", UniqueID, fixed = TRUE),
+                                  gas_analiser = gs,
+                                  start.time = as.POSIXct((corresp_fs$unix_start[incub]), tz = "UTC"),
+                                  duration = (corresp_fs$unix_stop[incub]) - (corresp_fs$unix_start[incub]),
+                                  water_depth = corresp_fs$water_depth[incub],
+                                  Area = myArea,
+                                  Vtot = myVtot,
+                                  Tcham = myTemp,
+                                  Pcham = myPcham,
+                                  strata = corresp_fs$strata[incub],
+                                  chamberType = corresp_fs$chamber_type[incub],
+                                  lightCondition = corresp_fs$transparent_dark[incub])
+        if(is.null(auxfile)){
+          auxfile <- auxfile_tmp
+        } else {
+          auxfile <- rbind(auxfile, auxfile_tmp)
         }
-        myArea = pi*12.1**2 # cm2
-        myVtot = myArea*as.numeric(corresp_fs$chamber_height_cm[incub])*1e-3 # L
-      } else {
-        warning("chamber type not correct!")
+        
       }
-      myPcham <- 100.1 #kPa
-      
-      # --- Create auxfile table ----
-      # An auxfile table, made of fieldsheet, adding important variables. The auxfile
-      # requires start.time and UniqueID.
-      # start.time must be in the format "%Y-%m-%d %H:%M:%S"
-      
-      UniqueID = paste(subsite, seq_along(corresp_fs$pilot_site),corresp_fs$strata,substr(corresp_fs$transparent_dark, 1, 1),sep = "-")[incub]
-      
-      auxfile_tmp <- data.frame(subsite = subsite,
-                                UniqueID = gsub(" ", "", UniqueID, fixed = TRUE),
-                                gas_analiser = gs,
-                                start.time = as.POSIXct((corresp_fs$unix_start[incub]), tz = "UTC"),
-                                duration = (corresp_fs$unix_stop[incub]) - (corresp_fs$unix_start[incub]),
-                                water_depth = corresp_fs$water_depth[incub],
-                                Area = myArea,
-                                Vtot = myVtot,
-                                Tcham = myTemp,
-                                Pcham = myPcham,
-                                strata = corresp_fs$strata[incub],
-                                chamberType = corresp_fs$chamber_type[incub],
-                                lightCondition = corresp_fs$transparent_dark[incub])
-      if(is.null(auxfile)){
-        auxfile <- auxfile_tmp
-      } else {
-        auxfile <- rbind(auxfile, auxfile_tmp)
-      }
-      
     }
+    
+  } else {
+    message("---> Could not find corresponding ",gs," data")
   }
+  
+  
   
   if (length(auxfile)>1){
     
@@ -477,10 +496,9 @@ for (subsite in subsites){
       left_join(auxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
     
     # Add instrument precision for each gas
-    prec = c(3.5, 0.6, 0.4, 45, 45)
     mydata_auto <- mydata_auto %>%
-      mutate(CO2_prec = prec[1], CH4_prec = prec[2], N2O_prec = prec[3],
-             H2O_prec = prec[4])
+      mutate(CO2_prec = first(mydata$CO2_prec), CH4_prec = first(mydata$CH4_prec), 
+             N2O_prec = first(mydata$N2O_prec), H2O_prec = first(mydata$H2O_prec))
     
     # Calculate fluxes
     CO2_results_auto <- goFlux(dataframe = mydata_auto, gastype = "CO2dry_ppm")
