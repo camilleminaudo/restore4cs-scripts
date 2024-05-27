@@ -41,9 +41,9 @@ for (f in files.sources){source(f)}
 
 
 #################################
-sampling <- "S3"
+sampling <- "S1"
 # USER, please specify if you want plots to be saved
-harmonize2RData <- T
+harmonize2RData <- F
 doPlot <- T
 #################################
 
@@ -443,10 +443,8 @@ for (subsite in subsites){
         # requires start.time and UniqueID.
         # start.time must be in the format "%Y-%m-%d %H:%M:%S"
         
-        UniqueID = paste(subsite, seq_along(corresp_fs$pilot_site),corresp_fs$strata,substr(corresp_fs$transparent_dark, 1, 1),sep = "-")[incub]
-        
         auxfile_tmp <- data.frame(subsite = subsite,
-                                  UniqueID = gsub(" ", "", UniqueID, fixed = TRUE),
+                                  UniqueID = corresp_fs$uniqID[incub],
                                   gas_analiser = gs,
                                   start.time = as.POSIXct((corresp_fs$unix_start[incub]), tz = "UTC"),
                                   duration = (corresp_fs$unix_stop[incub]) - (corresp_fs$unix_start[incub]),
@@ -481,6 +479,7 @@ for (subsite in subsites){
     auxfile <- auxfile[auxfile$duration>100,]
     # we only keep incubations where chamber dimensions are known
     auxfile <- auxfile[!is.na(auxfile$Vtot),] # in case chamber height is not specified in the fieldsheet...
+    auxfile <- auxfile[!is.na(auxfile$Area),]
     
     # Define the measurements' window of observation
     # auxfile <- auxfile

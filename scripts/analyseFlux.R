@@ -61,8 +61,10 @@ get_full_detailed_table <- function(table_results_all, variable){
   listf <- list.files(path = paste0(results_path,"level_incubation"), pattern = ".csv", all.files = T, full.names = T, recursive = F)
   mytable <- NULL
   for (f in listf[grep(pattern = variable, x = listf)]){
-    mytable <- rbind(mytable, 
-                     read.csv(file = f, header = T))
+    mytable.tmp <- read.csv(file = f, header = T)
+    if(dim(mytable.tmp)[2]==44){
+      mytable <- rbind(mytable, mytable.tmp)
+    }
   }
   mytable$sampling <- str_sub(mytable$UniqueID, start = 1, 2)
   mytable$pilotsite <- str_sub(mytable$UniqueID, start = 4, 5)
@@ -78,7 +80,7 @@ get_full_detailed_table <- function(table_results_all, variable){
 }
 
 
-table_co2 <- get_full_detailed_table(table_results_all, "co2")
+table_co2 <- get_full_detailed_table(table_results_all, variable = "co2")
 table_ch4 <- get_full_detailed_table(table_results_all, "ch4")
 
 
@@ -272,6 +274,42 @@ table_co2_sel <- table_co2[ind_sel,]
 
 ind_sel <- which(table_ch4$HM.MAE<100)
 table_ch4_sel <- table_ch4[ind_sel,]
+
+
+p_overview_co2 <- ggplot(table_co2_sel, aes(pilotsite, best.flux, colour = lightCondition))+
+  geom_hline(yintercept = 0)+
+  geom_jitter(alpha=0.5)+
+  # geom_boxplot(alpha=0.8)+
+  theme_article()+
+  ylab("CO2 flux mmol/m2/s")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+facet_wrap(strata~.)+theme(legend.position = 'top')+xlab("")
+
+
+p_overview_ch4 <- ggplot(table_ch4_sel, aes(pilotsite, best.flux, colour = lightCondition))+
+  geom_hline(yintercept = 0)+
+  geom_jitter(alpha=0.5)+
+  # geom_boxplot(alpha=0.8)+
+  theme_article()+
+  ylab("CH4 flux nmol/m2/s")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+facet_wrap(strata~.)+theme(legend.position = 'none')
+
+ggarrange(p_overview_co2, p_overview_ch4)
+
+
+
+
+ggplot(table_co2_sel, aes(subsite, best.flux, colour = lightCondition))+
+  geom_hline(yintercept = 0)+
+  geom_jitter(alpha=0.5)+
+  geom_boxplot(alpha=0.8)+
+  theme_article()+
+  ylab("CO2 flux mmol/m2/s")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+facet_wrap(strata~., scales = "free_y")+theme(legend.position = 'top')+xlab("")
+
+
 
 plot_overview <- function(mytable, label, title, variable){
   
