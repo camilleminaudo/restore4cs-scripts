@@ -117,7 +117,7 @@ filename_w <- paste0(dropbox_root,"Water/Water sampling and filtration_all data.
 fieldsheet_water <- readxl::read_xlsx(filename_w, 
                                       col_names = T, n_max = 3*6*6*4,
                                       sheet = "Water_sampling_master_ONLINE", skip = 8,
-                                      col_types = c(rep("text",8),rep("numeric",19),rep("text",4)))
+                                      col_types = c(rep("text",9),rep("numeric",21),rep("text",4)))
 
 fieldsheet_water <- fieldsheet_water[fieldsheet_water$Survey==sampling,]
 
@@ -151,6 +151,7 @@ dim(shp_data)
 my_shp <- st_as_sf(shp_data[!is.na(shp_data$long),],
                    coords = c("long", "lat"),
                    crs = 4326)
+
 
 
 setwd(paste0(dropbox_root,"/GIS"))
