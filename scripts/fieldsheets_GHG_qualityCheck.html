@@ -376,7 +376,6 @@ display: none;
 <div id="quality-check-3---suspicious-ch4-values" class="section level2">
 <h2>Quality check 3 - suspicious CH4 values</h2>
 <pre><code>## the following rows show suspiciously HIGH methane levels</code></pre>
-<pre><code>## the following rows show suspiciously HIGH methane levels</code></pre>
 </div>
 <div id="quality-check-4---suspicious-depth-values" class="section level2">
 <h2>Quality check 4 - suspicious depth values</h2>
@@ -390,8 +389,6 @@ display: none;
 </div>
 <div id="quality-check-5---missing-logger-data-information" class="section level2">
 <h2>Quality check 5 - missing logger data information</h2>
-<pre><code>## the following subsites do not have logger data info</code></pre>
-<pre><code>## [1] &quot;S1-DU-R1&quot; &quot;S2-DU-A1&quot; &quot;S2-DU-A2&quot; &quot;S2-VA-A1&quot; &quot;S2-VA-R1&quot;</code></pre>
 </div>
 <div id="quality-check-6---possible-mistake-with-chamber-type-or-chamber_height" class="section level2">
 <h2>Quality check 6 - Possible mistake with chamber type or
@@ -401,7 +398,7 @@ chamber_height</h2>
 <div id="quality-check-7---possible-mistake-with-coordinates" class="section level2">
 <h2>Quality check 7 - Possible mistake with coordinates</h2>
 <pre><code>## Reading layer `Subsites_rough_forExport&#39; from data source 
-##   `C:\Users\Camille Minaudo\Dropbox\RESTORE4Cs - Fieldwork\Data\GIS\Shape_files_subsites\Rough shapes for export\Subsites_rough_forExport.shp&#39; 
+##   `C:\Users\Miguel\Dropbox\RESTORE4Cs - Fieldwork\Data\GIS\Shape_files_subsites\Rough shapes for export\Subsites_rough_forExport.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 36 features and 2 fields
 ## Geometry type: POLYGON
@@ -412,401 +409,178 @@ chamber_height</h2>
 <pre><code>## although coordinates are longitude/latitude, st_intersection assumes that they
 ## are planar</code></pre>
 <pre><code>## Wrong coordinates</code></pre>
-<pre><code>##  [1] &quot;s1-cu-a1-10-d&quot; &quot;s2-cu-r1-6-d&quot;  &quot;s2-cu-r1-12-d&quot; &quot;s2-cu-r2-11-d&quot;
-##  [5] &quot;s2-cu-r2-14-d&quot; &quot;s3-ca-r2-11-t&quot; &quot;s3-ca-r2-11-d&quot; &quot;s3-ca-r2-12-t&quot;
-##  [9] &quot;s3-ca-r2-12-d&quot; &quot;s3-cu-p1-13-d&quot; &quot;s3-cu-p2-10-d&quot; &quot;s3-ri-a1-7-t&quot; 
-## [13] &quot;s3-ri-a1-7-d&quot;  &quot;s3-ri-a1-10-d&quot; &quot;s3-ri-a1-11-d&quot; &quot;s3-ri-a1-12-d&quot;
-## [17] &quot;s3-va-p1-11-d&quot; &quot;s3-va-p1-12-d&quot; &quot;s3-va-p1-13-t&quot; &quot;s3-va-p1-13-d&quot;
-## [21] &quot;s3-va-p1-14-t&quot; &quot;s3-va-p1-14-d&quot; &quot;s3-va-p1-15-d&quot; &quot;s3-va-p2-4-d&quot;</code></pre>
+<pre><code>##  [1] &quot;s1-cu-a1-10-d&quot; &quot;s2-cu-r2-11-d&quot; &quot;s2-cu-r2-14-d&quot; &quot;s3-ca-r2-11-t&quot;
+##  [5] &quot;s3-ca-r2-11-d&quot; &quot;s3-ca-r2-12-t&quot; &quot;s3-ca-r2-12-d&quot; &quot;s3-cu-p2-10-d&quot;
+##  [9] &quot;s3-ri-a1-7-t&quot;  &quot;s3-ri-a1-7-d&quot;  &quot;s3-ri-a1-10-d&quot; &quot;s3-ri-a1-11-d&quot;
+## [13] &quot;s3-ri-a1-12-d&quot;</code></pre>
 </div>
 <div id="recap-table-with-all-issues-flagged" class="section level2">
 <h2>Recap table with all issues flagged</h2>
 <pre><code>##            uniqID             person_sampling
 ## 1   s1-da-p1-14-t                       CM,CR
-## 2    s1-da-p2-1-d                    BM,BO,RC
-## 3   s2-du-a1-12-d                       AP,RC
-## 4    s2-ri-a2-5-d                      BM, CR
-## 5    s2-ri-a2-9-t                      BM, CR
-## 6    s2-ri-p1-6-t                      BM, CR
-## 7   s2-va-a2-14-d                     BM, DvS
-## 8    s3-cu-p1-9-d                          BM
-## 9   s3-ri-a2-15-d                      BM, AP
-## 10   s3-va-p1-5-t                      BM, AP
-## 11   s1-cu-p2-1-d                      CM, CR
-## 12  s1-du-a1-10-t                      RC, CR
-## 13  s1-ri-p2-13-d                  CM; DM; PC
-## 14   s2-cu-r2-7-d                    AP, JJMP
-## 15   s2-du-a1-9-d                       AP,RC
-## 16   s2-ri-r2-5-d               CR, Ana Sousa
-## 17  s2-ri-r2-11-d               CR, Ana Sousa
-## 18   s3-cu-a1-8-d                      BM, BO
-## 19   s3-da-a2-4-d              Miguel, Carlos
-## 20   s3-da-p2-5-d                     BM, ACS
-## 21   s3-du-p2-7-d     Miguel, Carlos, Marinka
-## 22   s1-va-r2-7-t                      BM, AP
-## 23   s1-va-r2-7-d                      BM, AP
-## 24  s1-ca-a1-13-d                      BM, AP
-## 25  s1-cu-a2-12-d                      CM, CR
-## 26   s1-ri-a2-8-d                      BM, AP
-## 27  s1-ri-p1-11-d                      BM, AP
-## 28  s1-ri-r2-12-d                      BM, AP
-## 29   s2-ca-a2-3-d                      BM, CR
-## 30   s2-ca-p1-6-t                  BO, RA, DM
-## 31   s2-du-a1-7-d                       AP,RC
-## 32  s2-ri-r2-10-d               CR, Ana Sousa
-## 33  s3-ri-r2-14-d                  AP, Ana S.
-## 34  s3-va-a2-10-d                      BM, AP
-## 35   s3-va-r2-5-d                      BM, AP
-## 36  s1-ca-r1-13-d                      BM, AP
-## 37  s1-ca-r2-14-t                      DM, JM
-## 38  s1-cu-p2-14-t                      CM, CR
-## 39  s1-cu-r2-16-t                      CM, CR
-## 40  s1-ri-p1-11-t                      BM, AP
-## 41   s1-ri-r2-9-t                      BM, AP
-## 42  s1-ri-r2-12-t                      BM, AP
-## 43   s1-va-p1-6-t                   BM, AP,DM
-## 44   s1-va-p1-8-t                   BM, AP,DM
-## 45  s2-ri-p1-10-t                      BM, CR
-## 46  s3-ca-a2-13-t                      BM, AP
-## 47   s3-ca-p2-3-t       Miguel, Rania, Khalil
-## 48   s3-ca-p2-4-t       Miguel, Rania, Khalil
-## 49  s3-ca-r2-13-t Miguel, Nina, Lorena, Rania
-## 50   s3-da-a1-6-t              Miguel, Carlos
-## 51   s3-da-a2-8-d              Miguel, Carlos
-## 52   s3-du-a1-1-t     Miguel, Carlos, Marinka
-## 53   s3-du-p2-3-t     Miguel, Carlos, Marinka
-## 54   s3-du-p2-6-t     Miguel, Carlos, Marinka
-## 55   s3-du-p2-8-t     Miguel, Carlos, Marinka
-## 56  s3-du-p2-12-t     Miguel, Carlos, Marinka
-## 57  s3-du-p2-15-t     Miguel, Carlos, Marinka
-## 58  s3-du-r1-14-t                     BM, MJY
-## 59  s3-va-a2-10-t                      BM, AP
-## 60  s3-va-a2-14-t                      BM, AP
-## 61   s3-va-p1-5-t                      BM, AP
-## 62   s3-va-p1-9-t                      BM, AP
-## 63   s3-va-r2-5-t                      BM, AP
-## 64   s2-cu-r2-1-t                    AP, JJMP
-## 65   s2-cu-r2-1-d                    AP, JJMP
-## 66   s2-cu-r2-2-t                    AP, JJMP
-## 67   s2-cu-r2-2-d                    AP, JJMP
-## 68   s2-cu-r2-3-t                    AP, JJMP
-## 69   s2-cu-r2-3-d                    AP, JJMP
-## 70   s2-cu-r2-4-t                    AP, JJMP
-## 71   s2-cu-r2-4-d                    AP, JJMP
-## 72   s2-cu-r2-5-t                    AP, JJMP
-## 73   s2-cu-r2-5-d                    AP, JJMP
-## 74   s2-cu-r2-6-d                    AP, JJMP
-## 75   s2-cu-r2-7-d                    AP, JJMP
-## 76   s2-cu-r2-8-d                    AP, JJMP
-## 77   s2-cu-r2-9-d                    AP, JJMP
-## 78  s2-cu-r2-10-d                    AP, JJMP
-## 79  s2-cu-r2-13-d                    AP, JJMP
-## 80  s2-cu-r2-14-d                    AP, JJMP
-## 81  s2-cu-r2-15-d                    AP, JJMP
-## 82   s2-du-a1-1-d                       AP,RC
-## 83   s2-du-a1-2-d                       AP,RC
-## 84   s2-du-a1-3-d                       AP,RC
-## 85   s2-du-a1-4-t                       AP,RC
-## 86   s2-du-a1-4-d                       AP,RC
-## 87   s2-du-a1-5-t                       AP,RC
-## 88   s2-du-a1-5-d                       AP,RC
-## 89   s2-du-a1-6-t                       AP,RC
-## 90   s2-du-a1-6-d                       AP,RC
-## 91   s2-du-a1-7-t                       AP,RC
-## 92   s2-du-a1-7-d                       AP,RC
-## 93   s2-du-a1-8-t                       AP,RC
-## 94   s2-du-a1-8-d                       AP,RC
-## 95   s2-du-a1-9-d                       AP,RC
-## 96  s2-du-a1-10-t                       AP,RC
-## 97  s2-du-a1-10-d                       AP,RC
-## 98  s2-du-a1-11-t                       AP,RC
-## 99  s2-du-a1-11-d                       AP,RC
-## 100 s2-du-a1-12-t                       AP,RC
-## 101 s2-du-a1-12-d                       AP,RC
-## 102 s2-du-a1-13-t                       AP,RC
-## 103 s2-du-a1-13-d                       AP,RC
-## 104 s2-du-a1-14-t                       AP,RC
-## 105 s2-du-a1-14-d                       AP,RC
-## 106 s2-du-a1-15-t                       AP,RC
-## 107 s2-du-a1-15-d                       AP,RC
-## 108 s2-du-a1-16-t                       AP,RC
-## 109 s2-du-a1-16-d                       AP,RC
-## 110  s2-du-a2-1-d                       AP,RC
-## 111  s2-du-a2-2-d                       AP,RC
-## 112  s2-du-a2-3-t                       AP,RC
-## 113  s2-du-a2-3-d                       AP,RC
-## 114  s2-du-a2-4-t                       AP,RC
-## 115  s2-du-a2-4-d                       AP,RC
-## 116  s2-du-a2-5-t                       AP,RC
-## 117  s2-du-a2-5-d                       AP,RC
-## 118  s2-du-a2-6-t                       AP,RC
-## 119  s2-du-a2-6-d                       AP,RC
-## 120  s2-du-a2-7-t                       AP,RC
-## 121  s2-du-a2-7-d                       AP,RC
-## 122  s2-du-a2-8-t                       AP,RC
-## 123  s2-du-a2-8-d                       AP,RC
-## 124  s2-du-a2-9-t                       AP,RC
-## 125  s2-du-a2-9-d                       AP,RC
-## 126 s2-du-a2-10-t                       AP,RC
-## 127 s2-du-a2-10-d                       AP,RC
-## 128 s2-du-a2-11-t                       AP,RC
-## 129 s2-du-a2-11-d                       AP,RC
-## 130 s2-du-a2-12-t                       AP,RC
-## 131 s2-du-a2-12-d                       AP,RC
-## 132 s2-du-a2-13-t                       AP,RC
-## 133 s2-du-a2-13-d                       AP,RC
-## 134 s2-du-a2-14-t                       AP,RC
-## 135 s2-du-a2-14-d                       AP,RC
-## 136 s2-du-a2-15-d                       AP,RC
-## 137  s3-cu-a2-4-t                      BM, CR
-## 138  s3-cu-p2-1-d                      CR, BO
-## 139  s3-du-r2-9-t                     BM, MJY
-## 140  s2-cu-r2-6-t                    AP, JJMP
-## 141 s2-cu-r2-11-d                    AP, JJMP
-## 142 s2-cu-r2-12-d                    AP, JJMP
-## 143  s3-da-a2-8-d              Miguel, Carlos
-## 144 s1-cu-p1-17-d                 BM, ACS, RC
-## 145  s1-va-p1-6-t                   BM, AP,DM
-## 146 s2-ri-a2-15-d                      BM, CR
-## 147 s1-cu-a2-15-d                      CM, CR
-## 148  s1-da-p1-3-d                       CM,CR
-## 149 s2-ri-a1-14-d                     DM, ACS
-## 150 s2-ri-a1-15-d                     DM, ACS
-## 151 s2-ri-a1-16-d                     DM, ACS
-## 152 s2-ri-a1-17-d                     DM, ACS
-## 153 s2-ri-a1-18-d                     DM, ACS
-## 154 s2-ri-a1-19-d                     DM, ACS
-## 155 s2-ri-a1-20-d                     DM, ACS
-## 156 s3-da-a2-11-d              Miguel, Carlos
-## 157 s3-da-a2-12-d              Miguel, Carlos
-## 158 s3-da-a2-13-d              Miguel, Carlos
-## 159 s3-da-a2-14-t              Miguel, Carlos
-## 160 s3-da-a2-14-d              Miguel, Carlos
-## 161 s3-da-a2-15-t              Miguel, Carlos
-## 162 s3-da-a2-15-d              Miguel, Carlos
-## 163 s3-da-a2-16-t              Miguel, Carlos
-## 164 s3-da-a2-16-d              Miguel, Carlos
-## 165  s3-da-p2-4-d                     BM, ACS
-## 166  s3-da-p2-5-d                     BM, ACS
-## 167  s3-da-p2-6-d                     BM, ACS
-## 168  s3-da-p2-7-d                     BM, ACS
-## 169  s3-da-p2-8-d                     BM, ACS
-## 170 s3-ri-p2-13-d                   CM,MCB,PC
-## 171 s3-ri-p2-14-d                   CM,MCB,PC
-## 172 s1-da-a2-13-d                       CM,CR
-## 173 s1-da-a2-14-d                       CM,CR
-## 174 s1-du-p1-10-t                      BM, JM
-## 175 s1-du-p1-10-d                      BM, JM
-## 176  s1-du-r1-9-t                      BM, JM
-## 177  s1-ri-a2-6-d                      BM, AP
-## 178 s1-ri-a2-10-d                      BM, AP
-## 179 s1-ri-a2-11-d                      BM, AP
-## 180 s1-ri-a2-12-d                      BM, AP
-## 181 s1-ri-r1-11-t                  CM, DM, PC
-## 182 s1-ri-r1-11-d                  CM, DM, PC
-## 183 s1-va-a2-11-t                      BM, AP
-## 184 s1-va-a2-11-d                      BM, AP
-## 185  s2-ca-a2-1-t                      BM, CR
-## 186  s2-ca-a2-1-d                      BM, CR
-## 187  s2-ca-a2-2-t                      BM, CR
-## 188  s2-ca-a2-2-d                      BM, CR
-## 189  s2-ca-a2-9-t                      BM, CR
-## 190  s2-ca-a2-9-d                      BM, CR
-## 191 s2-ca-p2-13-t                  BO, RA, DM
-## 192 s2-ca-p2-13-d                  BO, RA, DM
-## 193 s2-du-p1-13-t                      BM, FM
-## 194 s2-du-p1-13-d                      BM, FM
-## 195  s2-du-r1-1-t                      BM, FM
-## 196  s2-du-r1-1-d                      BM, FM
-## 197  s2-du-r1-2-t                      BM, FM
-## 198  s2-du-r1-2-d                      BM, FM
-## 199  s2-du-r1-6-d                      BM, FM
-## 200  s2-du-r1-9-t                      BM, FM
-## 201  s2-du-r1-9-d                      BM, FM
-## 202 s2-du-r1-13-d                      BM, FM
-## 203 s2-ri-p2-10-t                     ACS, DM
-## 204 s2-ri-p2-10-d                     ACS, DM
-## 205  s2-va-p1-9-t                     BM, DvS
-## 206  s2-va-p1-9-d                     BM, DvS
-## 207  s3-du-a1-1-t     Miguel, Carlos, Marinka
-## 208  s3-du-a1-1-d     Miguel, Carlos, Marinka
-## 209  s3-du-a2-5-t     Miguel, Carlos, Marinka
-## 210  s3-du-a2-5-d     Miguel, Carlos, Marinka
-## 211  s3-du-a2-6-t     Miguel, Carlos, Marinka
-## 212  s3-du-a2-6-d     Miguel, Carlos, Marinka
-## 213  s3-du-p1-1-t                     BM, MJY
-## 214  s3-du-p1-1-d                     BM, MJY
-## 215 s3-du-p1-15-t                     BM, MJY
-## 216 s3-du-p1-15-d                     BM, MJY
-## 217  s3-du-r1-8-t                     BM, MJY
-## 218  s3-du-r1-8-d                     BM, MJY
-## 219 s3-du-r1-13-d                     BM, MJY
-## 220 s3-ri-a2-11-d                      BM, AP
-## 221  s3-ri-p1-4-d                      BM, AP
-## 222  s3-va-p2-9-t               MC, CR, MP,RC
-## 223  s3-va-p2-9-d               MC, CR, MP,RC
-## 224  s1-du-r1-1-t                      BM, JM
-## 225  s1-du-r1-1-d                      BM, JM
-## 226  s1-du-r1-2-d                      BM, JM
-## 227  s1-du-r1-3-t                      BM, JM
-## 228  s1-du-r1-3-d                      BM, JM
-## 229  s1-du-r1-4-d                      BM, JM
-## 230  s1-du-r1-5-d                      BM, JM
-## 231  s1-du-r1-6-d                      BM, JM
-## 232  s1-du-r1-7-d                      BM, JM
-## 233  s1-du-r1-8-d                      BM, JM
-## 234  s1-du-r1-9-t                      BM, JM
-## 235  s1-du-r1-9-d                      BM, JM
-## 236 s1-du-r1-10-t                      BM, JM
-## 237 s1-du-r1-10-d                      BM, JM
-## 238 s1-du-r1-11-d                      BM, JM
-## 239 s1-du-r1-12-t                      BM, JM
-## 240 s1-du-r1-12-d                      BM, JM
-## 241 s1-du-r1-13-d                      BM, JM
-## 242 s1-du-r1-14-d                      BM, JM
-## 243 s1-du-r1-15-t                      BM, JM
-## 244 s1-du-r1-15-d                      BM, JM
-## 245 s1-du-r1-16-t                      BM, JM
-## 246 s1-du-r1-16-d                      BM, JM
-## 247  s2-du-a1-1-d                       AP,RC
-## 248  s2-du-a1-2-d                       AP,RC
-## 249  s2-du-a1-3-d                       AP,RC
-## 250  s2-du-a1-4-t                       AP,RC
-## 251  s2-du-a1-4-d                       AP,RC
-## 252  s2-du-a1-5-t                       AP,RC
-## 253  s2-du-a1-5-d                       AP,RC
-## 254  s2-du-a1-6-t                       AP,RC
-## 255  s2-du-a1-6-d                       AP,RC
-## 256  s2-du-a1-7-t                       AP,RC
-## 257  s2-du-a1-7-d                       AP,RC
-## 258  s2-du-a1-8-t                       AP,RC
-## 259  s2-du-a1-8-d                       AP,RC
-## 260  s2-du-a1-9-d                       AP,RC
-## 261 s2-du-a1-10-t                       AP,RC
-## 262 s2-du-a1-10-d                       AP,RC
-## 263 s2-du-a1-11-t                       AP,RC
-## 264 s2-du-a1-11-d                       AP,RC
-## 265 s2-du-a1-12-t                       AP,RC
-## 266 s2-du-a1-12-d                       AP,RC
-## 267 s2-du-a1-13-t                       AP,RC
-## 268 s2-du-a1-13-d                       AP,RC
-## 269 s2-du-a1-14-t                       AP,RC
-## 270 s2-du-a1-14-d                       AP,RC
-## 271 s2-du-a1-15-t                       AP,RC
-## 272 s2-du-a1-15-d                       AP,RC
-## 273 s2-du-a1-16-t                       AP,RC
-## 274 s2-du-a1-16-d                       AP,RC
-## 275  s2-du-a2-1-d                       AP,RC
-## 276  s2-du-a2-2-d                       AP,RC
-## 277  s2-du-a2-3-t                       AP,RC
-## 278  s2-du-a2-3-d                       AP,RC
-## 279  s2-du-a2-4-t                       AP,RC
-## 280  s2-du-a2-4-d                       AP,RC
-## 281  s2-du-a2-5-t                       AP,RC
-## 282  s2-du-a2-5-d                       AP,RC
-## 283  s2-du-a2-6-t                       AP,RC
-## 284  s2-du-a2-6-d                       AP,RC
-## 285  s2-du-a2-7-t                       AP,RC
-## 286  s2-du-a2-7-d                       AP,RC
-## 287  s2-du-a2-8-t                       AP,RC
-## 288  s2-du-a2-8-d                       AP,RC
-## 289  s2-du-a2-9-t                       AP,RC
-## 290  s2-du-a2-9-d                       AP,RC
-## 291 s2-du-a2-10-t                       AP,RC
-## 292 s2-du-a2-10-d                       AP,RC
-## 293 s2-du-a2-11-t                       AP,RC
-## 294 s2-du-a2-11-d                       AP,RC
-## 295 s2-du-a2-12-t                       AP,RC
-## 296 s2-du-a2-12-d                       AP,RC
-## 297 s2-du-a2-13-t                       AP,RC
-## 298 s2-du-a2-13-d                       AP,RC
-## 299 s2-du-a2-14-t                       AP,RC
-## 300 s2-du-a2-14-d                       AP,RC
-## 301 s2-du-a2-15-d                       AP,RC
-## 302  s2-va-a1-1-d                  CR, AP, MP
-## 303  s2-va-a1-2-d                  CR, AP, MP
-## 304  s2-va-a1-3-t                  CR, AP, MP
-## 305  s2-va-a1-3-d                  CR, AP, MP
-## 306  s2-va-a1-4-t                  CR, AP, MP
-## 307  s2-va-a1-4-d                  CR, AP, MP
-## 308  s2-va-a1-5-d                  CR, AP, MP
-## 309  s2-va-a1-6-d                  CR, AP, MP
-## 310  s2-va-a1-7-t                  CR, AP, MP
-## 311  s2-va-a1-7-d                  CR, AP, MP
-## 312  s2-va-a1-8-d                  CR, AP, MP
-## 313  s2-va-a1-9-d                  CR, AP, MP
-## 314 s2-va-a1-10-t                  CR, AP, MP
-## 315 s2-va-a1-10-d                  CR, AP, MP
-## 316 s2-va-a1-11-d                  CR, AP, MP
-## 317 s2-va-a1-12-d                  CR, AP, MP
-## 318 s2-va-a1-13-t                  CR, AP, MP
-## 319 s2-va-a1-13-d                  CR, AP, MP
-## 320 s2-va-a1-14-t                  CR, AP, MP
-## 321 s2-va-a1-14-d                  CR, AP, MP
-## 322 s2-va-a1-15-d                  CR, AP, MP
-## 323  s2-va-r1-1-d                      CR, RC
-## 324  s2-va-r1-2-d                      CR, RC
-## 325  s2-va-r1-3-d                      CR, RC
-## 326  s2-va-r1-4-d                      CR, RC
-## 327  s2-va-r1-5-d                      CR, RC
-## 328  s2-va-r1-6-d                      CR, RC
-## 329  s2-va-r1-7-d                      CR, RC
-## 330  s2-va-r1-8-d                      CR, RC
-## 331  s2-va-r1-9-t                      CR, RC
-## 332  s2-va-r1-9-d                      CR, RC
-## 333 s2-va-r1-10-t                      CR, RC
-## 334 s2-va-r1-10-d                      CR, RC
-## 335 s2-va-r1-11-t                      CR, RC
-## 336 s2-va-r1-11-d                      CR, RC
-## 337 s2-va-r1-12-t                      CR, RC
-## 338 s2-va-r1-12-d                      CR, RC
-## 339 s2-va-r1-13-d                      CR, RC
-## 340  s1-ca-r2-7-d                      DM, JM
-## 341 s1-ri-a2-13-d                      BM, AP
-## 342 s1-ri-a2-14-d                      BM, AP
-## 343 s1-ri-a2-15-d                      BM, AP
-## 344 s1-ri-a2-16-d                      BM, AP
-## 345  s1-ri-p2-7-d                  CM; DM; PC
-## 346  s2-da-r1-1-d                      BM, RC
-## 347 s2-ri-a2-13-d                      BM, CR
-## 348 s2-ri-a2-14-d                      BM, CR
-## 349 s2-ri-a2-15-d                      BM, CR
-## 350 s2-ri-a2-16-d                      BM, CR
-## 351  s2-ri-p2-1-d                     ACS, DM
-## 352  s2-ri-p2-5-d                     ACS, DM
-## 353  s2-ri-p2-9-d                     ACS, DM
-## 354 s2-va-r1-13-d                      CR, RC
-## 355  s3-cu-a1-3-t                      BM, BO
-## 356  s3-cu-a1-3-d                      BM, BO
-## 357  s3-cu-a1-5-t                      BM, BO
-## 358  s3-cu-a1-5-d                      BM, BO
-## 359 s3-ri-a1-10-d                  CM, MC, PC
-## 360 s3-ri-a1-11-d                  CM, MC, PC
-## 361 s3-ri-a1-12-d                  CM, MC, PC
-## 362 s1-cu-a1-10-d                BM, ACS,  RC
-## 363  s2-cu-r1-6-d                      BM, RC
-## 364 s2-cu-r1-12-d                      BM, RC
-## 365 s2-cu-r2-11-d                    AP, JJMP
-## 366 s2-cu-r2-14-d                    AP, JJMP
-## 367 s3-ca-r2-11-t Miguel, Nina, Lorena, Rania
-## 368 s3-ca-r2-11-d Miguel, Nina, Lorena, Rania
-## 369 s3-ca-r2-12-t Miguel, Nina, Lorena, Rania
-## 370 s3-ca-r2-12-d Miguel, Nina, Lorena, Rania
-## 371 s3-cu-p1-13-d                          BM
-## 372 s3-cu-p2-10-d                      CR, BO
-## 373  s3-ri-a1-7-t                  CM, MC, PC
-## 374  s3-ri-a1-7-d                  CM, MC, PC
-## 375 s3-ri-a1-10-d                  CM, MC, PC
-## 376 s3-ri-a1-11-d                  CM, MC, PC
-## 377 s3-ri-a1-12-d                  CM, MC, PC
-## 378 s3-va-p1-11-d                      BM, AP
-## 379 s3-va-p1-12-d                      BM, AP
-## 380 s3-va-p1-13-t                      BM, AP
-## 381 s3-va-p1-13-d                      BM, AP
-## 382 s3-va-p1-14-t                      BM, AP
-## 383 s3-va-p1-14-d                      BM, AP
-## 384 s3-va-p1-15-d                      BM, AP
-## 385  s3-va-p2-4-d               MC, CR, MP,RC
+## 2   s2-du-a1-12-d                       AP,RC
+## 3    s2-ri-a2-5-d                      BM, CR
+## 4    s2-ri-a2-9-t                      BM, CR
+## 5    s2-ri-p1-6-t                      BM, CR
+## 6   s2-va-a2-14-d                     BM, DvS
+## 7    s3-cu-p1-9-d                          BM
+## 8   s3-ri-a2-15-d                      BM, AP
+## 9    s3-va-p1-5-t                      BM, AP
+## 10   s1-cu-p2-1-d                      CM, CR
+## 11  s1-du-a1-10-t                      RC, CR
+## 12  s1-ri-p2-13-d                  CM; DM; PC
+## 13   s2-cu-r2-7-d                    AP, JJMP
+## 14   s2-du-a1-9-d                       AP,RC
+## 15   s2-ri-r2-5-d               CR, Ana Sousa
+## 16  s2-ri-r2-11-d               CR, Ana Sousa
+## 17   s3-cu-a1-8-d                      BM, BO
+## 18   s3-da-a2-4-d              Miguel, Carlos
+## 19   s3-da-p2-5-d                     BM, ACS
+## 20   s3-du-p2-7-d     Miguel, Carlos, Marinka
+## 21   s1-va-r2-7-t                      BM, AP
+## 22   s1-va-r2-7-d                      BM, AP
+## 23  s1-ca-a1-13-d                      BM, AP
+## 24  s1-cu-a2-12-d                      CM, CR
+## 25   s1-ri-a2-8-d                      BM, AP
+## 26  s1-ri-p1-11-d                      BM, AP
+## 27  s1-ri-r2-12-d                      BM, AP
+## 28   s2-ca-a2-3-d                      BM, CR
+## 29   s2-ca-p1-6-t                  BO, RA, DM
+## 30   s2-du-a1-7-d                       AP,RC
+## 31  s2-ri-r2-10-d               CR, Ana Sousa
+## 32  s3-ri-r2-14-d                  AP, Ana S.
+## 33  s3-va-a2-10-d                      BM, AP
+## 34   s3-va-r2-5-d                      BM, AP
+## 35  s1-ca-r1-13-d                      BM, AP
+## 36  s1-ca-r2-14-t                      DM, JM
+## 37  s1-cu-p2-14-t                      CM, CR
+## 38  s1-cu-r2-16-t                      CM, CR
+## 39  s1-ri-p1-11-t                      BM, AP
+## 40   s1-ri-r2-9-t                      BM, AP
+## 41  s1-ri-r2-12-t                      BM, AP
+## 42   s1-va-p1-6-t                   BM, AP,DM
+## 43   s1-va-p1-8-t                   BM, AP,DM
+## 44  s2-ri-p1-10-t                      BM, CR
+## 45  s3-ca-a2-13-t                      BM, AP
+## 46   s3-ca-p2-3-t       Miguel, Rania, Khalil
+## 47   s3-ca-p2-4-t       Miguel, Rania, Khalil
+## 48  s3-ca-r2-13-t Miguel, Nina, Lorena, Rania
+## 49   s3-da-a1-6-t              Miguel, Carlos
+## 50   s3-da-a2-8-d              Miguel, Carlos
+## 51   s3-du-a1-1-t     Miguel, Carlos, Marinka
+## 52   s3-du-p2-3-t     Miguel, Carlos, Marinka
+## 53   s3-du-p2-6-t     Miguel, Carlos, Marinka
+## 54   s3-du-p2-8-t     Miguel, Carlos, Marinka
+## 55  s3-du-p2-12-t     Miguel, Carlos, Marinka
+## 56  s3-du-p2-15-t     Miguel, Carlos, Marinka
+## 57  s3-du-r1-14-t                     BM, MJY
+## 58  s3-va-a2-10-t                      BM, AP
+## 59  s3-va-a2-14-t                      BM, AP
+## 60   s3-va-p1-5-t                      BM, AP
+## 61   s3-va-p1-9-t                      BM, AP
+## 62   s3-va-r2-5-t                      BM, AP
+## 63   s3-cu-a2-4-t                      BM, CR
+## 64   s3-cu-p2-1-d                      CR, BO
+## 65   s3-da-a2-8-d              Miguel, Carlos
+## 66  s1-cu-a2-15-d                      CM, CR
+## 67   s1-da-p1-3-d                       CM,CR
+## 68  s2-ri-a1-14-d                     DM, ACS
+## 69  s2-ri-a1-15-d                     DM, ACS
+## 70  s2-ri-a1-16-d                     DM, ACS
+## 71  s2-ri-a1-17-d                     DM, ACS
+## 72  s2-ri-a1-18-d                     DM, ACS
+## 73  s2-ri-a1-19-d                     DM, ACS
+## 74  s2-ri-a1-20-d                     DM, ACS
+## 75  s3-da-a2-11-d              Miguel, Carlos
+## 76  s3-da-a2-12-d              Miguel, Carlos
+## 77  s3-da-a2-13-d              Miguel, Carlos
+## 78  s3-da-a2-14-t              Miguel, Carlos
+## 79  s3-da-a2-14-d              Miguel, Carlos
+## 80  s3-da-a2-15-t              Miguel, Carlos
+## 81  s3-da-a2-15-d              Miguel, Carlos
+## 82  s3-da-a2-16-t              Miguel, Carlos
+## 83  s3-da-a2-16-d              Miguel, Carlos
+## 84   s3-da-p2-4-d                     BM, ACS
+## 85   s3-da-p2-5-d                     BM, ACS
+## 86   s3-da-p2-6-d                     BM, ACS
+## 87   s3-da-p2-7-d                     BM, ACS
+## 88   s3-da-p2-8-d                     BM, ACS
+## 89  s3-ri-p2-13-d                   CM,MCB,PC
+## 90  s3-ri-p2-14-d                   CM,MCB,PC
+## 91  s1-da-a2-13-d                       CM,CR
+## 92  s1-da-a2-14-d                       CM,CR
+## 93  s1-du-p1-10-t                      BM, JM
+## 94  s1-du-p1-10-d                      BM, JM
+## 95   s1-du-r1-9-t                      BM, JM
+## 96   s1-ri-a2-6-d                      BM, AP
+## 97  s1-ri-a2-10-d                      BM, AP
+## 98  s1-ri-a2-11-d                      BM, AP
+## 99  s1-ri-a2-12-d                      BM, AP
+## 100 s1-ri-r1-11-t                  CM, DM, PC
+## 101 s1-ri-r1-11-d                  CM, DM, PC
+## 102 s1-va-a2-11-t                      BM, AP
+## 103 s1-va-a2-11-d                      BM, AP
+## 104  s2-ca-a2-1-t                      BM, CR
+## 105  s2-ca-a2-1-d                      BM, CR
+## 106  s2-ca-a2-2-t                      BM, CR
+## 107  s2-ca-a2-2-d                      BM, CR
+## 108  s2-ca-a2-9-t                      BM, CR
+## 109  s2-ca-a2-9-d                      BM, CR
+## 110 s2-ca-p2-13-t                  BO, RA, DM
+## 111 s2-ca-p2-13-d                  BO, RA, DM
+## 112 s2-du-p1-13-t                      BM, FM
+## 113 s2-du-p1-13-d                      BM, FM
+## 114  s2-du-r1-1-t                      BM, FM
+## 115  s2-du-r1-1-d                      BM, FM
+## 116  s2-du-r1-2-t                      BM, FM
+## 117  s2-du-r1-2-d                      BM, FM
+## 118  s2-du-r1-6-d                      BM, FM
+## 119  s2-du-r1-9-t                      BM, FM
+## 120  s2-du-r1-9-d                      BM, FM
+## 121 s2-du-r1-13-d                      BM, FM
+## 122 s2-ri-p2-10-t                     ACS, DM
+## 123 s2-ri-p2-10-d                     ACS, DM
+## 124  s2-va-p1-9-t                     BM, DvS
+## 125  s2-va-p1-9-d                     BM, DvS
+## 126  s3-du-a1-1-t     Miguel, Carlos, Marinka
+## 127  s3-du-a1-1-d     Miguel, Carlos, Marinka
+## 128  s3-du-a2-5-t     Miguel, Carlos, Marinka
+## 129  s3-du-a2-5-d     Miguel, Carlos, Marinka
+## 130  s3-du-a2-6-t     Miguel, Carlos, Marinka
+## 131  s3-du-a2-6-d     Miguel, Carlos, Marinka
+## 132  s3-du-p1-1-t                     BM, MJY
+## 133  s3-du-p1-1-d                     BM, MJY
+## 134 s3-du-p1-15-t                     BM, MJY
+## 135 s3-du-p1-15-d                     BM, MJY
+## 136  s3-du-r1-8-t                     BM, MJY
+## 137  s3-du-r1-8-d                     BM, MJY
+## 138 s3-du-r1-13-d                     BM, MJY
+## 139 s3-ri-a2-11-d                      BM, AP
+## 140  s3-ri-p1-4-d                      BM, AP
+## 141  s3-va-p2-9-t               MC, CR, MP,RC
+## 142  s3-va-p2-9-d               MC, CR, MP,RC
+## 143  s1-ca-r2-7-d                      DM, JM
+## 144  s1-ri-p2-7-d                  CM; DM; PC
+## 145  s2-ri-p2-1-d                     ACS, DM
+## 146  s2-ri-p2-5-d                     ACS, DM
+## 147  s2-ri-p2-9-d                     ACS, DM
+## 148 s2-va-r1-13-d                      CR, RC
+## 149 s3-ri-a1-10-d                  CM, MC, PC
+## 150 s3-ri-a1-11-d                  CM, MC, PC
+## 151 s3-ri-a1-12-d                  CM, MC, PC
+## 152 s1-cu-a1-10-d                BM, ACS,  RC
+## 153 s2-cu-r2-11-d                    AP, JJMP
+## 154 s2-cu-r2-14-d                    AP, JJMP
+## 155 s3-ca-r2-11-t Miguel, Nina, Lorena, Rania
+## 156 s3-ca-r2-11-d Miguel, Nina, Lorena, Rania
+## 157 s3-ca-r2-12-t Miguel, Nina, Lorena, Rania
+## 158 s3-ca-r2-12-d Miguel, Nina, Lorena, Rania
+## 159 s3-cu-p2-10-d                      CR, BO
+## 160  s3-ri-a1-7-t                  CM, MC, PC
+## 161  s3-ri-a1-7-d                  CM, MC, PC
+## 162 s3-ri-a1-10-d                  CM, MC, PC
+## 163 s3-ri-a1-11-d                  CM, MC, PC
+## 164 s3-ri-a1-12-d                  CM, MC, PC
 ##                                         flag
 ## 1                        suspicious duration
 ## 2                        suspicious duration
@@ -828,10 +602,10 @@ chamber_height</h2>
 ## 18                       suspicious duration
 ## 19                       suspicious duration
 ## 20                       suspicious duration
-## 21                       suspicious duration
+## 21                     suspiciously high CO2
 ## 22                     suspiciously high CO2
 ## 23                     suspiciously high CO2
-## 24                     suspiciously high CO2
+## 24                      suspiciously low CO2
 ## 25                      suspiciously low CO2
 ## 26                      suspiciously low CO2
 ## 27                      suspiciously low CO2
@@ -870,329 +644,108 @@ chamber_height</h2>
 ## 60                      suspiciously low CO2
 ## 61                      suspiciously low CO2
 ## 62                      suspiciously low CO2
-## 63                      suspiciously low CO2
+## 63                     suspiciously high CH4
 ## 64                     suspiciously high CH4
 ## 65                     suspiciously high CH4
-## 66                     suspiciously high CH4
-## 67                     suspiciously high CH4
-## 68                     suspiciously high CH4
-## 69                     suspiciously high CH4
-## 70                     suspiciously high CH4
-## 71                     suspiciously high CH4
-## 72                     suspiciously high CH4
-## 73                     suspiciously high CH4
-## 74                     suspiciously high CH4
-## 75                     suspiciously high CH4
-## 76                     suspiciously high CH4
-## 77                     suspiciously high CH4
-## 78                     suspiciously high CH4
-## 79                     suspiciously high CH4
-## 80                     suspiciously high CH4
-## 81                     suspiciously high CH4
-## 82                     suspiciously high CH4
-## 83                     suspiciously high CH4
-## 84                     suspiciously high CH4
-## 85                     suspiciously high CH4
-## 86                     suspiciously high CH4
-## 87                     suspiciously high CH4
-## 88                     suspiciously high CH4
-## 89                     suspiciously high CH4
-## 90                     suspiciously high CH4
-## 91                     suspiciously high CH4
-## 92                     suspiciously high CH4
-## 93                     suspiciously high CH4
-## 94                     suspiciously high CH4
-## 95                     suspiciously high CH4
-## 96                     suspiciously high CH4
-## 97                     suspiciously high CH4
-## 98                     suspiciously high CH4
-## 99                     suspiciously high CH4
-## 100                    suspiciously high CH4
-## 101                    suspiciously high CH4
-## 102                    suspiciously high CH4
-## 103                    suspiciously high CH4
-## 104                    suspiciously high CH4
-## 105                    suspiciously high CH4
-## 106                    suspiciously high CH4
-## 107                    suspiciously high CH4
-## 108                    suspiciously high CH4
-## 109                    suspiciously high CH4
-## 110                    suspiciously high CH4
-## 111                    suspiciously high CH4
-## 112                    suspiciously high CH4
-## 113                    suspiciously high CH4
-## 114                    suspiciously high CH4
-## 115                    suspiciously high CH4
-## 116                    suspiciously high CH4
-## 117                    suspiciously high CH4
-## 118                    suspiciously high CH4
-## 119                    suspiciously high CH4
-## 120                    suspiciously high CH4
-## 121                    suspiciously high CH4
-## 122                    suspiciously high CH4
-## 123                    suspiciously high CH4
-## 124                    suspiciously high CH4
-## 125                    suspiciously high CH4
-## 126                    suspiciously high CH4
-## 127                    suspiciously high CH4
-## 128                    suspiciously high CH4
-## 129                    suspiciously high CH4
-## 130                    suspiciously high CH4
-## 131                    suspiciously high CH4
-## 132                    suspiciously high CH4
-## 133                    suspiciously high CH4
-## 134                    suspiciously high CH4
-## 135                    suspiciously high CH4
-## 136                    suspiciously high CH4
-## 137                    suspiciously high CH4
-## 138                    suspiciously high CH4
-## 139                    suspiciously high CH4
-## 140                    suspiciously high CH4
-## 141                    suspiciously high CH4
-## 142                    suspiciously high CH4
-## 143                    suspiciously high CH4
-## 144                     suspiciously low CH4
-## 145                     suspiciously low CH4
-## 146                     suspiciously low CH4
-## 147                      NAs in water depths
-## 148                      NAs in water depths
-## 149                      NAs in water depths
-## 150                      NAs in water depths
-## 151                      NAs in water depths
-## 152                      NAs in water depths
-## 153                      NAs in water depths
-## 154                      NAs in water depths
-## 155                      NAs in water depths
-## 156                      NAs in water depths
-## 157                      NAs in water depths
-## 158                      NAs in water depths
-## 159                      NAs in water depths
-## 160                      NAs in water depths
-## 161                      NAs in water depths
-## 162                      NAs in water depths
-## 163                      NAs in water depths
-## 164                      NAs in water depths
-## 165                      NAs in water depths
-## 166                      NAs in water depths
-## 167                      NAs in water depths
-## 168                      NAs in water depths
-## 169                      NAs in water depths
-## 170                      NAs in water depths
-## 171                      NAs in water depths
-## 172             supsiciously low water depth
-## 173             supsiciously low water depth
-## 174             supsiciously low water depth
-## 175             supsiciously low water depth
-## 176             supsiciously low water depth
-## 177             supsiciously low water depth
-## 178             supsiciously low water depth
-## 179             supsiciously low water depth
-## 180             supsiciously low water depth
-## 181             supsiciously low water depth
-## 182             supsiciously low water depth
-## 183             supsiciously low water depth
-## 184             supsiciously low water depth
-## 185             supsiciously low water depth
-## 186             supsiciously low water depth
-## 187             supsiciously low water depth
-## 188             supsiciously low water depth
-## 189             supsiciously low water depth
-## 190             supsiciously low water depth
-## 191             supsiciously low water depth
-## 192             supsiciously low water depth
-## 193             supsiciously low water depth
-## 194             supsiciously low water depth
-## 195             supsiciously low water depth
-## 196             supsiciously low water depth
-## 197             supsiciously low water depth
-## 198             supsiciously low water depth
-## 199             supsiciously low water depth
-## 200             supsiciously low water depth
-## 201             supsiciously low water depth
-## 202             supsiciously low water depth
-## 203             supsiciously low water depth
-## 204             supsiciously low water depth
-## 205             supsiciously low water depth
-## 206             supsiciously low water depth
-## 207             supsiciously low water depth
-## 208             supsiciously low water depth
-## 209             supsiciously low water depth
-## 210             supsiciously low water depth
-## 211             supsiciously low water depth
-## 212             supsiciously low water depth
-## 213             supsiciously low water depth
-## 214             supsiciously low water depth
-## 215             supsiciously low water depth
-## 216             supsiciously low water depth
-## 217             supsiciously low water depth
-## 218             supsiciously low water depth
-## 219             supsiciously low water depth
-## 220             supsiciously low water depth
-## 221             supsiciously low water depth
-## 222             supsiciously low water depth
-## 223             supsiciously low water depth
-## 224                      No data logger info
-## 225                      No data logger info
-## 226                      No data logger info
-## 227                      No data logger info
-## 228                      No data logger info
-## 229                      No data logger info
-## 230                      No data logger info
-## 231                      No data logger info
-## 232                      No data logger info
-## 233                      No data logger info
-## 234                      No data logger info
-## 235                      No data logger info
-## 236                      No data logger info
-## 237                      No data logger info
-## 238                      No data logger info
-## 239                      No data logger info
-## 240                      No data logger info
-## 241                      No data logger info
-## 242                      No data logger info
-## 243                      No data logger info
-## 244                      No data logger info
-## 245                      No data logger info
-## 246                      No data logger info
-## 247                      No data logger info
-## 248                      No data logger info
-## 249                      No data logger info
-## 250                      No data logger info
-## 251                      No data logger info
-## 252                      No data logger info
-## 253                      No data logger info
-## 254                      No data logger info
-## 255                      No data logger info
-## 256                      No data logger info
-## 257                      No data logger info
-## 258                      No data logger info
-## 259                      No data logger info
-## 260                      No data logger info
-## 261                      No data logger info
-## 262                      No data logger info
-## 263                      No data logger info
-## 264                      No data logger info
-## 265                      No data logger info
-## 266                      No data logger info
-## 267                      No data logger info
-## 268                      No data logger info
-## 269                      No data logger info
-## 270                      No data logger info
-## 271                      No data logger info
-## 272                      No data logger info
-## 273                      No data logger info
-## 274                      No data logger info
-## 275                      No data logger info
-## 276                      No data logger info
-## 277                      No data logger info
-## 278                      No data logger info
-## 279                      No data logger info
-## 280                      No data logger info
-## 281                      No data logger info
-## 282                      No data logger info
-## 283                      No data logger info
-## 284                      No data logger info
-## 285                      No data logger info
-## 286                      No data logger info
-## 287                      No data logger info
-## 288                      No data logger info
-## 289                      No data logger info
-## 290                      No data logger info
-## 291                      No data logger info
-## 292                      No data logger info
-## 293                      No data logger info
-## 294                      No data logger info
-## 295                      No data logger info
-## 296                      No data logger info
-## 297                      No data logger info
-## 298                      No data logger info
-## 299                      No data logger info
-## 300                      No data logger info
-## 301                      No data logger info
-## 302                      No data logger info
-## 303                      No data logger info
-## 304                      No data logger info
-## 305                      No data logger info
-## 306                      No data logger info
-## 307                      No data logger info
-## 308                      No data logger info
-## 309                      No data logger info
-## 310                      No data logger info
-## 311                      No data logger info
-## 312                      No data logger info
-## 313                      No data logger info
-## 314                      No data logger info
-## 315                      No data logger info
-## 316                      No data logger info
-## 317                      No data logger info
-## 318                      No data logger info
-## 319                      No data logger info
-## 320                      No data logger info
-## 321                      No data logger info
-## 322                      No data logger info
-## 323                      No data logger info
-## 324                      No data logger info
-## 325                      No data logger info
-## 326                      No data logger info
-## 327                      No data logger info
-## 328                      No data logger info
-## 329                      No data logger info
-## 330                      No data logger info
-## 331                      No data logger info
-## 332                      No data logger info
-## 333                      No data logger info
-## 334                      No data logger info
-## 335                      No data logger info
-## 336                      No data logger info
-## 337                      No data logger info
-## 338                      No data logger info
-## 339                      No data logger info
-## 340 floating chamber used outside open water
-## 341 floating chamber used outside open water
-## 342 floating chamber used outside open water
-## 343 floating chamber used outside open water
-## 344 floating chamber used outside open water
-## 345 floating chamber used outside open water
-## 346 floating chamber used outside open water
-## 347 floating chamber used outside open water
-## 348 floating chamber used outside open water
-## 349 floating chamber used outside open water
-## 350 floating chamber used outside open water
-## 351 floating chamber used outside open water
-## 352 floating chamber used outside open water
-## 353 floating chamber used outside open water
-## 354 floating chamber used outside open water
-## 355 floating chamber used outside open water
-## 356 floating chamber used outside open water
-## 357 floating chamber used outside open water
-## 358 floating chamber used outside open water
-## 359 floating chamber used outside open water
-## 360 floating chamber used outside open water
-## 361 floating chamber used outside open water
-## 362                     wrong XY coordinates
-## 363                     wrong XY coordinates
-## 364                     wrong XY coordinates
-## 365                     wrong XY coordinates
-## 366                     wrong XY coordinates
-## 367                     wrong XY coordinates
-## 368                     wrong XY coordinates
-## 369                     wrong XY coordinates
-## 370                     wrong XY coordinates
-## 371                     wrong XY coordinates
-## 372                     wrong XY coordinates
-## 373                     wrong XY coordinates
-## 374                     wrong XY coordinates
-## 375                     wrong XY coordinates
-## 376                     wrong XY coordinates
-## 377                     wrong XY coordinates
-## 378                     wrong XY coordinates
-## 379                     wrong XY coordinates
-## 380                     wrong XY coordinates
-## 381                     wrong XY coordinates
-## 382                     wrong XY coordinates
-## 383                     wrong XY coordinates
-## 384                     wrong XY coordinates
-## 385                     wrong XY coordinates</code></pre>
+## 66                       NAs in water depths
+## 67                       NAs in water depths
+## 68                       NAs in water depths
+## 69                       NAs in water depths
+## 70                       NAs in water depths
+## 71                       NAs in water depths
+## 72                       NAs in water depths
+## 73                       NAs in water depths
+## 74                       NAs in water depths
+## 75                       NAs in water depths
+## 76                       NAs in water depths
+## 77                       NAs in water depths
+## 78                       NAs in water depths
+## 79                       NAs in water depths
+## 80                       NAs in water depths
+## 81                       NAs in water depths
+## 82                       NAs in water depths
+## 83                       NAs in water depths
+## 84                       NAs in water depths
+## 85                       NAs in water depths
+## 86                       NAs in water depths
+## 87                       NAs in water depths
+## 88                       NAs in water depths
+## 89                       NAs in water depths
+## 90                       NAs in water depths
+## 91              supsiciously low water depth
+## 92              supsiciously low water depth
+## 93              supsiciously low water depth
+## 94              supsiciously low water depth
+## 95              supsiciously low water depth
+## 96              supsiciously low water depth
+## 97              supsiciously low water depth
+## 98              supsiciously low water depth
+## 99              supsiciously low water depth
+## 100             supsiciously low water depth
+## 101             supsiciously low water depth
+## 102             supsiciously low water depth
+## 103             supsiciously low water depth
+## 104             supsiciously low water depth
+## 105             supsiciously low water depth
+## 106             supsiciously low water depth
+## 107             supsiciously low water depth
+## 108             supsiciously low water depth
+## 109             supsiciously low water depth
+## 110             supsiciously low water depth
+## 111             supsiciously low water depth
+## 112             supsiciously low water depth
+## 113             supsiciously low water depth
+## 114             supsiciously low water depth
+## 115             supsiciously low water depth
+## 116             supsiciously low water depth
+## 117             supsiciously low water depth
+## 118             supsiciously low water depth
+## 119             supsiciously low water depth
+## 120             supsiciously low water depth
+## 121             supsiciously low water depth
+## 122             supsiciously low water depth
+## 123             supsiciously low water depth
+## 124             supsiciously low water depth
+## 125             supsiciously low water depth
+## 126             supsiciously low water depth
+## 127             supsiciously low water depth
+## 128             supsiciously low water depth
+## 129             supsiciously low water depth
+## 130             supsiciously low water depth
+## 131             supsiciously low water depth
+## 132             supsiciously low water depth
+## 133             supsiciously low water depth
+## 134             supsiciously low water depth
+## 135             supsiciously low water depth
+## 136             supsiciously low water depth
+## 137             supsiciously low water depth
+## 138             supsiciously low water depth
+## 139             supsiciously low water depth
+## 140             supsiciously low water depth
+## 141             supsiciously low water depth
+## 142             supsiciously low water depth
+## 143 floating chamber used outside open water
+## 144 floating chamber used outside open water
+## 145 floating chamber used outside open water
+## 146 floating chamber used outside open water
+## 147 floating chamber used outside open water
+## 148 floating chamber used outside open water
+## 149 floating chamber used outside open water
+## 150 floating chamber used outside open water
+## 151 floating chamber used outside open water
+## 152                     wrong XY coordinates
+## 153                     wrong XY coordinates
+## 154                     wrong XY coordinates
+## 155                     wrong XY coordinates
+## 156                     wrong XY coordinates
+## 157                     wrong XY coordinates
+## 158                     wrong XY coordinates
+## 159                     wrong XY coordinates
+## 160                     wrong XY coordinates
+## 161                     wrong XY coordinates
+## 162                     wrong XY coordinates
+## 163                     wrong XY coordinates
+## 164                     wrong XY coordinates</code></pre>
 </div>
 
 
