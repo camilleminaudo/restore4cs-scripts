@@ -39,7 +39,10 @@ source(paste0(dirname(dirname(rstudioapi::getSourceEditorContext()$path)),"/func
 source(paste0(dirname(dirname(rstudioapi::getSourceEditorContext()$path)),"/functions/read_GHG_fieldsheets.R"))
 
 # set directories
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
+
+dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" #Miguel's dropbox dir
+# dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" #Camille's dropbox dir
+
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
 ```
