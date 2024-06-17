@@ -43,7 +43,7 @@ for (f in files.sources){source(f)}
 # SPECIFY HERE YOUR NAME
 username <- "Camille"
 
-nb_draw <- 5
+nb_draw <- 10
 
 ############################
 
@@ -54,9 +54,10 @@ dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" #
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 loggerspath <- paste0(datapath,"/RAW Data Logger")
-plots_path <- paste0(dropbox_root,"/GHG/Processed data/plots_all_incubations/")
+plots_path <- "C:/Users/Camille Minaudo/OneDrive - Universitat de Barcelona/Documentos/PROJECTS/RESTORE4Cs/GHG_expert_vs_automated/plots/"
+results_path <- "C:/Users/Camille Minaudo/OneDrive - Universitat de Barcelona/Documentos/PROJECTS/RESTORE4Cs/GHG_expert_vs_automated/results/"
+
 RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
-results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
 
 # ----- Data pre-processing and harmonization -----
@@ -80,8 +81,6 @@ read_map_incubations <- function(path2folder){
   my_maps_filenames <- list.files(path2folder, pattern = ".csv", all.files = T, full.names = T, recursive = T)
   i <- grep(pattern = "Picarro", x = my_maps_filenames) # selecting the files corresponding to the Picarro only
   my_maps_filenames <- my_maps_filenames[i]
-  # i <- grep(pattern = sampling, x = my_maps_filenames) # selecting the files corresponding to the selected sampling campaign
-  # my_maps_filenames <- my_maps_filenames[i]
   
   
   isF <- T
@@ -141,7 +140,7 @@ if(sum(is.na(corresponding_row))>0){
 if(sum(is.na(corresponding_row))>0){
   ind_NAs <- which(is.na(corresponding_row))
   message("Could not find a corresponding incubation map for the following incubations:")
-  fieldsheet_Picarro$UniqueID[ind_NAs]
+  fieldsheet_Picarro$uniqID[ind_NAs]
   # removing rows from fieldsheet_Picarro with missing correspondance
   fieldsheet_Picarro <- fieldsheet_Picarro[-ind_NAs,]
   corresponding_row <- corresponding_row[-ind_NAs]
@@ -193,7 +192,7 @@ fieldsheet <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
 fieldsheet$unix_start <- fieldsheet$unix_start+30
 fieldsheet$unix_stop <- fieldsheet$unix_stop-30
 
-# recalculating start and stop in propre formats
+# recalculating start and stop in proper formats
 fieldsheet$timestamp_start <- as.POSIXct(fieldsheet$unix_start, tz = "UTC", origin = "1970-01-01")
 fieldsheet$timestamp_stop <- as.POSIXct(fieldsheet$unix_stop, tz = "UTC", origin = "1970-01-01")
 
@@ -305,6 +304,8 @@ for (i in seq_along(table_draw$draw)){
   my_incub <- mydata[as.numeric(mydata$POSIX.time)> corresp_fs$unix_start &
                        as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop,]
   my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
+  my_incub <- my_incub[which(my_incub$CO2dry_ppm>0),]
+  my_incub <- my_incub[,c("POSIX.time","CO2dry_ppm","CH4dry_ppb","H2O_ppm","CO2_prec","CH4_prec","H2O_prec")]
   
   if (dim(my_incub)[1]>0){
     
@@ -332,7 +333,8 @@ for (i in seq_along(table_draw$draw)){
     # requires start.time and UniqueID.
     # start.time must be in the format "%Y-%m-%d %H:%M:%S"
     
-    auxfile_tmp <- data.frame(subsite = subsite,
+    auxfile_tmp <- data.frame(username = username,
+                              subsite = subsite,
                               UniqueID = corresp_fs$uniqID,
                               gas_analiser = gs,
                               start.time = as.POSIXct((corresp_fs$unix_start), tz = "UTC"),
@@ -348,10 +350,10 @@ for (i in seq_along(table_draw$draw)){
     
     if(is.null(auxfile)){
       auxfile <- auxfile_tmp
-      mydata_all <- mydata
+      mydata_all <- my_incub
     } else {
       auxfile <- rbind(auxfile, auxfile_tmp)
-      mydata_all <- rbind(mydata_all, mydata)
+      mydata_all <- rbind(mydata_all, my_incub)
     }
     rm(mydata)
     
@@ -383,11 +385,11 @@ mydata_manID <- lapply(seq_along(mydata_ow), click.peak.loop,
 mydata_manID <- mydata_manID %>%
   left_join(auxfile %>% select(username, UniqueID, Area, Vtot, Tcham, Pcham))
 
+
 # Add instrument precision for each gas
-prec = c(3.5, 0.6, 0.4, 45, 45)
 mydata_manID <- mydata_manID %>%
-  mutate(CO2_prec = prec[1], CH4_prec = prec[2], N2O_prec = prec[3],
-         H2O_prec = prec[4])
+  mutate(CO2_prec = first(mydata_all$CO2_prec), CH4_prec = first(mydata_all$CH4_prec), 
+         N2O_prec = first(mydata_all$N2O_prec), H2O_prec = first(mydata_all$H2O_prec))
 
 
 # Calculate fluxes
@@ -403,16 +405,6 @@ CO2_flux_res_manID <- best.flux(CO2_results_manID, criteria)
 H2O_flux_res_manID <- best.flux(H2O_results_manID, criteria)
 CH4_flux_res_manID <- best.flux(CH4_results_manID, criteria)
 
-# CO2_flux_res_manID <- CO2_flux_res_manID %>%
-#   left_join(myauxfile %>% select(UniqueID, strata, chamberType, lightCondition))
-
-
-# Plots results
-# Make a list of plots of all measurements, for each gastype
-# CO2_flux_plots <- flux.plot(CO2_flux_res_manID, mydata_manID, "CO2dry_ppm")
-# H2O_flux_plots <- flux.plot(H2O_flux_res_manID, mydata_manID, "H2O_ppm")
-# CH4_flux_plots <- flux.plot(CH4_flux_res_manID, mydata_manID, "CH4dry_ppb")
-
 # ----------- Compute fluxes blindly without any manual selection
 
 mydata_ow <- obs.win(inputfile = mydata_all, auxfile = myauxfile,
@@ -427,10 +419,10 @@ mydata_auto <- mydata_auto %>%
   left_join(myauxfile %>% select(username, UniqueID, Area, Vtot, Tcham, Pcham))
 
 # Add instrument precision for each gas
-prec = c(3.5, 0.6, 0.4, 45, 45)
 mydata_auto <- mydata_auto %>%
-  mutate(CO2_prec = prec[1], CH4_prec = prec[2], N2O_prec = prec[3],
-         H2O_prec = prec[4])
+  mutate(CO2_prec = first(mydata_all$CO2_prec), CH4_prec = first(mydata_all$CH4_prec), 
+         N2O_prec = first(mydata_all$N2O_prec), H2O_prec = first(mydata_all$H2O_prec))
+
 
 # Calculate fluxes
 CO2_results_auto <- goFlux(dataframe = mydata_auto, gastype = "CO2dry_ppm")
@@ -481,7 +473,7 @@ for (i in seq_along(auxfile$subsite)){
                              as.numeric(mydata_all$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
     my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
     # calling dedicated function
-    df_ebull <- separate_ebullition_from_diffusion(my_incub = my_incub, UniqueID = auxfile$UniqueID[i])
+    df_ebull <- separate_ebullition_from_diffusion(my_incub = my_incub, UniqueID = auxfile$UniqueID[i], doPlot = T)
     # computing fluxes
     H2O_mol = my_incub$H2O_ppm / (1000*1000)
     myfluxterm <- flux.term(auxfile$Vtot[i], auxfile$Pcham[i], auxfile$Area[i],
@@ -510,13 +502,15 @@ for (i in seq_along(auxfile$subsite)){
 myCH4_diffusion <- lapply(seq_along(mydata_ow), click.peak.loop,
                           flux.unique = mydata_ow,
                           gastype = "CH4dry_ppb",
-                          plot.lim = c(1900,max(fieldsheet$final_ch4)*1000)) %>%
+                          plot.lim = c(1900,max(fieldsheet$final_ch4, na.rm = T)*1000)) %>%
   map_df(., ~as.data.frame(.x))
 
-
+# Add instrument precision for each gas
 myCH4_diffusion <- myCH4_diffusion %>%
-  mutate(CO2_prec = prec[1], CH4_prec = prec[2], N2O_prec = prec[3],
-         H2O_prec = prec[4])
+  mutate(CO2_prec = first(mydata_all$CO2_prec), CH4_prec = first(mydata_all$CH4_prec), 
+         N2O_prec = first(mydata_all$N2O_prec), H2O_prec = first(mydata_all$H2O_prec))
+
+
 
 
 # Calculate fluxes for CH4
@@ -564,12 +558,19 @@ table_results$username <- username
 table_results_ebull <- rbind(CH4_res_meth1, CH4_res_meth2)
 table_results_ebull$username <- username
 
+
+mytimestamp <- Sys.time() 
+table_results$timestamp_processing <- mytimestamp # to keep a track of when the processing was done and ease data analysis in case an incubation is processed multiple times
+table_results_ebull$timestamp_processing <- mytimestamp 
+
 # saving fluxes estimates
 setwd(results_path)
 
 append_if_exists <- function(filename, data){
   if(file.exists(filename)){
     data <- rbind(read.csv(filename), data)
+    write.csv(x = data, file = filename, 
+              row.names = F)
   } else {
     write.csv(x = data, file = filename, 
               row.names = F)
@@ -579,11 +580,11 @@ append_if_exists <- function(filename, data){
 
 
 filename <- paste0("BLIND_vs_EXPERT_co2_ch4_fluxes_",Sys.Date(),".csv")
-table_results <- append_if_exists(filename, data = table_results)
+table_results_all <- append_if_exists(filename, data = table_results)
 
 
 filename <- paste0("BLIND_vs_EXPERT_ch4_ebullition_",Sys.Date(),".csv")
-table_results_ebull <- append_if_exists(filename, data = table_results_ebull)
+table_results_ebull_all <- append_if_exists(filename, data = table_results_ebull)
 
 
 
@@ -604,7 +605,7 @@ p_auto_vs_manual <- ggplot(data = table_results)+
 
 p_auto_vs_manual
 ggsave(filename = paste0("BLIND_vs_EXPERT_co2_ch4_fluxes_",Sys.Date(),".jpeg"), 
-       plot = p_auto_vs_manual, path = results_path, width = 10, height = 10, units = 'in', dpi = 300)
+       plot = p_auto_vs_manual, path = plots_path, width = 10, height = 10, units = 'in', dpi = 300)
 
 
 p_auto_vs_manual_ch4_ebullition <- ggplot(data = table_results_ebull)+
@@ -619,12 +620,12 @@ p_auto_vs_manual_ch4_ebullition <- ggplot(data = table_results_ebull)+
 
 p_auto_vs_manual_ch4_ebullition
 ggsave(filename = paste0("BLIND_vs_EXPERT_ch4_ebullition_",Sys.Date(),".jpeg"), 
-       plot = p_auto_vs_manual_ch4_ebullition, path = results_path, width = 10, height = 10, units = 'in', dpi = 300)
+       plot = p_auto_vs_manual_ch4_ebullition, path = plots_path, width = 10, height = 10, units = 'in', dpi = 300)
 
 
 
 
-table_results_sprd_CO2  <- table_results[table_results$variable=="CO2",c("UniqueID","flux_method","best.flux")] %>%
+table_results_sprd_CO2  <- table_results[table_results$variable=="CO2",c("UniqueID","flux_method","best.flux","timestamp_processing")] %>%
   pivot_wider(names_from = flux_method, values_from = c(best.flux))
 
 median((table_results_sprd_CO2$Blind-table_results_sprd_CO2$Expert)/table_results_sprd_CO2$Expert*100, na.rm = T)
@@ -642,7 +643,7 @@ ggplot(data = table_results_sprd_CO2)+
 ggplot(table_results_sprd_CO2, aes((Blind-Expert)/Expert*100))+geom_density()
 
 
-table_results_sprd_CH4  <- table_results[table_results$variable=="CH4",c("UniqueID","flux_method","best.flux")] %>%
+table_results_sprd_CH4  <- table_results[table_results$variable=="CH4",c("UniqueID","flux_method","best.flux","timestamp_processing")] %>%
   pivot_wider(names_from = flux_method, values_from = c(best.flux))
 
 median((table_results_sprd_CH4$Blind-table_results_sprd_CH4$Expert)/table_results_sprd_CH4$Expert*100, na.rm = T)
@@ -690,8 +691,25 @@ p_auto_vs_manual <- ggplot(data = table_results_all)+
 
 p_auto_vs_manual
 
-ggsave(filename = "BLIND_vs_EXPERT_co2_ch4_all.jpeg", plot = p_auto_vs_manual, path = results_path, width = 10, height = 10, units = 'in', dpi = 300)
+ggsave(filename = "BLIND_vs_EXPERT_co2_ch4_all.jpeg", plot = p_auto_vs_manual, path = plots_path, width = 10, height = 10, units = 'in', dpi = 300)
 
+
+
+
+table_results_sprd <- table_results_all[,c("variable","UniqueID","flux_method","best.flux","timestamp_processing")] %>%
+  pivot_wider(names_from = flux_method, values_from = c(best.flux))
+
+ggplot(data = table_results_sprd)+
+  # geom_abline(slope = 0,intercept = 0, color = 'lightgrey')+
+  # geom_segment(data = data.frame(UniqueID = CO2_flux_res_auto$UniqueID,
+  #                                meth1 = CO2_flux_res_auto$best.flux,
+  #                                meth2 = CO2_flux_res_manID$best.flux), aes(x=UniqueID, xend=UniqueID, y = meth1, yend = meth2), linewidth=1, alpha = 0.5)+
+  geom_violin(aes(variable,abs((Blind-Expert)/Expert)*100), alpha = 0.5)+
+  geom_jitter(aes(variable,abs((Blind-Expert)/Expert)*100), alpha = 0.5, width=0.2)+
+  ylab("CO2 flux relative difference [%]")+
+  theme_bw()+
+  scale_y_log10()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 
 
@@ -712,7 +730,7 @@ for (f in list_f){
 
 
 
-p_auto_vs_manual_ch4_ebullition <- ggplot(data = table_results_ebull)+
+p_auto_vs_manual_ch4_ebullition <- ggplot(data = table_results_all)+
   geom_abline(slope = 0,intercept = 0, color = 'lightgrey')+
   geom_segment(data = data.frame(UniqueID = CH4_res_meth1$UniqueID,
                                  meth1 = CH4_res_meth1$ebullition,
@@ -723,7 +741,7 @@ p_auto_vs_manual_ch4_ebullition <- ggplot(data = table_results_ebull)+
   theme_bw()+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_colour_viridis_d(begin = 0.1, end = 0.9, option = "F")+coord_flip()
 
 p_auto_vs_manual_ch4_ebullition
-ggsave(filename = "BLIND_vs_EXPERT_ch4_ebullition_all.jpeg", plot = p_auto_vs_manual_ch4_ebullition, path = results_path, width = 10, height = 6, units = 'in', dpi = 300)
+ggsave(filename = "BLIND_vs_EXPERT_ch4_ebullition_all.jpeg", plot = p_auto_vs_manual_ch4_ebullition, path = plots_path, width = 10, height = 6, units = 'in', dpi = 300)
 
 
 

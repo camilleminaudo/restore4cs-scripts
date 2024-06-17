@@ -48,7 +48,12 @@ read_GHG_fieldsheets <- function(myfieldsheets_list){
   fieldsheet$initial_ch4 <- as.numeric(fieldsheet$initial_ch4)
   fieldsheet$final_ch4 <- as.numeric(fieldsheet$final_ch4)
   
-  fieldsheet$uniqID <- tolower(paste(fieldsheet$subsite,fieldsheet$plot_id,substr(fieldsheet$transparent_dark, 1, 1), sep = "-"))
+  fieldsheet$uniqID <- tolower(paste(fieldsheet$subsite,
+                                     fieldsheet$plot_id,
+                                     substr(fieldsheet$strata, 1, 1),
+                                     substr(fieldsheet$transparent_dark, 1, 1), 
+                                     substr(fieldsheet$start_time, 1, 5),
+                                     sep = "-"))
   
   return(fieldsheet)
 }

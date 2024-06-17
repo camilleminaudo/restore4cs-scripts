@@ -41,13 +41,11 @@ for (f in files.sources){source(f)}
 
 
 #################################
-sampling <- "S1"
+sampling <- "S3"
 # USER, please specify if you want plots to be saved
 harmonize2RData <- F
 doPlot <- T
 #################################
-
-
 
 # ---- Directories ----
 dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
@@ -191,7 +189,7 @@ fieldsheet <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
 fieldsheet$unix_start <- fieldsheet$unix_start+30
 fieldsheet$unix_stop <- fieldsheet$unix_stop-30
 
-# recalculating start and stop in propre formats
+# recalculating start and stop in proper formats
 fieldsheet$timestamp_start <- as.POSIXct(fieldsheet$unix_start, tz = "UTC", origin = "1970-01-01")
 fieldsheet$timestamp_stop <- as.POSIXct(fieldsheet$unix_stop, tz = "UTC", origin = "1970-01-01")
 
@@ -295,13 +293,13 @@ if(harmonize2RData){
     
     # create separate folders for each subsite where data actually exists
     for (subsite in list_subsites_Licor){
-      corresponding_date <- unique(fieldsheet_Licor$date[fieldsheet_Licor$subsite == subsite])
+      corresponding_date <- as.Date(unique(fieldsheet_Licor$date[fieldsheet_Licor$subsite == subsite]))
       
       # check if we already have this data somewhere in the clean file
-      n_lines_d <- length(mydata_imp$DATE[mydata_imp$DATE == corresponding_date])
+      n_lines_d <- dim(mydata_imp[which(as.Date(mydata_imp$POSIX.time) == corresponding_date),])[1]
       if(n_lines_d > 0){
         message(paste0("... there is some data to store for subsite ",subsite))
-        mydata <- mydata_imp[mydata_imp$DATE == corresponding_date,]
+        mydata <- mydata_imp[as.Date(mydata_imp$POSIX.time) == corresponding_date,]
         
         setwd(RData_path)
         # save this dataframe as a new RData file

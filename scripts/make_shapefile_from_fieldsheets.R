@@ -38,6 +38,8 @@ dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/" 
 sampling <- "S3"
 #################################
 
+# ---- Read fieldsheets ----
+
 # list files in Dropbox
 f <- list.files(dropbox_root, pattern = "Fieldsheet", all.files = T, full.names = T, recursive = T)
 i <- grep(pattern = ".xlsx", x = f)
