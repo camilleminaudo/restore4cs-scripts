@@ -98,7 +98,7 @@ click.peak <- function(flux.unique, gastype, sleep = 3,
 
   # Plot individual measurements
   plot(flux.meas ~ time.meas,
-       main = paste(unique(flux.unique$UniqueID)),
+       main = paste("Please select =>", gastype, unique(flux.unique$UniqueID), sep = " "),
        xlab = "Time", ylab = gastype, xaxt = 'n',
        ylim = c(yaxis.limit.min, yaxis.limit.max))
   axis.POSIXct(1, at = seq(min(time.meas), max(time.meas), by = "10 secs"), format = "%H:%M:%S")
@@ -137,10 +137,12 @@ click.peak <- function(flux.unique, gastype, sleep = 3,
   # Inspect the full data set to see if it looks OK
   dev.new(noRStudioGD = TRUE, width = 14, height = 8)
   plot(flux.meas ~ flux.corr$Etime, col = flux.corr$flag+1,
-       main = paste(unique(flux.corr$UniqueID)),
+       main = paste("Your selection =>", gastype, unique(flux.unique$UniqueID), sep = " "),
        xlab = "Etime", ylab = gastype, xaxp = c(-60, 300, 12),
        ylim = c(yaxis.limit.min, yaxis.limit.max))
-  abline(h = c0)
+  #add line of best fit to scatter plot
+  abline(lm(flux.meas ~ flux.corr$Etime))
+  abline(lm(flux.meas[flux.corr$flag==1] ~ flux.corr$Etime[flux.corr$flag==1]), col="red")
 
   # Wait a few seconds before closing the window to inspect the plot
   sleeploop(sleep)
