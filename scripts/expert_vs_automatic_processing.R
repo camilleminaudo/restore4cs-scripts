@@ -70,8 +70,7 @@ auxfile$start.time <- as.POSIXct(auxfile$start.time, tz = 'UTC')
 # ----- Random draw of incubations -----
 
 # draw a few incubations randomly
-draw <- sample(seq_along(auxfile$subsite), nb_draw)
-
+draw <- sample(seq_along(auxfile$subsite), nb_draw) 
 
 table_draw <- data.frame(username = username,
                          draw = draw,
@@ -80,6 +79,8 @@ table_draw <- data.frame(username = username,
 
 myauxfile <- auxfile[draw,]
 myauxfile$username <- username
+
+# myauxfile<- auxfile[626,] # which(auxfile$UniqueID=="s3-va-a2-1-o-d-08:11")
 
 # ---- Load incubation timeseries ----
 
@@ -227,15 +228,16 @@ CH4_res_meth1$total_estimated <- NA
 CH4_res_meth1$ebullition <- NA
 CH4_res_meth1$diffusion <- NA
 
+uniqIDs <- table_draw$UniqueID[which(table_draw$end.time_expert_co2-table_draw$start.time_expert_co2 > 100)]
 
-for (i in seq_along(table_draw$UniqueID[which(table_draw$end.time_expert_co2-table_draw$start.time_expert_co2 > 100)])){
-  my_myauxfile <- myauxfile[myauxfile$UniqueID==table_draw$UniqueID[i],]
+for (i in seq_along(uniqIDs)){
+  my_myauxfile <- myauxfile[myauxfile$UniqueID==uniqIDs[i],]
   
-  my_incub <- mydata_all[as.numeric(mydata_all$POSIX.time)> table_draw$start.time_expert_co2[i] &
-                           as.numeric(mydata_all$POSIX.time)< table_draw$end.time_expert_co2[i],]
+  my_incub <- mydata_all[which(as.numeric(mydata_all$POSIX.time)> table_draw$start.time_expert_co2[i] &
+                           as.numeric(mydata_all$POSIX.time)< table_draw$end.time_expert_co2[i]),]
   my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
   # calling dedicated function
-  df_ebull <- separate_ebullition_from_diffusion(my_incub = my_incub, UniqueID = table_draw$UniqueID[i], doPlot = T)
+  df_ebull <- separate_ebullition_from_diffusion(my_incub = my_incub, UniqueID = uniqIDs[i], doPlot = T)
   # computing fluxes
   H2O_mol = my_incub$H2O_ppm / (1000*1000)
   myfluxterm <- flux.term(my_myauxfile$Vtot, my_myauxfile$Pcham, my_myauxfile$Area,
@@ -244,13 +246,10 @@ for (i in seq_along(table_draw$UniqueID[which(table_draw$end.time_expert_co2-tab
   CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
   CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
   
-  CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==table_draw$UniqueID[i])] <- CH4_flux_total
-  CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==table_draw$UniqueID[i])] <- CH4_flux_ebull
-  CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==table_draw$UniqueID[i])] <- CH4_flux_diff
+  CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==uniqIDs[i])] <- CH4_flux_total
+  CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==uniqIDs[i])] <- CH4_flux_ebull
+  CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==uniqIDs[i])] <- CH4_flux_diff
 }
-
-
-
 
 
 

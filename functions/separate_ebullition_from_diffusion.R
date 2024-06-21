@@ -13,7 +13,10 @@
 separate_ebullition_from_diffusion <- function(my_incub, UniqueID, doPlot){
   mych4 <- data.frame(time = as.numeric(my_incub$POSIX.time-my_incub$POSIX.time[1]),
                       ch4 = my_incub$CH4dry_ppb)
-  mych4$ch4smooth <- smooth.spline(x = mych4$time, y = mych4$ch4, nknots = round(max(mych4$time)/3), spar = 0.6)$y
+  
+  ch4smooth <- smooth.spline(x = mych4$time, y = mych4$ch4, nknots = round(max(mych4$time)/3), spar = 0.6)
+  
+  mych4$ch4smooth <- approx(ch4smooth$x, ch4smooth$y, xout = mych4$time, rule = 2)$y 
   
   # compute first derivative
   mych4$dydt <- get_dxdy(mych4$time, mych4$ch4smooth)
