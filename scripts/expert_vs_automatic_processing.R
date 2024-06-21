@@ -17,13 +17,23 @@ cat("/014") # clear console
 #library(devtools)
 #install_github("Qepanna/goFlux")
 
+
+############### ------- SETTINGS ------- ##################
+
+# SPECIFY HERE YOUR NAME
+username <- "Camille"
+
+# You have to make sure this is pointing to the write folder on your local machine
+dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" 
+
+#---------------------------------------------------------#
+nb_draw <- 10
+
 # ---- packages ----
 library(tidyverse)
-library(readxl)
 library(lubridate)
 library(zoo)
 library(ggplot2)
-library(grid)
 library(egg)
 library(goFlux)
 require(dplyr)
@@ -31,24 +41,11 @@ require(purrr)
 require(msm)
 require(data.table)
 require(tools)
-
 require(pbapply)
 
 repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
 files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
 for (f in files.sources){source(f)}
-
-
-#################################
-# SPECIFY HERE YOUR NAME
-username <- "Camille"
-
-nb_draw <- 10
-
-# You have to make sure this is pointing to the write folder on your local machine
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" 
-
-############################
 
 
 # ---- Directories ----
@@ -231,7 +228,7 @@ CH4_res_meth1$ebullition <- NA
 CH4_res_meth1$diffusion <- NA
 
 
-for (i in seq_along(table_draw$UniqueID)){
+for (i in seq_along(table_draw$UniqueID[which(table_draw$end.time_expert_co2-table_draw$start.time_expert_co2 > 100)])){
   my_myauxfile <- myauxfile[myauxfile$UniqueID==table_draw$UniqueID[i],]
   
   my_incub <- mydata_all[as.numeric(mydata_all$POSIX.time)> table_draw$start.time_expert_co2[i] &
@@ -359,160 +356,23 @@ table_draw_all <- append_if_exists(filename, data = table_draw)
 
 
 
-#----- some plots for the incubations processed in the current session -----
+#----- some plot for the incubations processed in the current session -----
 
 
-
-p_auto_vs_manual <- ggplot(data = table_results)+
+ggplot(data = table_results)+
   geom_abline(slope = 0,intercept = 0, color = 'black')+
-  # geom_segment(data = data.frame(UniqueID = CO2_flux_res_auto$UniqueID,
-  #                                meth1 = CO2_flux_res_auto$best.flux,
-  #                                meth2 = CO2_flux_res_manID$best.flux), aes(x=UniqueID, xend=UniqueID, y = meth1, yend = meth2), linewidth=1, alpha = 0.5)+
-  # aes(x=reorder(X_Variable, -Y_Variable, FUN=mean), y=Y_Variable)
   geom_point(aes(reorder(UniqueID, -best.flux, FUN=mean), best.flux, colour = flux_method), size=4, alpha = 0.5)+
-  ylab("flux [(mmolCO2 or nmolCH4)/m2/s]")+
-  theme_bw()+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
-  scale_colour_viridis_d(begin = 0.1, end = 0.9, option = "F")+facet_grid(.~variable, scales = 'free')+coord_flip()
-
-p_auto_vs_manual
-ggsave(filename = paste0("BLIND_vs_EXPERT_co2_ch4_fluxes_",Sys.Date(),".jpeg"), 
-       plot = p_auto_vs_manual, path = plots_path, width = 10, height = 10, units = 'in', dpi = 300)
-
-
-p_auto_vs_manual_ch4_ebullition <- ggplot(data = table_results_ebull)+
-  geom_abline(slope = 0,intercept = 0, color = 'lightgrey')+
-  geom_segment(data = data.frame(UniqueID = CH4_res_meth1$UniqueID,
-                                 meth1 = CH4_res_meth1$ebullition,
-                                 meth2 = CH4_res_meth2$ebullition), aes(x=UniqueID, xend=UniqueID, y = meth1, yend = meth2), linewidth=1, alpha = 0.5)+
-  geom_point(aes(reorder(UniqueID, -ebullition, FUN=mean), ebullition, colour = flux_method), size=4, alpha = 0.5)+
-  
-  ylab("ebullition component [nmol/m2/s]")+
-  theme_bw()+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_colour_viridis_d(begin = 0.1, end = 0.9, option = "F")+coord_flip()
-
-p_auto_vs_manual_ch4_ebullition
-ggsave(filename = paste0("BLIND_vs_EXPERT_ch4_ebullition_",Sys.Date(),".jpeg"), 
-       plot = p_auto_vs_manual_ch4_ebullition, path = plots_path, width = 10, height = 10, units = 'in', dpi = 300)
-
-
-
-
-table_results_sprd_CO2  <- table_results[table_results$variable=="CO2",c("UniqueID","flux_method","best.flux","timestamp_processing")] %>%
-  pivot_wider(names_from = flux_method, values_from = c(best.flux))
-
-median((table_results_sprd_CO2$Blind-table_results_sprd_CO2$Expert)/table_results_sprd_CO2$Expert*100, na.rm = T)
-
-ggplot(data = table_results_sprd_CO2)+
-  geom_abline(slope = 0,intercept = 0, color = 'lightgrey')+
-  # geom_segment(data = data.frame(UniqueID = CO2_flux_res_auto$UniqueID,
-  #                                meth1 = CO2_flux_res_auto$best.flux,
-  #                                meth2 = CO2_flux_res_manID$best.flux), aes(x=UniqueID, xend=UniqueID, y = meth1, yend = meth2), linewidth=1, alpha = 0.5)+
-  geom_point(aes(UniqueID, (Blind-Expert)/Expert*100), size=4, alpha = 0.5)+
-  ylab("CO2 flux relative difference [%]")+
-  theme_bw()+ 
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-ggplot(table_results_sprd_CO2, aes((Blind-Expert)/Expert*100))+geom_density()
-
-
-table_results_sprd_CH4  <- table_results[table_results$variable=="CH4",c("UniqueID","flux_method","best.flux","timestamp_processing")] %>%
-  pivot_wider(names_from = flux_method, values_from = c(best.flux))
-
-median((table_results_sprd_CH4$Blind-table_results_sprd_CH4$Expert)/table_results_sprd_CH4$Expert*100, na.rm = T)
-
-ggplot(data = table_results_sprd_CH4)+
-  geom_abline(slope = 0,intercept = 0, color = 'lightgrey')+
-  # geom_segment(data = data.frame(UniqueID = CH4_flux_res_auto$UniqueID,
-  #                                meth1 = CH4_flux_res_auto$best.flux,
-  #                                meth2 = CH4_flux_res_manID$best.flux), aes(x=UniqueID, xend=UniqueID, y = meth1, yend = meth2), linewidth=1, alpha = 0.5)+
-  geom_point(aes(UniqueID, (Blind-Expert)/Expert*100), size=4, alpha = 0.5)+
-  ylab("CH4 flux relative difference [%]")+
-  theme_bw()+ 
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-
-
-
-#----- some plots for the all incubations processed so far -----
-
-
-list_f <- list.files(path = results_path, pattern = "BLIND_vs_EXPERT_co2_ch4_fluxes_", full.names = T)
-list_f <- list_f[grep(pattern = "csv", x = list_f)]
-
-isF <- T
-for (f in list_f){
-  table_results.tmp <- read.csv(f)
-  if(isF){
-    isF <- F
-    table_results_all <- table_results.tmp
-  } else {
-    table_results_all <- rbind(table_results_all,table_results.tmp)
-  }
-}
-
-p_auto_vs_manual <- ggplot(data = table_results_all)+
-  geom_abline(slope = 0,intercept = 0, color = 'black')+
-  # geom_segment(data = data.frame(UniqueID = CO2_flux_res_auto$UniqueID,
-  #                                meth1 = CO2_flux_res_auto$best.flux,
-  #                                meth2 = CO2_flux_res_manID$best.flux), aes(x=UniqueID, xend=UniqueID, y = meth1, yend = meth2), linewidth=1, alpha = 0.5)+
-  # aes(x=reorder(X_Variable, -Y_Variable, FUN=mean), y=Y_Variable)
-  geom_point(aes(reorder(UniqueID, -best.flux, FUN=mean), best.flux, colour = flux_method), size=4, alpha = 0.5)+
+  xlab("")+
   ylab("flux [(mmolCO2 or nmolCH4)/m2/s]")+
   theme_bw()+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
   scale_colour_viridis_d(begin = 0.1, end = 0.9, option = "F")+facet_grid(.~variable, scales = 'free')+coord_flip()
 
 p_auto_vs_manual
 
-ggsave(filename = "BLIND_vs_EXPERT_co2_ch4_all.jpeg", plot = p_auto_vs_manual, path = plots_path, width = 10, height = 10, units = 'in', dpi = 300)
 
 
 
 
-table_results_sprd <- table_results_all[,c("variable","UniqueID","flux_method","best.flux","timestamp_processing")] %>%
-  pivot_wider(names_from = flux_method, values_from = c(best.flux))
-
-ggplot(data = table_results_sprd)+
-  # geom_abline(slope = 0,intercept = 0, color = 'lightgrey')+
-  # geom_segment(data = data.frame(UniqueID = CO2_flux_res_auto$UniqueID,
-  #                                meth1 = CO2_flux_res_auto$best.flux,
-  #                                meth2 = CO2_flux_res_manID$best.flux), aes(x=UniqueID, xend=UniqueID, y = meth1, yend = meth2), linewidth=1, alpha = 0.5)+
-  geom_violin(aes(variable,abs((Blind-Expert)/Expert)*100), alpha = 0.5)+
-  geom_jitter(aes(variable,abs((Blind-Expert)/Expert)*100), alpha = 0.5, width=0.2)+
-  ylab("CO2 flux relative difference [%]")+
-  theme_bw()+
-  scale_y_log10()+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-
-
-list_f <- list.files(path = results_path, pattern = "BLIND_vs_EXPERT_ch4_ebullition_", full.names = T)
-list_f <- list_f[grep(pattern = "csv", x = list_f)]
-
-isF <- T
-for (f in list_f){
-  table_results.tmp <- read.csv(f)
-  if(isF){
-    isF <- F
-    table_results_all <- table_results.tmp
-  } else {
-    table_results_all <- rbind(table_results_all,table_results.tmp)
-  }
-}
-
-
-
-
-p_auto_vs_manual_ch4_ebullition <- ggplot(data = table_results_all)+
-  geom_abline(slope = 0,intercept = 0, color = 'lightgrey')+
-  geom_segment(data = data.frame(UniqueID = CH4_res_meth1$UniqueID,
-                                 meth1 = CH4_res_meth1$ebullition,
-                                 meth2 = CH4_res_meth2$ebullition), aes(x=UniqueID, xend=UniqueID, y = meth1, yend = meth2), linewidth=1, alpha = 0.5)+
-  geom_point(aes(reorder(UniqueID, -ebullition, FUN=mean), ebullition, colour = flux_method), size=4, alpha = 0.5)+
-  
-  ylab("ebullition component [nmol/m2/s]")+
-  theme_bw()+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+scale_colour_viridis_d(begin = 0.1, end = 0.9, option = "F")+coord_flip()
-
-p_auto_vs_manual_ch4_ebullition
-ggsave(filename = "BLIND_vs_EXPERT_ch4_ebullition_all.jpeg", plot = p_auto_vs_manual_ch4_ebullition, path = plots_path, width = 10, height = 6, units = 'in', dpi = 300)
 
 
 
