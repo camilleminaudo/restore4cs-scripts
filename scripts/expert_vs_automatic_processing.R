@@ -367,8 +367,6 @@ ggplot(data = table_results)+
   theme_bw()+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
   scale_colour_viridis_d(begin = 0.1, end = 0.9, option = "F")+facet_grid(.~variable, scales = 'free')+coord_flip()
 
-p_auto_vs_manual
-
 
 
 
