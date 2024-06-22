@@ -14,8 +14,8 @@ cat("/014") # clear console
 
 
 # --- install goFlux if needed ---
-#library(devtools)
-#install_github("Qepanna/goFlux")
+# library(devtools)
+# install_github("Qepanna/goFlux")
 
 
 ############### ------- SETTINGS ------- ##################
@@ -45,7 +45,7 @@ require(pbapply)
 
 repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
 files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
-for (f in files.sources){source(f)}
+for (f in files.sources[-10]){source(f)}
 
 
 # ---- Directories ----
@@ -58,68 +58,59 @@ results_path <- paste0(dropbox_root,"/GHG/GHG_expert_vs_automated/results/")
 
 
 # loading auxfile
-
 setwd(dirname(results_path))
-
 auxfile <- read.csv(file = "auxfile.csv")
-
 auxfile$start.time <- as.POSIXct(auxfile$start.time, tz = 'UTC') 
 
 
-
 # ----- Random draw of incubations -----
-
 # draw a few incubations randomly
-draw <- sample(seq_along(auxfile$subsite), nb_draw) 
+draw <- sample(seq_along(auxfile$subsite), nb_draw)
 
 table_draw <- data.frame(username = username,
                          draw = draw,
                          subsite = auxfile$subsite[draw],
                          UniqueID = auxfile$UniqueID[draw])
-
 myauxfile <- auxfile[draw,]
 myauxfile$username <- username
 
-# myauxfile<- auxfile[626,] # which(auxfile$UniqueID=="s3-va-a2-1-o-d-08:11")
 
 # ---- Load incubation timeseries ----
 
 mydata_all <- NULL
-for(subsite in unique(myauxfile$subsite)){
-  message("Loading data for ",subsite)
+for(k in seq_along(myauxfile$UniqueID)){
+  message("Loading data for ",myauxfile$UniqueID[k])
+  gas <- unique(myauxfile$gas_analiser[k])
   
-  gas <- unique(myauxfile$gas_analiser[which(myauxfile$subsite==subsite)])
-  
-  for (ga in gas){
-    setwd(RData_path)
-    if(ga== "LI-COR"){
-      gs_suffix <- "LI-7810"
-    } else {
-      gs_suffix <- ga
-    }
-    
-    load(file = paste0(subsite,"_",gs_suffix,".RData"))
-    mydata <- mydata[,c("POSIX.time", 
-                        "CO2dry_ppm", "CH4dry_ppb", "H2O_ppm",
-                        "CO2_prec",   "CH4_prec",   "H2O_prec"  )]
-    
-    mydata_all <- rbind(mydata_all, mydata)
-    rm(mydata)
+  setwd(RData_path)
+  if(gas== "LI-COR"){
+    gs_suffix <- "LI-7810"
+  } else {
+    gs_suffix <- gas
   }
+  load(file = paste0(myauxfile$subsite[k],"_",gs_suffix,".RData"))
+  mydata <- mydata[,c("POSIX.time", 
+                      "CO2dry_ppm", "CH4dry_ppb", "H2O_ppm",
+                      "CO2_prec",   "CH4_prec",   "H2O_prec"  )]
+  
+  mydata <- mydata[which(mydata$POSIX.time>=myauxfile$start.time[k] & 
+                           mydata$POSIX.time<=myauxfile$start.time[k]+myauxfile$duration[k]),]
+  mydata$UniqueID <- myauxfile$UniqueID[k]
+  
+  mydata_all <- rbind(mydata_all, mydata)
+  rm(mydata)
 }
-
-
 
 
 
 # ---- Process incubations and compute fluxes ----
 
 # Define the measurements' window of observation
+# mydata_ow <- obs.win(inputfile = mydata_all, auxfile = myauxfile,
+#                      obs.length = myauxfile$duration, shoulder = 2)
 
-mydata_ow <- obs.win(inputfile = mydata_all, auxfile = myauxfile,
-                     obs.length = myauxfile$duration, shoulder = 2)
-
-
+# Split data into separate dataframes for each incubation to ease following steps
+mydata_ow <- mydata_all %>% group_split(UniqueID) %>% as.list()
 
 # ----------- Compute fluxes after manual selection of CO2 data
 
@@ -134,11 +125,6 @@ mydata_manID <- lapply(seq_along(mydata_ow), click.peak.loop,
 # Additional auxiliary data required for flux calculation.
 mydata_manID <- mydata_manID %>%
   left_join(myauxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
-
-
-# start <- myauxfile$start.time
-# start_corr <- mydata_manID$start.time_corr[match(x = myauxfile$UniqueID, mydata_manID$UniqueID)]
-# cbind(start, start_corr)
 
 table_draw$start.time_auto <- as.numeric(myauxfile$start.time)
 table_draw$start.time_expert_co2 <- as.numeric(mydata_manID$start.time_corr[match(x = table_draw$UniqueID, mydata_manID$UniqueID)])
