@@ -155,8 +155,8 @@ CH4_flux_res_manID <- best.flux(CH4_results_manID, criteria)
 
 # ----------- Compute fluxes blindly without any manual selection
 
-mydata_ow <- obs.win(inputfile = mydata_all, auxfile = myauxfile,
-                     obs.length = myauxfile$duration, shoulder = 2)
+# Split data into separate dataframes for each incubation to ease following steps
+mydata_ow <- mydata_all %>% group_split(UniqueID) %>% as.list()
 
 # Join mydata_ow with info on start end incubation
 mydata_auto <- lapply(seq_along(mydata_ow), join_auxfile_with_data.loop, flux.unique = mydata_ow) %>%
@@ -252,6 +252,12 @@ myCH4_diffusion <- lapply(seq_along(mydata_ow), click.peak.loop,
 
 table_draw$start.time_expert_ch4 <- as.numeric(myCH4_diffusion$start.time_corr[match(x = table_draw$UniqueID, myCH4_diffusion$UniqueID)])
 table_draw$end.time_expert_ch4 <- as.numeric(myCH4_diffusion$end.time[match(x = table_draw$UniqueID, myCH4_diffusion$UniqueID)])
+
+
+
+# Additional auxiliary data required for flux calculation.
+myCH4_diffusion <- myCH4_diffusion %>%
+  left_join(myauxfile %>% select(username, UniqueID, Area, Vtot, Tcham, Pcham))
 
 
 # Add instrument precision for each gas
