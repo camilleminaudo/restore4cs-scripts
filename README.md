@@ -11,26 +11,23 @@ Data and fluxes estimates are saved locally, not on the remote.
 First, you'll need to install the GoFluxYourself package:
 
 To install a package from GitHub, one must first install the package
-`remotes` from the CRAN:
+`devtools` from the CRAN:
 
 ``` r
-if (!require("remotes", quietly = TRUE))
-  install.packages("remotes")
+if (!require("devtools", quietly = TRUE))
+install.packages("devtools")
 ```
 
-Then, install the `GoFluxYourself` package from GitHub:
+Then, install the `goFlux` package from GitHub:
 
 ``` r
-remotes::install_github("Qepanna/GoFluxYourself")
+try(detach("package:goFlux", unload = TRUE), silent = TRUE)
+devtools::install_github("Qepanna/goFlux")
 ```
-
 
 
 Then, clone the restore4cs-scripts repository, and it should be enough to have the scripts working.
-The main script is script/gas_analyzers_L0a_to_L0b.R.
 Other scripts are functions needed for the code to work.
-
-
 
 
 The functioning of the package depends on many other packages

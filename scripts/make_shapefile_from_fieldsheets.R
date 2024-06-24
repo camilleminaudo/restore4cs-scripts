@@ -26,7 +26,7 @@ library(egg)
 library(sp)
 library(sf)
 
-source(paste0(dirname(rstudioapi::getSourceEditorContext()$path),"/get_unix_times.R"))
+source(paste0(dirname(dirname(rstudioapi::getSourceEditorContext()$path)),"/functions/get_unix_times.R"))
 
 
 
@@ -35,8 +35,10 @@ dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/" 
 # dropbox_root <- "C:/Users/misteli/Dropbox/RESTORE4Cs - Fieldwork/Data/" #Benjamin Misteli
 
 #################################
-sampling <- "S2"
+sampling <- "S3"
 #################################
+
+# ---- Read fieldsheets ----
 
 # list files in Dropbox
 f <- list.files(dropbox_root, pattern = "Fieldsheet", all.files = T, full.names = T, recursive = T)
@@ -60,8 +62,8 @@ isF <- T
 for (f in myfiles){
 
   # load file
-  fieldsheet_temp <- readxl::read_xlsx(f,col_names = T, n_max = 1)
-  fieldsheet <- readxl::read_xlsx(f,skip = 2, col_names = F, n_max = 100)
+  fieldsheet_temp <- readxl::read_xlsx(f,col_names = T, n_max = 1, .name_repair = "unique_quiet")
+  fieldsheet <- readxl::read_xlsx(f,skip = 2, col_names = F, n_max = 100, .name_repair = "unique_quiet")
 
   if(dim(fieldsheet)[1]>1){
     names(fieldsheet) <- tolower(names(fieldsheet_temp))
@@ -117,7 +119,7 @@ filename_w <- paste0(dropbox_root,"Water/Water sampling and filtration_all data.
 fieldsheet_water <- readxl::read_xlsx(filename_w, 
                                       col_names = T, n_max = 3*6*6*4,
                                       sheet = "Water_sampling_master_ONLINE", skip = 8,
-                                      col_types = c(rep("text",8),rep("numeric",19),rep("text",4)))
+                                      col_types = c(rep("text",9),rep("numeric",21),rep("text",4)))
 
 fieldsheet_water <- fieldsheet_water[fieldsheet_water$Survey==sampling,]
 
@@ -151,6 +153,7 @@ dim(shp_data)
 my_shp <- st_as_sf(shp_data[!is.na(shp_data$long),],
                    coords = c("long", "lat"),
                    crs = 4326)
+
 
 
 setwd(paste0(dropbox_root,"/GIS"))

@@ -24,7 +24,7 @@ library(zoo)
 library(ggplot2)
 library(grid)
 library(egg)
-library(GoFluxYourself)
+library(goFlux)
 require(dplyr)
 require(purrr)
 require(pbapply)
@@ -44,8 +44,17 @@ fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 # ---- List GHG chamber fieldsheets in Dropbox and read them ---
 # list filenames
 myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx", all.files = T, full.names = T, recursive = T)
+
+#################################
+sampling <- "S3"
+#################################
+
+i <- grep(pattern = sampling, x = myfieldsheets_list) # selecting the files corresponding to the selected sampling campaign
+myfieldsheets_list <- myfieldsheets_list[i]
+
 # Read all fieldsheets and put them in a single dataframe
 fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
+
 
 fieldsheet_losgatos <- fieldsheet[fieldsheet$gas_analyzer=="Los Gatos",]
 

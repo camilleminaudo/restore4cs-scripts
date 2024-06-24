@@ -1,14 +1,15 @@
 
+
 # ---
 # Authors: Camille Minaudo
 # Project: "RESTORE4Cs"
-# date: "Oct 2023"
+# date: "June 2024"
 # https://github.com/camilleminaudo/restore4cs-scripts
 # ---
 
 # --- Description of this script
-# This script computes fluxes for all incubations present in the fieldsheet for a given sampling season
-# Use has to sepcify which sampling has to be processed, and all the rest is done automatically.
+# This script 
+
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -41,29 +42,30 @@ for (f in files.sources){source(f)}
 
 
 #################################
-sampling <- "S3"
-# USER, please specify if you want plots to be saved
-harmonize2RData <- F
-doPlot <- T
-#################################
+
+# You have to make sure this is pointing to the write folder on your local machine
+dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" 
+
+############################
+
 
 # ---- Directories ----
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 loggerspath <- paste0(datapath,"/RAW Data Logger")
-plots_path <- paste0(dropbox_root,"/GHG/Processed data/plots_all_incubations/")
 RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
-results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
-
+plots_path <- paste0(dropbox_root,"/GHG/GHG_expert_vs_automated/plots/")
+results_path <- paste0(dropbox_root,"/GHG/GHG_expert_vs_automated/results/")
 
 # ----- Data pre-processing and harmonization -----
 
 # ---- List GHG chamber fieldsheets in Dropbox and read them ---
 # list filenames
 myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx", all.files = T, full.names = T, recursive = T)
-i <- grep(pattern = sampling, x = myfieldsheets_list) # selecting the files corresponding to the selected sampling campaign
-myfieldsheets_list <- myfieldsheets_list[i]
+
+#S4 data is not ready yet
+i <- grep(pattern = "S4", x = myfieldsheets_list) # selecting the files corresponding to the selected sampling campaign
+myfieldsheets_list <- myfieldsheets_list[-i]
 # Read all fieldsheets and put them in a single dataframe
 fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 
@@ -71,14 +73,14 @@ fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 
 # ---- Correct fieldsheets in the case of Picarro data ---
 
-read_map_incubations <- function(path2folder, sampling){
+read_map_incubations <- function(path2folder){
   
   my_maps_filenames <- list.files(path2folder, pattern = ".csv", all.files = T, full.names = T, recursive = T)
   i <- grep(pattern = "Picarro", x = my_maps_filenames) # selecting the files corresponding to the Picarro only
   my_maps_filenames <- my_maps_filenames[i]
-  i <- grep(pattern = sampling, x = my_maps_filenames) # selecting the files corresponding to the selected sampling campaign
-  my_maps_filenames <- my_maps_filenames[i]
   
+  # i <- grep(pattern = "S4-", x = my_maps_filenames)
+  # my_maps_filenames <- my_maps_filenames[-i]
   
   isF <- T
   for(my_maps_filename in my_maps_filenames){
@@ -108,7 +110,7 @@ read_map_incubations <- function(path2folder, sampling){
 
 
 # read all the csv files in data_folder, and group into a single one
-map_incubations <- suppressWarnings({read_map_incubations(path2folder = datapath, sampling = sampling)})
+map_incubations <- suppressWarnings({read_map_incubations(path2folder = datapath)})
 map_incubations <- map_incubations[order(map_incubations$start),]
 
 # check the closest incubation in map_incubations for each row in fieldsheet.
@@ -130,17 +132,20 @@ for (i in seq_along(fieldsheet_Picarro$plot_id)){
 if(sum(is.na(corresponding_row))>0){
   ind_NAs <- which(is.na(corresponding_row))
   # it is the most probable that the missing info is in-between two rows with all the data we need
-  interp <- approx(x = seq_along(fieldsheet_Picarro$plot_id), y = corresponding_row, xout = ind_NAs)$y
+  interp <- approx(x = seq_along(fieldsheet_Picarro$plot_id), y = corresponding_row, xout = ind_NAs, rule = 2)$y
   is_integer <- (interp - floor(interp)) == 0
   corresponding_row[ind_NAs][is_integer] <- interp[is_integer]
 }
 if(sum(is.na(corresponding_row))>0){
   ind_NAs <- which(is.na(corresponding_row))
-  message("Could not find a corresponding incubation map for the following incubations:")
-  fieldsheet_Picarro$uniqID[ind_NAs]
-  # removing rows from fieldsheet_Picarro with missing correspondance
-  fieldsheet_Picarro <- fieldsheet_Picarro[-ind_NAs,]
-  corresponding_row <- corresponding_row[-ind_NAs]
+  if(length(ind_NAs)>0){
+    warning("Could not find a corresponding incubation map for the following incubations:")
+    fieldsheet_Picarro$uniqID[ind_NAs]
+    
+    # removing rows from fieldsheet_Picarro with missing correspondance
+    fieldsheet_Picarro <- fieldsheet_Picarro[-ind_NAs,]
+    corresponding_row <- corresponding_row[-ind_NAs]
+  }
 }
 
 # replacing unix_startand unix_stop with new values
@@ -200,125 +205,19 @@ fieldsheet <- fieldsheet[order(fieldsheet$subsite),]
 
 
 
-# ---- Import and store measurements to RData ----
-if(harmonize2RData){
-  data_folders <- list.dirs(datapath, full.names = T, recursive = T)[-1]
-  i <- grep(pattern = sampling, x = data_folders) # selecting the files corresponding to the selected sampling campaign
-  data_folders <- data_folders[i]
-  
-  r <- grep(pattern = "RData",x=data_folders)
-  if(length(r)>0){data_folders <- data_folders[-r]}
-  
-  message("Here is the list of data folders in here:")
-  print(data_folders)
-  
-  
-  # Import and store data for for Picarro and LosGatos data
-  
-  raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format, prec){
-    r <- grep(pattern = instrument, x=data_folders)
-    for (data_folder in data_folders[r]){
-      setwd(data_folder)
-      subsite = basename(data_folder)
-      message(paste0("processing folder ",basename(data_folder)))
-      import2RData(path = data_folder, instrument = instrumentID,
-                   date.format = date.format, timezone = 'UTC', keep_all = FALSE,
-                   prec = prec)
-      
-      # load all these R.Data into a single dataframe
-      file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
-      z <- grep(pattern = instrumentID, x=file_list)
-      file_list <- file_list[z]
-      isF <- T
-      for(i in seq_along(file_list)){
-        load(file_list[i])
-        if(isF){
-          isF <- F
-          mydata_imp <- data.raw
-        } else {
-          mydata_imp <- rbind(mydata_imp, data.raw)
-        }
-        rm(data.raw)
-      }
-      
-      # get read of possible duplicated data
-      is_duplicate <- duplicated(mydata_imp$POSIX.time)
-      mydata <- mydata_imp[!is_duplicate,]
-      
-      setwd(RData_path)
-      
-      # save this dataframe as a new RData file
-      save(mydata, file = paste0(subsite,"_",instrument,".RData"))
-    }
-  }
-  
-  raw2RData_P_LG(data_folders, instrument = "Picarro", instrumentID = "G4301", date.format = "ymd", prec=c(0.025, 0.1, 10))
-  raw2RData_P_LG(data_folders, instrument = "Los Gatos", instrumentID = "UGGA", date.format = "mdy", prec =  c(0.2, 1.4, 50))
-  
-  
-  
-  # Import and store data for LiCOR data
-  fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
-  list_subsites_Licor <- unique(fieldsheet_Licor$subsite)
-  
-  r_licor <- grep(pattern = "Licor",x=data_folders)
-  for (data_folder in data_folders[r_licor]){
-    setwd(data_folder)
-    message(paste0("processing folder ",basename(data_folder)))
-    
-    import2RData(path = data_folder, instrument = "LI-7810",
-                 date.format = "ymd", timezone = 'UTC', keep_all = FALSE, 
-                 prec = c(3.5, 0.6, 45))
-    
-    # load all these R.Data into a single dataframe
-    file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
-    isF <- T
-    for(i in seq_along(file_list)){
-      load(file_list[i])
-      if(isF){
-        isF <- F
-        mydata_imp <- data.raw
-      } else {
-        mydata_imp <- rbind(mydata_imp, data.raw)
-      }
-      rm(data.raw)
-    }
-    
-    # get read of possible duplicated data
-    is_duplicate <- duplicated(mydata_imp$POSIX.time)
-    mydata_imp <- mydata_imp[!is_duplicate,]
-    
-    
-    # r_site <- grep(pattern = basename(data_folder), x=list_subsites_Licor)
-    
-    # create separate folders for each subsite where data actually exists
-    for (subsite in list_subsites_Licor){
-      corresponding_date <- as.Date(unique(fieldsheet_Licor$date[fieldsheet_Licor$subsite == subsite]))
-      
-      # check if we already have this data somewhere in the clean file
-      n_lines_d <- dim(mydata_imp[which(as.Date(mydata_imp$POSIX.time) == corresponding_date),])[1]
-      if(n_lines_d > 0){
-        message(paste0("... there is some data to store for subsite ",subsite))
-        mydata <- mydata_imp[as.Date(mydata_imp$POSIX.time) == corresponding_date,]
-        
-        setwd(RData_path)
-        # save this dataframe as a new RData file
-        save(mydata, file = paste0(subsite,"_","LI-7810",".RData"))
-      }
-    }
-  }
-}
+# ----- Data selection and building auxilliary table -----
 
+# Here, we only focus on open water measurements with the floating chamber
+fieldsheet <- fieldsheet[which(fieldsheet$chamber_type=="floating" & fieldsheet$strata=="open water" & fieldsheet$water_depth>0),]
 
-
-
-# ----- Flux calculation -----
 
 # For each subsite in fieldsheet, go through each incubation and compute co2 and ch4 fluxes
 subsites <- unique(fieldsheet$subsite)
 
 isF_incub <- T
 isFsubsite <- T
+auxfile <- NULL
+
 for (subsite in subsites){
   message("Now processing ",subsite)
   
@@ -365,7 +264,7 @@ for (subsite in subsites){
   if(dim(data_logger_float)[1]<10){
     message("===> not enough data could be linked to the floating chamber!")
     is_data_logger_float = F
-    }
+  }
   
   if(!is.na(SN_logger_tube) & !is.na(i_f_tube)){
     is_data_logger_tube = T
@@ -405,7 +304,6 @@ for (subsite in subsites){
   }
   
   
-  auxfile <- NULL
   if(file.exists(paste0(subsite,"_",gs_suffix,".RData"))){
     load(file = paste0(subsite,"_",gs_suffix,".RData"))
     
@@ -467,130 +365,30 @@ for (subsite in subsites){
     message("---> Could not find corresponding ",gs," data")
   }
   
-  
-  
-  if (length(auxfile)>1){
-    
-    auxfile$Tcham[is.na(auxfile$Tcham)] <- mean(auxfile$Tcham, na.rm = T)
-    
-    # we only keep incubations longer than 100 secs
-    auxfile <- auxfile[auxfile$duration>100,]
-    # we only keep incubations where chamber dimensions are known
-    auxfile <- auxfile[!is.na(auxfile$Vtot),] # in case chamber height is not specified in the fieldsheet...
-    auxfile <- auxfile[!is.na(auxfile$Area),]
-    
-    # Define the measurements' window of observation
-    # auxfile <- auxfile
-    mydata_ow <- obs.win(inputfile = mydata, auxfile = auxfile,
-                         obs.length = auxfile$duration, shoulder = 2)
-    
-    # Join mydata_ow with info on start end incubation
-    mydata_auto <- lapply(seq_along(mydata_ow), join_auxfile_with_data.loop, flux.unique = mydata_ow) %>%
-      map_df(., ~as.data.frame(.x))
-    
-    # Additional auxiliary data required for flux calculation.
-    mydata_auto <- mydata_auto %>%
-      left_join(auxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
-    
-    # Add instrument precision for each gas
-    mydata_auto <- mydata_auto %>%
-      mutate(CO2_prec = first(mydata$CO2_prec), CH4_prec = first(mydata$CH4_prec), 
-             N2O_prec = first(mydata$N2O_prec), H2O_prec = first(mydata$H2O_prec))
-    
-    # Calculate fluxes
-    CO2_results_auto <- goFlux(dataframe = mydata_auto, gastype = "CO2dry_ppm")
-    H2O_results_auto <- goFlux(mydata_auto, "H2O_ppm")
-    CH4_results_auto <- goFlux(mydata_auto, "CH4dry_ppb")
-    
-    # Use best.flux to select the best flux estimates (LM or HM)
-    # based on a list of criteria
-    criteria <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
-    
-    CO2_flux_res_auto <- best.flux(CO2_results_auto, criteria)
-    H2O_flux_res_auto <- best.flux(H2O_results_auto, criteria)
-    CH4_flux_res_auto <- best.flux(CH4_results_auto, criteria)
-    
-    if(doPlot){
-      # Plots results
-      # Make a list of plots of all measurements, for each gastype
-      CO2_flux_plots <- flux.plot(CO2_flux_res_auto, mydata_auto, "CO2dry_ppm")
-      H2O_flux_plots <- flux.plot(H2O_flux_res_auto, mydata_auto, "H2O_ppm")
-      CH4_flux_plots <- flux.plot(CH4_flux_res_auto, mydata_auto, "CH4dry_ppb")
-      
-      # Combine plot lists into one list
-      flux_plot.ls <- c(CO2_flux_plots, CH4_flux_plots, H2O_flux_plots)
-      
-      # Save plots to pdf
-      myfilename <- paste(subsite, as.character(as.Date(first(auxfile$start.time))),sep="_")
-      flux2pdf(flux_plot.ls, outfile = paste0(results_path,"/level_incubation/",myfilename,".pdf"))
-      
-    }
-    
-    
-    # estimate ch4 diffusion and ebullition components---------| METHOD 1 |-----------
-    CH4_res_meth1 <- CH4_flux_res_auto
-    CH4_res_meth1$total_estimated <- NA
-    CH4_res_meth1$ebullition <- NA
-    CH4_res_meth1$diffusion <- NA
-    
-    
-    for (i in which(auxfile$water_depth>0)){
-      if(auxfile$water_depth[i]>0){
-        my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile$start.time[i] &
-                             as.numeric(mydata$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
-        my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
-        # calling dedicated function
-        df_ebull <- separate_ebullition_from_diffusion(my_incub, UniqueID = auxfile$UniqueID[i], doPlot=F)
-        # computing fluxes
-        H2O_mol = my_incub$H2O_ppm / (1000*1000)
-        myfluxterm <- flux.term(auxfile$Vtot[i], auxfile$Pcham[i], auxfile$Area[i],
-                                auxfile$Tcham[i], first(H2O_mol))
-        CH4_flux_total <- df_ebull$delta_ch4/df_ebull$duration*myfluxterm # nmol/m2/s
-        CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
-        CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
-      } else {
-        CH4_flux_total <- CH4_flux_ebull <- CH4_res_meth1$best.flux[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])]
-        CH4_flux_ebull <- 0
-      }
-      CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_total
-      CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_ebull
-      CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_diff
-    }
-    
-    CH4_res_meth1$ebullition[which(CH4_res_meth1$ebullition<0)] <- 0
-    
-    
-    setwd(paste0(results_path,"/level_incubation"))
-    myfilenameCO2 <- paste(subsite,"co2_fluxes", as.character(as.Date(first(auxfile$start.time))),sep="_")
-    myfilenameCH4 <- paste(subsite,"ch4_fluxes", as.character(as.Date(first(auxfile$start.time))),sep="_")
-    write.csv(x = CO2_flux_res_auto, file = paste0(myfilenameCO2,".csv"), row.names = F)
-    write.csv(x = CH4_res_meth1, file = paste0(myfilenameCH4,".csv"), row.names = F)
-    
-    
-    table_results <- auxfile %>%
-      left_join(CO2_flux_res_auto %>% select(UniqueID, LM.flux, HM.flux, best.flux, model, quality.check)) %>%
-      rename(CO2_LM.flux = LM.flux, CO2_HM.flux = HM.flux, CO2_best.flux = best.flux, CO2_best.model = model,
-             CO2_quality.check = quality.check) %>%
-      left_join(CH4_res_meth1 %>% select(UniqueID, LM.flux, HM.flux, best.flux, best.flux, model, quality.check, 
-                                         diffusion, ebullition)) %>%
-      rename(CH4_LM.flux = LM.flux, CH4_HM.flux = HM.flux, CH4_best.flux = best.flux, CH4_best.model = model, 
-             CH4_quality.check = quality.check, CH4_diffusive_flux = diffusion, CH4_ebullitive_flux = ebullition)
-    
-    if (isFsubsite){
-      isFsubsite <- F
-      table_results_all <- table_results
-    } else {
-      table_results_all <- rbind(table_results_all, table_results)
-    }
-  } else {
-    message("----- auxfile could not be built for this susbite. It seems data from ",gs," is missing.")
-  }
-  
 }
 
-setwd(results_path)
-myfilename <- paste(sampling,"fluxes",min(as.Date(table_results_all$start.time)),"to",
-                    max(as.Date(table_results_all$start.time)), sep = "_")
-write.csv(x = table_results_all, file = paste0(myfilename,".csv"), row.names = F)
+dim(auxfile)
+
+# we only keep incubations longer than 100 secs
+auxfile <- auxfile[auxfile$duration>100,]
+# we only keep incubations where chamber dimensions are known
+auxfile <- auxfile[!is.na(auxfile$Vtot),] # in case chamber height is not specified in the fieldsheet...
+auxfile <- auxfile[!is.na(auxfile$Area),]
+# we only keep incubations with known Temperature at start
+auxfile <- auxfile[!is.na(auxfile$Tcham),]
+
+
+dim(auxfile)
+
+# saving fluxes estimates
+setwd(dirname(results_path))
+
+write.csv(x = auxfile, file = "auxfile.csv", 
+          row.names = F)
+
+
+
+
+
 
 
