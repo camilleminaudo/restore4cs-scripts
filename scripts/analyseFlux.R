@@ -53,6 +53,8 @@ table_results_all$subsite <- str_sub(table_results_all$subsite, start = 7, 8)
 table_results_all$siteID <- str_sub(table_results_all$subsite, start = 4, 8)
 
 
+table_results_all <- table_results_all[!is.na(table_results_all$lightCondition),]
+
 # table_results_all <- table_results_all[table_results_all$CO2_best.flux<1000,]
 
 
@@ -170,9 +172,9 @@ df_exceedance_co2 <- NULL
 for(thresh in c(0.1,0.5,seq(1,100))){
   n_less <- length(which(abs(table_co2$diff_model)<thresh/100))
   df_exceedance_co2 <- rbind(df_exceedance_co2,
-                         data.frame(t = thresh,
-                                    n = n_less,
-                                    p = n_less/dim(table_co2)[1]*100))
+                             data.frame(t = thresh,
+                                        n = n_less,
+                                        p = n_less/dim(table_co2)[1]*100))
 }
 
 p_co2 <- ggplot(df_exceedance_co2, aes(t, p))+geom_path()+geom_point()+theme_article()+
@@ -268,13 +270,80 @@ ggplot(table_ch4, aes(LM.MAE, best.flux, colour = HM.MAE))+
 
 
 
-# ---- plot CO2 and CH4 flux across sites and seasons ----
+# ---- Select data with reasonable fits ----
 
 ind_sel <- which(table_co2$HM.MAE<10)
 table_co2_sel <- table_co2[ind_sel,]
+table_co2_sel <- table_co2_sel[]
 
 ind_sel <- which(table_ch4$HM.MAE<100)
 table_ch4_sel <- table_ch4[ind_sel,]
+
+
+# save selection in a single table
+
+table_co2_out <- table_co2_sel[,c(which(names(table_co2_sel)=="UniqueID"),
+                                  which(names(table_co2_sel)=="sampling"):which(names(table_co2_sel)=="lightCondition"),
+                                  which(names(table_co2_sel)=="best.flux"))]
+
+myfilename <- paste("all_CO2_fluxes",min(as.Date(table_co2_out$start.time)),"to",
+                    max(as.Date(table_co2_out$start.time)), sep = "_")
+write.csv(x = table_co2_out, file = paste0(myfilename,".csv"), 
+          row.names = F)
+
+table_ch4_out <- table_ch4_sel[,c(which(names(table_ch4_sel)=="UniqueID"),
+                                  which(names(table_ch4_sel)=="sampling"):which(names(table_ch4_sel)=="lightCondition"),
+                                  which(names(table_ch4_sel)=="best.flux"),
+                                  which(names(table_ch4_sel)=="ebullition"),
+                                  which(names(table_ch4_sel)=="diffusion"))]
+
+myfilename <- paste("all_CH4_fluxes",min(as.Date(table_ch4_out$start.time)),"to",
+                    max(as.Date(table_ch4_out$start.time)), sep = "_")
+write.csv(x = table_ch4_out, file = paste0(myfilename,".csv"), 
+          row.names = F)
+
+
+
+
+# ---- plot CO2 and CH4 flux across sites and seasons ----
+
+
+
+
+
+p_overview_co2 <- ggplot(table_co2_sel, aes(lightCondition, best.flux, colour = lightCondition))+
+  geom_hline(yintercept = 0)+
+  geom_jitter(alpha=0.5)+
+  # geom_boxplot(alpha=0.8)+
+  theme_article()+
+  ylab("CO2 flux umol/m2/s")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
+  # facet_wrap(strata~.)+
+  theme(legend.position = 'none')+xlab("")+
+  ggtitle(paste0("CO2 fluxes, ",length(unique(table_co2_sel$UniqueID)), " valid incubations"))
+
+
+p_overview_ch4 <- ggplot(table_ch4_sel, aes(lightCondition, best.flux, colour = lightCondition))+
+  geom_hline(yintercept = 0)+
+  geom_jitter(alpha=0.5)+
+  # geom_boxplot(alpha=0.8)+
+  theme_article()+
+  ylab("CH4 flux nmol/m2/s")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
+  # facet_wrap(strata~.)+
+  theme(legend.position = 'right')+xlab("")+
+  ggtitle(paste0("CH4 fluxes, ",length(unique(table_ch4_sel$UniqueID)), " valid incubations"))
+
+p_overview_co2_ch4 <- ggarrange(p_overview_co2, p_overview_ch4, nrow = 1)
+
+myfilename <- paste("000_overview_CO2_CH4_lightCond",paste(unique(table_ch4_sel$sampling), collapse = "_"), sep = "_")
+ggsave(plot = p_overview_co2_ch4, filename = paste0(myfilename,".jpg"), path = plots_path,
+       width = 10, height = 4, dpi = 300, units = 'in', scale = 1.1)
+
+
+
 
 
 
@@ -286,10 +355,8 @@ p_overview_co2 <- ggplot(table_co2_sel, aes(strata, best.flux, colour = lightCon
   ylab("CO2 flux umol/m2/s")+
   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
-  # facet_wrap(strata~.)+
-  theme(legend.position = 'right')+xlab("")+
-  ggtitle(paste0("CO2 fluxes, ",length(unique(table_co2_sel$UniqueID)), " valid incubations"))
-
+  # facet_wrap(sampling~.)+
+  theme(legend.position = 'none')+xlab("")
 
 p_overview_ch4 <- ggplot(table_ch4_sel, aes(strata, best.flux, colour = lightCondition))+
   geom_hline(yintercept = 0)+
@@ -300,15 +367,71 @@ p_overview_ch4 <- ggplot(table_ch4_sel, aes(strata, best.flux, colour = lightCon
   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
   # facet_wrap(strata~.)+
-  theme(legend.position = 'none')+xlab("")+
-  ggtitle(paste0("CH4 fluxes, ",length(unique(table_ch4_sel$UniqueID)), " valid incubations"))
-
-p_overview_co2_ch4 <- ggarrange(p_overview_co2, p_overview_ch4)
+  theme(legend.position = 'right')+xlab("")
+p_overview_co2_ch4 <- ggarrange(p_overview_co2, p_overview_ch4, nrow = 1)
 
 myfilename <- paste("000_overview_CO2_CH4_strata",paste(unique(table_ch4_sel$sampling), collapse = "_"), sep = "_")
 ggsave(plot = p_overview_co2_ch4, filename = paste0(myfilename,".jpg"), path = plots_path,
-       width = 4, height = 5, dpi = 300, units = 'in', scale = 1.1)
+       width = 10, height = 4, dpi = 300, units = 'in', scale = 1.1)
 
+
+
+p_overview_co2 <- ggplot(table_co2_sel, aes(sampling, best.flux))+
+  geom_hline(yintercept = 0)+
+  geom_jitter(alpha=0.4, aes(colour = lightCondition))+
+  geom_boxplot(alpha=0.5, width=0.3)+
+  theme_article()+
+  ylab("CO2 flux umol/m2/s")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
+  # facet_wrap(sampling~.)+
+  theme(legend.position = 'none')+xlab("")
+
+p_overview_ch4 <- ggplot(table_ch4_sel, aes(sampling, best.flux))+
+  geom_hline(yintercept = 0)+
+  geom_jitter(alpha=0.4)+
+  geom_boxplot(alpha=0.5, width=0.3)+
+  theme_article()+
+  ylab("CH4 flux nmol/m2/s")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
+  # facet_wrap(strata~.)+
+  theme(legend.position = 'right')+xlab("")
+p_overview_co2_ch4 <- ggarrange(p_overview_co2, p_overview_ch4, nrow = 1)
+
+myfilename <- paste("000_overview_CO2_CH4_season",paste(unique(table_ch4_sel$sampling), collapse = "_"), sep = "_")
+ggsave(plot = p_overview_co2_ch4, filename = paste0(myfilename,".jpg"), path = plots_path,
+       width = 10, height = 4, dpi = 300, units = 'in', scale = 1.1)
+
+
+
+
+p_overview_co2 <- ggplot(table_co2_sel, aes(sampling, best.flux))+
+  geom_hline(yintercept = 0)+
+  geom_jitter(alpha=0.5, aes(colour = lightCondition))+
+  geom_boxplot(alpha=0.5, width=0.3)+
+  theme_article()+
+  ylab("CO2 flux umol/m2/s")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
+  facet_grid(strata~., scales = "free_y")+
+  theme(legend.position = 'none')+xlab("")
+
+p_overview_ch4 <- ggplot(table_ch4_sel, aes(sampling, best.flux))+
+  geom_hline(yintercept = 0)+
+  geom_jitter(alpha=0.5, aes(colour = lightCondition))+
+  geom_boxplot(alpha=0.5, width=0.3)+
+  theme_article()+
+  ylab("CH4 flux nmol/m2/s")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
+  facet_grid(strata~., scales = "free_y")+
+  theme(legend.position = 'right')+xlab("")
+p_overview_co2_ch4 <- ggarrange(p_overview_co2, p_overview_ch4, nrow = 1)
+
+myfilename <- paste("000_overview_CO2_CH4_strata_season",paste(unique(table_ch4_sel$sampling), collapse = "_"), sep = "_")
+ggsave(plot = p_overview_co2_ch4, filename = paste0(myfilename,".jpg"), path = plots_path,
+       width = 10, height = 4, dpi = 300, units = 'in', scale = 1.1)
 
 
 
@@ -323,9 +446,7 @@ p_overview_co2 <- ggplot(table_co2_sel, aes(pilotsite , best.flux, colour = ligh
   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
   # facet_grid(. ~strata)+
-  theme(legend.position = 'right')+xlab("")+
-  ggtitle(paste0("CO2 fluxes, ",length(unique(table_co2_sel$UniqueID)), " valid incubations"))
-
+  theme(legend.position = 'none')+xlab("")
 
 p_overview_ch4 <- ggplot(table_ch4_sel, aes(pilotsite , best.flux, colour = lightCondition))+
   geom_hline(yintercept = 0)+
@@ -336,15 +457,13 @@ p_overview_ch4 <- ggplot(table_ch4_sel, aes(pilotsite , best.flux, colour = ligh
   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
   # facet_grid(. ~strata)+
-  theme(legend.position = 'none')+xlab("")+
-  ggtitle(paste0("CH4 fluxes, ",length(unique(table_ch4_sel$UniqueID)), " valid incubations"))
+  theme(legend.position = 'right')+xlab("")
 
-
-p_overview_co2_ch4 <- ggarrange(p_overview_co2, p_overview_ch4)
+p_overview_co2_ch4 <- ggarrange(p_overview_co2, p_overview_ch4, nrow = 1)
 
 myfilename <- paste("000_overview_CO2_CH4_sites",paste(unique(table_ch4_sel$sampling), collapse = "_"), sep = "_")
 ggsave(plot = p_overview_co2_ch4, filename = paste0(myfilename,".jpg"), path = plots_path, 
-       width = 4, height = 5, dpi = 300, units = 'in', scale = 1.1)
+       width = 10, height = 4, dpi = 300, units = 'in', scale = 1.1)
 
 
 
@@ -358,13 +477,15 @@ p_overview_co2 <- ggplot(table_co2_sel, aes(subsite , best.flux, colour = lightC
   ylab("CO2 flux umol/m2/s")+
   scale_fill_viridis_d(begin = 0.2, end = 0.9)+
   scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
-  facet_wrap(. ~pilotsite, scales = "free_y", nrow = 1)+
+  facet_grid(lightCondition~pilotsite)+
   theme(legend.position = 'top')+xlab("")+
   # ggtitle(paste0("CO2 fluxes, ",length(unique(table_co2_sel$UniqueID)), " valid incubations"))+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 
-p_overview_ch4 <- ggplot(table_ch4_sel, aes(subsite , best.flux, colour = lightCondition))+
+
+
+p_overview_ch4 <- ggplot(table_ch4_sel, aes(subsite , best.flux))+
   geom_hline(yintercept = 0)+
   geom_boxplot(alpha=0.99)+
   # geom_jitter(alpha=0.5, width = 0.2)+
@@ -375,7 +496,7 @@ p_overview_ch4 <- ggplot(table_ch4_sel, aes(subsite , best.flux, colour = lightC
   facet_wrap(. ~pilotsite, scales = "free_y", nrow = 1)+
   theme(legend.position = 'none')+xlab("")+
   # ggtitle(paste0("CH4 fluxes, ",length(unique(table_ch4_sel$UniqueID)), " valid incubations"))
-theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 
 p_overview_co2_ch4 <- ggarrange(p_overview_co2, p_overview_ch4)
@@ -493,6 +614,65 @@ plot_overview(mytable = table_ch4_sel[which(table_ch4_sel$strata=="vegetated"),]
 
 
 
+
+# ---- tentative NET ECOSYSTEM EXCHANGE ----
+
+isFs <- T
+for (s in unique(paste0(table_co2_sel$sampling, table_co2_sel$siteID))){
+  
+  sel <- table_co2_sel[paste0(table_co2_sel$sampling, table_co2_sel$siteID) == s,]
+  
+  sel_light <- sel[sel$lightCondition == "transparent",]
+  sel_dark <- sel[sel$lightCondition == "dark",]
+  
+  if(dim(sel_light)[1]>=3){
+    co2_light = mean(sel_light$best.flux, na.rm = T) 
+  } else {
+    co2_light <- 0
+  }
+  
+  if(dim(sel_dark)[1]>=3){
+    co2_dark = mean(sel_dark$best.flux, na.rm = T) 
+  } else {
+    co2_dark <- 0
+  }
+  
+  
+  df_NEE.tmp <- data.frame(pilotsite = unique(sel$pilotsite),
+                           subsite = unique(sel$subsite),
+                           siteID = unique(sel$siteID),
+                           sampling = unique (sel$sampling),
+                           co2_light = co2_light, # umol/m2/s
+                           co2_dark = co2_dark, # umol/m2/s
+                           ch4 = 25 * mean(table_ch4$best.flux[paste0(table_ch4$sampling, table_ch4$siteID) == s], na.rm = T)/1000) # umol/m2/s
+  
+  df_NEE.tmp$NEE <- (12*df_NEE.tmp$co2_light+12*df_NEE.tmp$co2_dark+24*df_NEE.tmp$ch4)*3600*1e-6 * 12 #  # umol/m2/s to gC m-2 day-1
+  
+  if(isFs){
+    isFs <- F
+    df_NEE <- df_NEE.tmp
+  } else {
+    df_NEE <- rbind(df_NEE, df_NEE.tmp)
+  }
+}
+
+plt_NEE <- ggplot(df_NEE, aes(subsite, NEE))+
+  geom_hline(yintercept = 0)+
+  geom_boxplot(alpha=0.99)+
+  # geom_jitter(alpha=0.5, width = 0.2)+
+  theme_article()+
+  ylab("Global Warming Potential gC m-2 day-1")+
+  scale_fill_viridis_d(begin = 0.2, end = 0.9)+
+  scale_colour_viridis_d(begin = 0.2, end = 0.9, option = "C")+
+  facet_wrap(. ~pilotsite, scales = "free_y", nrow = 1)+
+  theme(legend.position = 'right')+xlab("")
+
+myfilename <- paste("Net_Ecosystem_Exchange",paste(unique(table_ch4_sel$sampling), collapse = "_"), sep = "_")
+ggsave(plot = plt_NEE, filename = paste0(myfilename,".jpg"), path = plots_path, 
+       width = 10, height = 3.5, dpi = 300, units = 'in', scale = 1.1)
+
+
+
 # ---- Effect of bubbling ----
 
 table_ch4_sel$p_ebullition <- table_ch4_sel$ebullition/table_ch4_sel$total_estimated *100
@@ -501,11 +681,21 @@ ggplot(table_ch4_sel[table_ch4_sel$p_ebullition >=0 & table_ch4_sel$p_ebullition
        aes(LM.p.val, ebullition/total_estimated))+
   geom_point()+theme_article()
 
+ggplot(table_ch4_sel[which(table_ch4_sel$p_ebullition >=0 & table_ch4_sel$p_ebullition <=100),], 
+       aes(subsite, ebullition))+
+  # geom_hline(yintercept = 100)+
+  geom_jitter(alpha=0.5, width = 0.2)+
+  geom_boxplot(alpha=0.8, width=0.5)+
+  theme_article()+
+  scale_y_log10()+
+  facet_wrap(pilotsite~.)+
+  ylab("CH4 ebullition flux [nmol/m2/s]")+
+  xlab("")
 
 
 
 p_ebull <- ggplot(table_ch4_sel[which(table_ch4_sel$p_ebullition >=0 & table_ch4_sel$p_ebullition <=100),], 
-       aes(pilotsite, ebullition))+
+                  aes(pilotsite, ebullition))+
   # geom_hline(yintercept = 100)+
   geom_jitter(alpha=0.5, width = 0.2)+
   geom_boxplot(alpha=0.8, width=0.5)+
@@ -516,7 +706,7 @@ p_ebull <- ggplot(table_ch4_sel[which(table_ch4_sel$p_ebullition >=0 & table_ch4
 
 
 p_perc_ebull <- ggplot(table_ch4_sel[which(table_ch4_sel$p_ebullition >=0 & table_ch4_sel$p_ebullition <=100),], 
-       aes(pilotsite, p_ebullition))+
+                       aes(pilotsite, p_ebullition))+
   # geom_hline(yintercept = 100)+
   geom_jitter(alpha=0.5, width = 0.2)+
   geom_boxplot(alpha=0.8, width=0.5)+
@@ -524,9 +714,10 @@ p_perc_ebull <- ggplot(table_ch4_sel[which(table_ch4_sel$p_ebullition >=0 & tabl
   ylab("Contribution of bubbling to total CH4 flux [%]")+
   xlab("")
 
-ggarrange(p_ebull, p_perc_ebull)
-
-
+p_ebull <- ggarrange(p_ebull, p_perc_ebull)
+myfilename <- paste("000_overview_bubbling",paste(unique(table_ch4_sel$sampling), collapse = "_"), sep = "_")
+ggsave(plot = p_ebull, filename = paste0(myfilename,".jpg"), path = plots_path, 
+       width = 8, height = 5, dpi = 300, units = 'in', scale = 1.1)
 
 
 ggplot(table_ch4_sel[which(table_ch4_sel$p_ebullition >=0 & table_ch4_sel$p_ebullition <=100),], 
@@ -548,7 +739,7 @@ table_ch4_ebull <- table_ch4_sel[!is.na(table_ch4_sel$p_ebullition),]
 n_50 <- length(which(table_ch4_ebull$p_ebullition > 50))
 
 p_prop <- ggplot(table_ch4_ebull[order(table_ch4_ebull$p_ebullition),], 
-       aes(seq_along(table_ch4_ebull$p_ebullition)/dim(table_ch4_ebull)[1]*100,p_ebullition))+
+                 aes(seq_along(table_ch4_ebull$p_ebullition)/dim(table_ch4_ebull)[1]*100,p_ebullition))+
   geom_hline(yintercept = 100)+
   geom_hline(yintercept = 50, alpha=0.2)+
   # geom_jitter(alpha=0.5)+
@@ -576,8 +767,6 @@ p_ebull <- ggplot(table_ch4_ebull,
   ylab("CH4 ebullition flux [nmol/m2/s]")+
   theme(legend.position = 'bottom')+
   xlab("")
-
-
 
 
 
