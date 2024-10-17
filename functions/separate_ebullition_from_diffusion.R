@@ -14,7 +14,7 @@ separate_ebullition_from_diffusion <- function(my_incub, UniqueID, doPlot){
   mych4 <- data.frame(time = as.numeric(my_incub$POSIX.time-my_incub$POSIX.time[1]),
                       ch4 = my_incub$CH4dry_ppb)
   
-  ch4smooth <- smooth.spline(x = mych4$time, y = mych4$ch4, nknots = round(max(mych4$time)/3), spar = 0.6)
+  ch4smooth <- smooth.spline(x = mych4$time, y = mych4$ch4, nknots = round(length(mych4$time)/3), spar = 0.6)
   
   mych4$ch4smooth <- approx(ch4smooth$x, ch4smooth$y, xout = mych4$time, rule = 2)$y 
   
@@ -58,10 +58,11 @@ separate_ebullition_from_diffusion <- function(my_incub, UniqueID, doPlot){
       geom_abline(slope = avg_slope, intercept = my_c0, color = "red")+
       geom_abline(slope = avg_slope+sd_slope/2, intercept = my_c0, color = "grey70")+
       geom_abline(slope = avg_slope-sd_slope/2, intercept = my_c0, color = "grey70")+
-      xlab("time [secs]")+
+      xlab("Elapsed time [secs]")+
       ylab("CH4 [ppb]")+
       scale_color_manual(values=c("#999999", "#E69F00", "#56B4E9"))+
-      ggtitle(UniqueID)+theme_article()+theme(legend.title = element_blank())
+      # scale_color_manual(values=c("#999999", "#56B4E9"))+
+      ggtitle(UniqueID)+theme_article()+theme(legend.title = element_blank())+theme(legend.position = c(0.8,0.2))
     
     ggarrange(p_density, p_fit, widths = c(0.3,0.7))
     

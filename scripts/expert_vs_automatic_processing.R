@@ -45,7 +45,7 @@ require(pbapply)
 
 repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
 files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
-for (f in files.sources[-10]){source(f)}
+for (f in files.sources){source(f)}
 
 
 # ---- Directories ----
@@ -55,8 +55,6 @@ RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
 plots_path <- paste0(dropbox_root,"/GHG/GHG_expert_vs_automated/plots/")
 results_path <- paste0(dropbox_root,"/GHG/GHG_expert_vs_automated/results/")
 
-
-
 # loading auxfile
 setwd(dirname(results_path))
 auxfile <- read.csv(file = "auxfile.csv")
@@ -64,8 +62,39 @@ auxfile$start.time <- as.POSIXct(auxfile$start.time, tz = 'UTC')
 
 
 # ----- Random draw of incubations -----
+
+# a function to load already processed incubations
+load_fs <- function(path, pattern){
+  
+  list_f <- list.files(path = path, pattern = pattern, full.names = T)
+  list_f <- list_f[grep(pattern = "csv", x = list_f)]
+  
+  isF <- T
+  for (f in list_f){
+    df_tmp <- read.csv(f)
+    if(isF){
+      isF <- F
+      df_out <- df_tmp
+    } else {
+      df_out <- rbind(df_out,df_tmp)
+    }
+  }
+  return(df_out)
+}
+
+table_draws <- load_fs(path = results_path, pattern = "table_draw")
+
+x <- seq_along(auxfile$subsite)
+already <- sort(unique(table_draws$draw))
+areleft <- x[-already]
+
 # draw a few incubations randomly
-draw <- sample(seq_along(auxfile$subsite), nb_draw)
+# half of them are taken from incubations not yet processed
+draw_areleft <- sample(areleft, round(nb_draw/2))
+# the other half from incubations already processed
+draw_already <- sample(already, round(nb_draw/2))
+
+draw <- c(draw_areleft, draw_already)
 
 table_draw <- data.frame(username = username,
                          draw = draw,
@@ -96,11 +125,16 @@ for(k in seq_along(myauxfile$UniqueID)){
   mydata <- mydata[which(mydata$POSIX.time>=myauxfile$start.time[k] & 
                            mydata$POSIX.time<=myauxfile$start.time[k]+myauxfile$duration[k]),]
   mydata$UniqueID <- myauxfile$UniqueID[k]
+  # mydata$Etime <- mydata$POSIX.time - min(mydata$POSIX.time)
+  # 
+  # table_draw$corr_co2_ch4[k] <- cor(mydata$CO2dry_ppm, mydata$CH4dry_ppb)
+  # mod_lm <- lm(data = mydata, formula = CH4dry_ppb~CO2dry_ppm)
+  # table_draw$slope_co2_ch4[k] <- coefficients(mod_lm)[2]
+  # table_draw$r2_co2_ch4[k] <- summary(mod_lm)$adj.r.squared
   
   mydata_all <- rbind(mydata_all, mydata)
   rm(mydata)
 }
-
 
 
 # ---- Process incubations and compute fluxes ----
@@ -222,19 +256,23 @@ for (i in seq_along(uniqIDs)){
   my_incub <- mydata_all[which(as.numeric(mydata_all$POSIX.time)> table_draw$start.time_expert_co2[i] &
                            as.numeric(mydata_all$POSIX.time)< table_draw$end.time_expert_co2[i]),]
   my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
-  # calling dedicated function
-  df_ebull <- separate_ebullition_from_diffusion(my_incub = my_incub, UniqueID = uniqIDs[i], doPlot = T)
-  # computing fluxes
-  H2O_mol = my_incub$H2O_ppm / (1000*1000)
-  myfluxterm <- flux.term(my_myauxfile$Vtot, my_myauxfile$Pcham, my_myauxfile$Area,
-                          my_myauxfile$Tcham, first(H2O_mol))
-  CH4_flux_total <- df_ebull$delta_ch4/df_ebull$duration*myfluxterm # nmol/m2/s
-  CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
-  CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
   
-  CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==uniqIDs[i])] <- CH4_flux_total
-  CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==uniqIDs[i])] <- CH4_flux_ebull
-  CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==uniqIDs[i])] <- CH4_flux_diff
+  if(max(as.numeric(my_incub$POSIX.time))-min(as.numeric(my_incub$POSIX.time))>50){
+    
+    # calling dedicated function
+    df_ebull <- separate_ebullition_from_diffusion(my_incub = my_incub, UniqueID = uniqIDs[i], doPlot = T)
+    # computing fluxes
+    H2O_mol = my_incub$H2O_ppm / (1000*1000)
+    myfluxterm <- flux.term(my_myauxfile$Vtot, my_myauxfile$Pcham, my_myauxfile$Area,
+                            my_myauxfile$Tcham, first(H2O_mol))
+    CH4_flux_total <- df_ebull$delta_ch4/df_ebull$duration*myfluxterm # nmol/m2/s
+    CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
+    CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
+    
+    CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==uniqIDs[i])] <- CH4_flux_total
+    CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==uniqIDs[i])] <- CH4_flux_ebull
+    CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==uniqIDs[i])] <- CH4_flux_diff
+  }
 }
 
 

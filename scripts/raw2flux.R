@@ -41,7 +41,7 @@ for (f in files.sources){source(f)}
 
 
 #################################
-sampling <- "S3"
+sampling <- "S4"
 # USER, please specify if you want plots to be saved
 harmonize2RData <- F
 doPlot <- T

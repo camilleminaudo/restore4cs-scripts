@@ -40,8 +40,8 @@ source(paste0(dirname(dirname(rstudioapi::getSourceEditorContext()$path)),"/func
 
 # set directories
 
-dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" #Miguel's dropbox dir
-# dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" #Camille's dropbox dir
+# dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" #Miguel's dropbox dir
+dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" #Camille's dropbox dir
 
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
@@ -230,7 +230,18 @@ if(length(ind_suspicious_chamb_type)>0){
 
 ```{r coordinates, warning=FALSE, echo=F}
 
-my_shp <- st_as_sf(fieldsheet,
+
+ind_missing_coordinates_long <- which(is.na(fieldsheet$longitude))
+if(length(ind_missing_coordinates_long)>0){
+fieldsheet_flagged <- append2table(fieldsheet, fieldsheet_flagged, ind_missing_coordinates_long, "missing longitude")
+}
+
+ind_missing_coordinates_lat <- which(is.na(fieldsheet$latitude))
+if(length(ind_missing_coordinates_lat)>0){
+fieldsheet_flagged <- append2table(fieldsheet, fieldsheet_flagged, ind_missing_coordinates_lat, "missing latitude")
+}
+
+my_shp <- st_as_sf(fieldsheet[which(!is.na(fieldsheet$longitude) & !is.na(fieldsheet$latitude)),],
                    coords = c("longitude", "latitude"),
                    crs = 4326)
 # setwd(paste0(dropbox_root,"/GIS"))
@@ -239,8 +250,8 @@ my_shp <- st_as_sf(fieldsheet,
 # st_write(my_shp, dsn = myfilename, layer = myfilename, driver = "ESRI Shapefile", append = F)
 
 # load subsites polygons
-setwd(dropbox_root)
-shp_sites <- st_read("./GIS/Shape_files_subsites/Rough shapes for export/Subsites_rough_forExport.shp")
+setwd(paste0(dropbox_root, "/GIS/Shape_files_subsites/Rough shapes for export"))
+shp_sites <- st_read("Subsites_rough_forExport.shp")
 
 # intersect my_shp with shp_sites and find points outside polygons
 # find corresponding basins
