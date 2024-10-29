@@ -19,7 +19,9 @@
 #5 Substract baseline from area of peaks
 
 
+
 #Generally, much more clear signal for CH4 than for CO2 (much bigger difference between baseline and peaks). Peaks of CH4 and CO2 are simultaneous (make sure!!), so we will define the peaks based on the CH4 signal alone, then pull the CO2 values corresponding to CH4 peak. For the baseline we cannot use the same approach, as CO2 baseline is much more noisy, with some Humps in between and throughout the peaks. 
+
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
