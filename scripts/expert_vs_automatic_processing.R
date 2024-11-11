@@ -89,12 +89,16 @@ already <- sort(unique(table_draws$draw))
 areleft <- x[-already]
 
 # draw a few incubations randomly
-# half of them are taken from incubations not yet processed
-draw_areleft <- sample(areleft, round(nb_draw/2))
-# the other half from incubations already processed
-draw_already <- sample(already, round(nb_draw/2))
-
-draw <- c(draw_areleft, draw_already)
+# if possible, half of them are taken from incubations not yet processed
+if(length(areleft)>=round(nb_draw/2)){
+  draw_areleft <- sample(areleft, round(nb_draw/2))
+  # the other half from incubations already processed
+  draw_already <- sample(already, round(nb_draw/2))
+  draw <- c(draw_areleft, draw_already)
+} else {
+# if not, incubations are chosen randomly among the whole dataset
+  draw <- sample(x, nb_draw)
+}
 
 table_draw <- data.frame(username = username,
                          draw = draw,
@@ -397,13 +401,15 @@ ggplot(data = table_results)+
   scale_colour_viridis_d(begin = 0.1, end = 0.9, option = "F")+facet_grid(.~variable, scales = 'free')+coord_flip()
 
 
+#----- some info about the number of incubations you have processed so far -----
 
+n_done <- length(table_draws$username[table_draws$username==username])
+message(paste(username,", you have processed manually ", n_done,
+              " out of a total of ",dim(table_draws)[1], " incubations", sep = ""))
 
-
-
-
-
-
+if(n_done<100){
+  message(paste0("Could you do at least ",100-n_done, " more?"))
+}
 
 
 

@@ -87,6 +87,51 @@ click.peak <- function(flux.unique, gastype, sleep = 3,
   flux.meas <- Reduce("c", flux.unique[, gastype])
   time.meas <- Reduce("c", flux.unique[, "POSIX.time"])
 
+  
+  
+  
+  if (gastype=="CO2dry_ppm"){
+    
+    # Show timeseries for CO2 and CH4 to provide an overview of the incubation
+    flux.meas_CO2 <- Reduce("c", flux.unique[, "CO2dry_ppm"])
+    flux.meas_CH4 <- Reduce("c", flux.unique[, "CH4dry_ppb"])
+    
+    
+    # Graph limits
+    yaxis.limit.max_CO2 <- (max(flux.meas_CO2, na.rm = TRUE) + 0.01*max(flux.meas_CO2, na.rm = TRUE)) #%>% ifelse(. > 1000, 1000, .)
+    yaxis.limit.min_CO2 <- (min(flux.meas_CO2, na.rm = TRUE) - 0.01*max(flux.meas_CO2, na.rm = TRUE))
+    yaxis.limit.max_CH4 <- (max(flux.meas_CH4, na.rm = TRUE) + 0.01*max(flux.meas_CH4, na.rm = TRUE))
+    yaxis.limit.min_CH4 <- (min(flux.meas_CH4, na.rm = TRUE) - 0.01*max(flux.meas_CH4, na.rm = TRUE))
+    
+    
+    
+    # Open plot in a new window to avoid problems with the identify function
+    dev.new(noRStudioGD = TRUE, width = 15, height = 8)
+    par(mfrow = c(1,2))
+    # Plot individual measurements
+    plotCO2 <- plot(flux.meas_CO2 ~ time.meas, col="blue",
+                    main = "Inspect the plots...",
+                    xlab = "Time", ylab = "CO2dry [ppm]", xaxt = 'n',
+                    ylim = c(yaxis.limit.min_CO2, yaxis.limit.max_CO2))
+    axis.POSIXct(1, at = seq(min(time.meas), max(time.meas), by = "10 secs"), format = "%H:%M:%S")
+    
+    plotCH4 <- plot(flux.meas_CH4 ~ time.meas, col="red",
+                    main = "Wait a few seconds...",
+                    xlab = "Time", ylab = "CH4dry [ppb]", xaxt = 'n',
+                    ylim = c(yaxis.limit.min_CH4, yaxis.limit.max_CH4))
+    axis.POSIXct(1, at = seq(min(time.meas), max(time.meas), by = "10 secs"), format = "%H:%M:%S")
+    
+    sleeploop(5)
+    
+    # Close plot
+    dev.flush()
+    dev.off()
+    par(mfrow = c(1,1))
+    
+  }
+  
+  
+  
   # Graph limits
   yaxis.limit.max <- (max(flux.meas, na.rm = TRUE) + 0.01*max(flux.meas, na.rm = TRUE)) %>%
     ifelse(. > plot.lim[2], plot.lim[2], .)
@@ -95,10 +140,15 @@ click.peak <- function(flux.unique, gastype, sleep = 3,
 
   # Open plot in a new window to avoid problems with the identify function
   dev.new(noRStudioGD = TRUE, width = 14, height = 8)
-
+  mytitle <- ""
+  if(gastype=="CO2dry_ppm"){
+    mytitle <- "Select what looks like safe CO2 data..."
+  } else {
+    mytitle <- "Select what looks like CH4 diffusion..."
+  }
   # Plot individual measurements
   plot(flux.meas ~ time.meas,
-       main = paste("click start...click end...", gastype, unique(flux.unique$UniqueID), sep = " "),
+       main = mytitle,
        xlab = "Time", ylab = gastype, xaxt = 'n',
        ylim = c(yaxis.limit.min, yaxis.limit.max))
   axis.POSIXct(1, at = seq(min(time.meas), max(time.meas), by = "10 secs"), format = "%H:%M:%S")
@@ -106,7 +156,6 @@ click.peak <- function(flux.unique, gastype, sleep = 3,
   # Use the identify function to select start and end points
   rownum <- identify(time.meas, flux.meas, pos = FALSE, n = 2, plot = TRUE,
                      atpen = FALSE, offset = 0.5, tolerance = 0.25)
-
   # Close identify plot
   dev.flush()
   dev.off()
@@ -136,8 +185,15 @@ click.peak <- function(flux.unique, gastype, sleep = 3,
 
   # Inspect the full data set to see if it looks OK
   dev.new(noRStudioGD = TRUE, width = 14, height = 8)
+  mytitle <- ""
+  if(gastype=="CO2dry_ppm"){
+    mytitle <- "Your selection for safe CO2 data"
+  } else {
+    mytitle <- "Your selection for CH4 diffusion..."
+  }
+  
   plot(flux.meas ~ flux.corr$Etime, col = flux.corr$flag+1,
-       main = paste("your selection...", gastype, unique(flux.unique$UniqueID), sep = " "),
+       main = mytitle,
        xlab = "Etime", ylab = gastype, xaxp = c(-60, 300, 12),
        ylim = c(yaxis.limit.min, yaxis.limit.max))
   #add line of best fit to scatter plot
@@ -148,14 +204,14 @@ click.peak <- function(flux.unique, gastype, sleep = 3,
   sleeploop(sleep)
   dev.off()
 
-  # Print warning if observation length < warn.length (default 60 observations)
-  if (nrow(filter(flux.corr, flag == 1)) < warn.length) {
-    warning("Observation length for UniqueID: ", unique(flux.corr$UniqueID),
-            " is ", nrow(filter(flux.corr, flag == 1)), " observations",
-            call. = FALSE)
-  } else {
-    message("Good window of observation for UniqueID: ", unique(flux.corr$UniqueID))
-  }
+  # # Print warning if observation length < warn.length (default 60 observations)
+  # if (nrow(filter(flux.corr, flag == 1)) < warn.length) {
+  #   warning("Observation length for UniqueID: ", unique(flux.corr$UniqueID),
+  #           " is ", nrow(filter(flux.corr, flag == 1)), " observations",
+  #           call. = FALSE)
+  # } else {
+  #   message("Good window of observation for UniqueID: ", unique(flux.corr$UniqueID))
+  # }
 
   # Return results
   return(flux.corr)

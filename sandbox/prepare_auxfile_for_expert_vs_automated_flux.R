@@ -63,9 +63,10 @@ results_path <- paste0(dropbox_root,"/GHG/GHG_expert_vs_automated/results/")
 # list filenames
 myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx", all.files = T, full.names = T, recursive = T)
 
-#S4 data is not ready yet
-i <- grep(pattern = "S4", x = myfieldsheets_list) # selecting the files corresponding to the selected sampling campaign
-myfieldsheets_list <- myfieldsheets_list[-i]
+# #S4 data is not ready yet
+# i <- grep(pattern = "S4", x = myfieldsheets_list) # selecting the files corresponding to the selected sampling campaign
+# myfieldsheets_list <- myfieldsheets_list[-i]
+
 # Read all fieldsheets and put them in a single dataframe
 fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 
