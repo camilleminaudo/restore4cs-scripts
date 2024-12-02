@@ -51,7 +51,7 @@ rm(s, i)
 
 
 
-#List UniqueID of incubations with weird patterns based on exploration of data
+#List UniqueID of incubations with weird patterns based on exploration of incubation plots.
 weird_incubations_uniqueID<- c("s2-cu-p2-15-o-d-11:39",
                                "s1-cu-a2-2-o-d-06:52", 
                                "s3-cu-a2-15-o-d-13:07", 
@@ -74,7 +74,7 @@ cu<- dat %>%
   select(-c(CO2_LM.flux,CO2_HM.flux,CH4_diffusive_flux,CH4_ebullitive_flux,CH4_LM.flux,CH4_HM.flux,Area,Vtot,Tcham,Pcham,lightCondition,chamberType,duration))
 
 
-write.csv(cu, file = paste0(results_path,"summaries_miguel/Curonian_All_openwater_S1-S4_CO2_CH4_umolm-2_s-1_AND_gwpCO2eq_mgm-2h-1.csv"),row.names = F)
+write.csv(cu, file = paste0(results_path,"summaries_curonian_ow/Curonian_All_openwater_S1-S4_CO2_CH4_umolm-2_s-1_AND_gwpCO2eq_mgm-2h-1.csv"),row.names = F)
 
 #Obtain fluxes in long format and in umol m-2 s-1
 fluxes_long<- cu %>% 
@@ -89,7 +89,7 @@ ggplot(subset(fluxes_long, fluxtype%in%c("GWP_ch4","GWP_co2","GWP_total")), aes(
   theme_bw()+
   scale_y_continuous(name=expression(CO[2] * " eq flux (mg CO"[2] * " m"^-2 * " h"^-1 * ")"))
 
-ggsave(filename = paste0(results_path,"summaries_miguel/CU_ow_seasonal_GWP.jpg"),
+ggsave(filename = paste0(results_path,"summaries_curonian_ow/CU_ow_seasonal_GWP.jpg"),
        device = "jpg",units = "cm",width = 15,height = 15,)
 
 
@@ -100,7 +100,7 @@ ggplot(subset(fluxes_long, fluxtype%in%c("GWP_ch4","GWP_co2","GWP_total")), aes(
   theme_bw()+
   scale_y_continuous(name=expression(CO[2] * " eq flux (mg CO"[2] * " m"^-2 * " h"^-1 * ")"))
 
-ggsave(filename = paste0(results_path,"summaries_miguel/CU_ow_year_GWP.jpg"),
+ggsave(filename = paste0(results_path,"summaries_curonian_ow/CU_ow_year_GWP.jpg"),
        device = "jpg",units = "cm",width = 8,height = 10,)
 
 
@@ -117,7 +117,7 @@ cu_sum<- fluxes_long %>%
     ci95upper = mean_value + qt(0.975, df = nobs - 1) * se
   )
 
-write.csv(cu_sum, file = paste0(results_path,"summaries_miguel/Curonian_seasonal_summary_openwater_S1-S4_CO2_CH4_umolm-2_s-1_AND_gwpCO2eq_mgm-2h-1.csv"),row.names = F)
+write.csv(cu_sum, file = paste0(results_path,"summaries_curonian_ow/Curonian_seasonal_summary_openwater_S1-S4_CO2_CH4_umolm-2_s-1_AND_gwpCO2eq_mgm-2h-1.csv"),row.names = F)
 
 
 ggplot(cu_sum, aes(x=season, y=mean_value))+
@@ -142,7 +142,7 @@ cu_sum_y<- fluxes_long %>%
     ci95upper = mean_value + qt(0.975, df = nobs - 1) * se
   )
 
-write.csv(cu_sum_y, file = paste0(results_path,"summaries_miguel/Curonian_yearly_summary_openwater_S1-S4_CO2_CH4_umolm-2_s-1_AND_gwpCO2eq_mgm-2h-1.csv"),row.names = F)
+write.csv(cu_sum_y, file = paste0(results_path,"summaries_curonian_ow/Curonian_yearly_summary_openwater_S1-S4_CO2_CH4_umolm-2_s-1_AND_gwpCO2eq_mgm-2h-1.csv"),row.names = F)
 
 ggplot(cu_sum_y, aes(x=subsite_only, y=mean_value))+
   geom_point()+
