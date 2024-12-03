@@ -59,6 +59,7 @@ weird_incubations_uniqueID<- c("s2-cu-p2-15-o-d-11:39",
                                "s1-cu-a1-2-o-d-07:28",
                                "s4-cu-r2-6-o-d-10:33")
 
+
 #Filter open water from Curonian Lagoon, use only best.flux estimates, (transform CH4 from nmol to umol m-2 s-1), calculate emissions in CO2eq (mgCO2eq m-2 h-1), applying GWP of 28 for CH4 (1gCH4 = 28g CO2eq)
 
 # calculate fluxes in mg m-2 h-1
