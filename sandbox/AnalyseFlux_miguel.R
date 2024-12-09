@@ -81,7 +81,7 @@ table_results_all <- table_results_all[!is.na(table_results_all$lightCondition),
 
 # table_results_all <- table_results_all[table_results_all$CO2_best.flux<1000,]
 
-
+#Load subsites level_incubation CSV files with details of flux calulation for different models (produced by raw2flux.R script)
 get_full_detailed_table <- function(table_results_all, variable){
   
   listf <- list.files(path = paste0(results_path,"level_incubation"), pattern = ".csv", all.files = T, full.names = T, recursive = F)
