@@ -38,6 +38,7 @@ loggerspath <- paste0(dropbox_root,"/GHG/RAW data/RAW Data Logger")
 # RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
 results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 vegetation_path<- paste0(dropbox_root,"/Vegetation/")
+lightplots_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/plots/")
 # plots_path <- paste0(dropbox_root,"/GHG/Processed data/plots_all_incubations/")
 
 
@@ -248,9 +249,8 @@ loggers_maps<- field %>%
 subsites <- unique(loggers_maps$subsite)
 logger_summary<- data.frame()
 
-
-# isF_incub <- T
-# isFsubsite <- T
+#Initialize list of plots to save lightplots
+plotslight <- list()
 
 for (subsite in subsites){
   message("Now processing ",subsite)
@@ -392,48 +392,76 @@ for (subsite in subsites){
     } else {
       warning("chamber type not correct!")
     }
-    
-
-  
-  
-  
-  
     logger_summary<- rbind(logger_summary,incubsave)
   }
   
+  if(is_data_logger_tube){
+  #For each subsite, make a plot with the light sensor data and the corresponding transparent_dark incubations
+    
+  #add UniqID to data logger tube
+    corresp_fs_tube<- corresp_fs %>% filter(chamber_type=="tube")
+  data_logger_tube$uniqID <- sapply(data_logger_tube$unixtime, function(unixtime) {
+    # Find the label for each unixtime based on the unixstart and unixstop
+    uniqID <- corresp_fs_tube$uniqID[corresp_fs_tube$unix_start <= unixtime & corresp_fs_tube$unix_stop >= unixtime]
+    if (length(uniqID) > 0) {
+      return(uniqID)
+    } else {
+      return(NA)  # or another value like "No label" if no match
+    }
+  })
+  #add light condition to data logger ("t" or "d")
+  data_logger_tube$condition_light<- substr(str_extract(data_logger_tube$uniqID, pattern = "[a-z]{1}-[0-9]{2}"),1,1)
+  
+  #PLot of the uniqIDs in the light data (with 3 h before and after the incubation times)
+  p<-data_logger_tube %>% 
+    filter(unixtime>min(corresp_fs_tube$unix_start, na.rm=T)-(60*180)&unixtime<=max(corresp_fs_tube$unix_stop, na.rm=T)+(60*180)) %>% 
+    filter(!is.na(light)) %>% 
+    ggplot(aes(x=datetime, y=light))+
+    #ADDING labels fails (error when printing pdf within loop)
+    # geom_label(data = data_logger_tube %>%  filter(!is.na(uniqID)) %>% group_by(uniqID) %>% summarise(datetime=mean(datetime),light=first(light)), aes(x=datetime, label = uniqID, y=0),vjust=0.5,hjust = 1,angle = 90)+
+    geom_line()+
+    geom_point(data=subset(data_logger_tube, !is.na(condition_light)),aes(col=condition_light))+
+    labs(col="Light?")+
+    scale_x_datetime(breaks = "hour")+
+    # coord_cartesian(ylim = c(-40000, NA)) +  
+    #scale y adjustment is what fails!
+    # scale_y_continuous(limits = c(-45000,
+    #                               max(data_logger_tube %>%
+    #                                     filter(unixtime>min(corresp_fs$unix_start, na.rm=T)-(60*180)&unixtime<=max(corresp_fs$unix_stop,na.rm=T)+(60*180)) %>% pull(light))))+
+    ggtitle(paste(subsite, "SN:",SN_logger_tube))+
+    theme_bw()
+  # }else{
+  #   p<- ggplot()+ ggtitle(paste(subsite, "SN:",SN_logger_tube))+theme_bw()
+  }
+  
+  # Store each subsite light data plot in the list
+  plotslight[[subsite]] <- p
   
 }
-  
+
+#save lightplot for every subsite: 
+pdf(file = paste0(lightplots_path,"Lightsensor_per_subsite.pdf"),width = 15)  # Open PDF device
+
+# Loop through the list of plots and print each plot
+for (plot_name in names(plotslight)) {
+  print(plotslight[[plot_name]])
+}
+
+dev.off()  # Close the PDF device
+
+
 ####POR AQUI####
 
 #Up to here works, but many problems reading the tube_loggers. 
+#Some subsites have duplicated data logger info (eg. light sensor for S1-CU-P2 and S1-CU-P2 have the exact same light data). Check files and check loop (to know that the plot is not re-using the last valid  data_logger_tube data)
+#Cannot find a way of consistently plotting the uniqID labels inside each plot (printing fails when there is an issue with the data)
+
 #ALSO probably time from fieldsheets not appropiate (alternative?).
 
-#Check plotting subsite logger light values with coloring when data corresponds to  light and dark incubations. 
-
-#IMPLEMENT inside the loop to inspect the apropiateness of the times used
 #REVISE import of data loggers for timezone changes. 
 #ASK Camille if he adjusted the times of LICOR PICARRO, LOS GATOS. 
 
-data_logger_tube$uniqID <- sapply(data_logger_tube$unixtime, function(unixtime) {
-  # Find the label for each unixtime based on the unixstart and unixstop
-  uniqID <- corresp_fs$uniqID[corresp_fs$unix_start <= unixtime & corresp_fs$unix_stop >= unixtime]
-  if (length(uniqID) > 0) {
-    return(uniqID)
-  } else {
-    return(NA)  # or another value like "No label" if no match
-  }
-})
-
-data_logger_tube$condition_light<- substr(str_extract(data_logger_tube$uniqID, pattern = "[a-z]{1}-[0-9]{2}"),1,1)
-
-#PLot of the uniqIDs in the light data (with 3 h before and after the incubation times)
-data_logger_tube %>% 
-  filter(unixtime>min(corresp_fs$unix_start)-(60*180)&unixtime<=max(corresp_fs$unix_stop)+(60*180)) %>% 
-  ggplot(aes(x=unixtime, y=light))+
-  geom_line()+
-  geom_point(aes(col=condition_light))+
-  geom_label(data = data_logger_tube %>%  filter(!is.na(uniqID)) %>% group_by(uniqID) %>% summarise(unixtime=first(unixtime),light=first(light)), aes(x=unixtime, label = uniqID, y=light),nudge_y = 20000,angle = 90)
+names(plotslight)[1]
 
 
 
