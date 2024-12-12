@@ -39,6 +39,7 @@ loggerspath <- paste0(dropbox_root,"/GHG/RAW data/RAW Data Logger")
 results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 vegetation_path<- paste0(dropbox_root,"/Vegetation/")
 lightplots_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/plots/")
+lifewatch_example_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/LifeWatch Italy GHG dataset example/")
 # plots_path <- paste0(dropbox_root,"/GHG/Processed data/plots_all_incubations/")
 
 
@@ -136,7 +137,7 @@ ghg_formated<- field2 %>% merge.data.frame(dat2, by="UniqueID",all = F) %>%
   select(-UniqueID) %>% 
   pivot_wider(names_from = transparent_dark,values_from = c(start.time, CO2_best.flux, CH4_diffusive_flux,CH4_ebullitive_flux,comments)) %>% 
   mutate(plot_startime=min(start.time_dark, start.time_transparent, na.rm=T),
-         plotcode=paste(subsite, plot_id,sep = "-"),
+         plotcode=paste0(subsite,"-",plot_id,"-",toupper(substr(strata,1,1))),#Add first capitalized letter of strata to plotcode
          campaign=str_extract(subsite, pattern="S[0-9]{1}"),
          season=case_when(campaign=="S1"~"fall",
                           campaign=="S2"~"winter",
@@ -150,6 +151,7 @@ ghg_formated<- field2 %>% merge.data.frame(dat2, by="UniqueID",all = F) %>%
   select(season, campaign,pilot_site, subsite, sampling, date, latitude, longitude, water_depth, strata, plotcode, plot_startime, CO2_best.flux_dark, CO2_best.flux_transparent, CH4_diffusive_flux_dark, CH4_ebullitive_flux_dark, CH4_diffusive_flux_transparent, CH4_ebullitive_flux_transparent)
 
 
+write.csv(ghg_formated, file = paste0(lifewatch_example_path, "GHG_per_plot_formated.csv"),row.names = F)
 
 
 # ---- Vegetation ID & DW ----
@@ -226,6 +228,12 @@ mean(veg_formated$ABG_biomass_gpersquaremeter,na.rm = T)
 #Many NAs that could be filled by looking at sampling pictures
 
 
+veg_formated<- veg_formated %>% 
+  select(plotcode,ABG_biomass_gpersquaremeter,vegetation_description) %>% 
+  mutate(plotcode=paste0(plotcode,"-V"))#add 1st letter of strata to plotcode
+
+write.csv(veg_formated, file = paste0(lifewatch_example_path, "vegetation_per_plot_formated.csv"),row.names = F)
+
 
 
 # ---- Data loggers ----
@@ -247,6 +255,26 @@ loggers_maps<- field %>%
 #Most of the below  code is borrowed from raw2flux script.
 
 subsites <- unique(loggers_maps$subsite)
+
+# Use expand.grid to create all combinations
+designed_subsites <- expand.grid(campaign = c("S1", "S2", "S3", "S4"), pilot_site = c("CA", "CU", "DA", "DU", "VA", "RI"), status = c("A1", "A2", "P1", "P2", "R1", "R2")) %>% mutate(all_subsites=paste(campaign,pilot_site,status,sep = "-")) %>% pull(all_subsites)
+
+#Check no subsite missing or duplicate
+unique(subsites %in%designed_subsites)
+unique(designed_subsites %in%subsites)
+rm(designed_subsites)
+
+#Check NAs in logger data (subsite, SN loggers, chambertype, uniqID, unixstart, unixstop)
+loggers_maps_nas <- loggers_maps[apply(loggers_maps, 1, function(x) any(is.na(x))), ]
+
+print(loggers_maps_nas)
+#14 incubations with undefined time-period (check fieldsheets and correct)
+
+#Extract data from loggers only for well-defined incubations
+complete_loggers_maps<- loggers_maps %>% drop_na()
+
+
+#Initialize data frame to save logger data
 logger_summary<- data.frame()
 
 #Initialize list of plots to save lightplots
@@ -255,14 +283,14 @@ plotslight <- list()
 for (subsite in subsites){
   message("Now processing ",subsite)
   
-  corresp_fs <- loggers_maps[loggers_maps$subsite == subsite,]
+  corresp_fs <- complete_loggers_maps[complete_loggers_maps$subsite == subsite,]
   
-  # read corresponding temperature logger file and keep initial temperature
+  #get details from fieldsheet to find data_logger files:
   SN_logger_float <- first(corresp_fs$logger_floating_chamber)
   SN_logger_tube <- first(corresp_fs$logger_transparent_chamber)
   site_ID <- str_sub(subsite, start = 1, end = 5)
   
-  # finding out if corresponding file exists, and its extension
+  # finding out if corresponding data_logger files exist, and their extension
   dir_exists_loggdata <- dir.exists(paste0(loggerspath,"/",site_ID,"/"))
   if(dir_exists_loggdata){
     f <- list.files(paste0(loggerspath,"/",site_ID,"/"), full.names = T)
@@ -275,10 +303,11 @@ for (subsite in subsites){
     i_f_tube <- grep(pattern = SN_logger_tube, x = f)[1]
   }
   
-  #Read data from data logger float (sn, datetime, temperature, unixtime)
+  
+  #If the data logger float file is found, read it and get data (sn, datetime, temperature, unixtime)
   if(!is.na(SN_logger_float) & !is.na(i_f_float)){
     is_data_logger_float = T
-    message("...reading corresponding temperature logger file for floating chamber")
+    # message("...reading corresponding temperature logger file for floating chamber")
     if(f_ext[i_f_float]=="xlsx"){
       data_logger_float <- readxl::read_xlsx(f[i_f_float],col_names = T)
     } else if(f_ext[i_f_float]=="csv"){
@@ -286,27 +315,31 @@ for (subsite in subsites){
     }
     data_logger_float <- data_logger_float[,seq(1,3)]
     names(data_logger_float) <- c("sn","datetime","temperature")
+    ##DOUBT: Why replace SN?--------------
     data_logger_float$sn <- SN_logger_float
-    #Temperature as numeric:
+    
+    #Format data (as numeric, datetime,..)
     data_logger_float$temperature<- as.numeric(data_logger_float$temperature)
     if(is.character(data_logger_float$datetime)){
       data_logger_float$datetime <- as.POSIXct(data_logger_float$datetime, tz = 'utc', tryFormats = c("%m/%d/%y %r", "%d/%m/%Y %H:%M"))
     }
     data_logger_float$unixtime <- as.numeric(data_logger_float$datetime)
   } else {
-    message("===> no data logger linked to the floating chamber!")
+    #If we dont find the float file, message and record its absence within loop
+    message("===> no data logger file linked to the floating chamber!")
     is_data_logger_float = F}
   
-  #Check that we actually have data from logger
+  #Check that we have enough float data from file
   if(dim(data_logger_float)[1]<10){
     message("===> not enough data could be linked to the floating chamber!")
     is_data_logger_float = F
   }
   
-  #Read data from data logger tube (sn, datetime, temperature, unixtime)
+  
+  #IF the data logger tube is found, read it and get data (sn, datetime, temperature, light, unixtime)
   if(!is.na(SN_logger_tube) & !is.na(i_f_tube)){
     is_data_logger_tube = T
-    message("...reading corresponding temperature logger file for tube chamber")
+    # message("...reading corresponding temperature logger file for tube chamber")
     if(f_ext[i_f_tube]=="xlsx"){
       data_logger_tube <- readxl::read_xlsx(f[i_f_tube],col_names = T)
     } else if(f_ext[i_f_tube]=="csv"){
@@ -314,8 +347,9 @@ for (subsite in subsites){
     }
     data_logger_tube <- data_logger_tube[,seq(1,4)]
     names(data_logger_tube) <- c("sn","datetime","temperature","light")
+    ##DOUBT: Why replace SN?--------------
     data_logger_tube$sn <- SN_logger_tube
-    #Temperature and light as numeric
+    #Format data (as.numeric, datetime, )
     data_logger_tube$temperature <- as.numeric(data_logger_tube$temperature)
     data_logger_tube$light <- as.numeric(data_logger_tube$light)
     if(is.character(data_logger_tube$datetime)){
@@ -326,53 +360,57 @@ for (subsite in subsites){
       }
     }
     data_logger_tube$unixtime <- as.numeric(data_logger_tube$datetime)
+    
   } else {
+    #If we dont find the tube file, message and record its absence within loop
     is_data_logger_tube = F
     message("===> no data logger linked to the tube chamber!")
   }
-  #Check that we actually have data from logger
+  #Check that we have enough tube data from file
   if(dim(data_logger_tube)[1]<10){
     message("===> not enough data could be linked to the tube chamber!")
     is_data_logger_tube = F
   }
   
   
-  
+
+  #Loop over incubations of subsite and get 1 row with descriptive statistics for temperature and light. 
   for (incub in seq_along(corresp_fs$uniqID)){
-    
-    #if floating -> subset temp data and calculate descriptive stats for temperature. Add results to loggersdata (subsite, uniqID, descriptive stats)
-    
-    #If tube-> subset logger data, calculate descriptive stats for temp and light (mean, sd, median). Add results to loggersdata (subsite, uniqID, descriptive stats)
     
     #Get start and stop of incubation, 
     incubstart<- corresp_fs[incub,]$unix_start
     incubstop<- corresp_fs[incub,]$unix_stop
     
-  #IF floating: 
+  #IF incubation is floating: subset data float and calculate descriptive stats for temperature. Add row to loggers_summary
+  #IF incubation is tube: subset data tube and calculate descriptive stats. Add row to loggers_summary  
     if (corresp_fs$chamber_type[incub] == "floating"){
+      #IF there is data_logger float
       if(is_data_logger_float){
         
-      incub_log<- data_logger_float[data_logger_float$unixtime>=incubstart&data_logger_float$unixtime<incubstop,]  
+        #Subset sensor data from incubation period
+        incub_log<- data_logger_float[data_logger_float$unixtime>=incubstart&data_logger_float$unixtime<incubstop,]  
       
-      #Calculate descriptive stats for temp (fill light variables with NA and 0 obs)
-      incubsave<- data.frame(
-        "uniqID"=corresp_fs$uniqID[incub],
-        "temp_mean"=mean(incub_log$temperature, na.rm=T),
-        "temp_sd"=sd(incub_log$temperature, na.rm = T),
-        "temp_median"=median(incub_log$temperature,na.rm = T),
-        "temp_n"=sum(!is.na(incub_log$temperature)),
-        "light_mean"=as.numeric(NA),
-        "light_sd"=as.numeric(NA),
-        "light_median"=as.numeric(NA),
-        "light_n"=sum(!is.na(NA))
-      )
-      
-      }
-      #IF tube 
+         #Calculate descriptive stats for temp (fill light variables with NA and 0 obs)
+        incubsave<- data.frame(
+          "uniqID"=corresp_fs$uniqID[incub],
+          "temp_mean"=mean(incub_log$temperature, na.rm=T),
+          "temp_sd"=sd(incub_log$temperature, na.rm = T),
+          "temp_median"=median(incub_log$temperature,na.rm = T),
+          "temp_n"=sum(!is.na(incub_log$temperature)),
+          "light_mean"=as.numeric(NA),
+          "light_sd"=as.numeric(NA),
+          "light_median"=as.numeric(NA),
+          "light_n"=sum(!is.na(NA))
+          )
+        #Add incubsave floating to logger_summary
+        logger_summary<- rbind(logger_summary,incubsave)
+        }
+  #IF incubation is tube:
     } else if (corresp_fs$chamber_type[incub] == "tube"){
+      #If there is data_logger float
       if(is_data_logger_tube){
         
-        #Subset data from incubation period
+        #Subset sensor data from incubation period
         incub_log<- data_logger_tube[data_logger_tube$unixtime>=incubstart&data_logger_tube$unixtime<incubstop,]  
         
         #Calculate descriptive stats for temp and light
@@ -387,19 +425,21 @@ for (subsite in subsites){
           "light_median"=median(incub_log$light,na.rm = T),
           "light_n"=sum(!is.na(incub_log$light))
         )
+        #Add incubsave floating to logger_summary
+        logger_summary<- rbind(logger_summary,incubsave)
         
         }
-    } else {
-      warning("chamber type not correct!")
-    }
-    logger_summary<- rbind(logger_summary,incubsave)
+    } else {warning("chamber type not correct!")}
+
   }
   
+  
+  #For each subsite, check if we have data in data_logger_tube, if so, make a plot with the light sensor data and the corresponding transparent_dark incubations. 
+  #If we do not have data, create an empty plot that says so.
   if(is_data_logger_tube){
-  #For each subsite, make a plot with the light sensor data and the corresponding transparent_dark incubations
-    
+  
   #add UniqID to data logger tube
-    corresp_fs_tube<- corresp_fs %>% filter(chamber_type=="tube")
+  corresp_fs_tube<- corresp_fs %>% filter(chamber_type=="tube")
   data_logger_tube$uniqID <- sapply(data_logger_tube$unixtime, function(unixtime) {
     # Find the label for each unixtime based on the unixstart and unixstop
     uniqID <- corresp_fs_tube$uniqID[corresp_fs_tube$unix_start <= unixtime & corresp_fs_tube$unix_stop >= unixtime]
@@ -409,35 +449,40 @@ for (subsite in subsites){
       return(NA)  # or another value like "No label" if no match
     }
   })
+  
   #add light condition to data logger ("t" or "d")
   data_logger_tube$condition_light<- substr(str_extract(data_logger_tube$uniqID, pattern = "[a-z]{1}-[0-9]{2}"),1,1)
   
   #PLot of the uniqIDs in the light data (with 3 h before and after the incubation times)
   p<-data_logger_tube %>% 
-    filter(unixtime>min(corresp_fs_tube$unix_start, na.rm=T)-(60*180)&unixtime<=max(corresp_fs_tube$unix_stop, na.rm=T)+(60*180)) %>% 
+    filter(unixtime>min(corresp_fs_tube$unix_start, na.rm=T)-(60*180)&
+             unixtime<=max(corresp_fs_tube$unix_stop, na.rm=T)+(60*180)) %>% 
     filter(!is.na(light)) %>% 
     ggplot(aes(x=datetime, y=light))+
     #ADDING labels fails (error when printing pdf within loop)
-    # geom_label(data = data_logger_tube %>%  filter(!is.na(uniqID)) %>% group_by(uniqID) %>% summarise(datetime=mean(datetime),light=first(light)), aes(x=datetime, label = uniqID, y=0),vjust=0.5,hjust = 1,angle = 90)+
+    # geom_label(data = data_logger_tube %>%  filter(!is.na(uniqID)) %>% group_by(uniqID) %>% summarise(datetime=mean(datetime,na.rm=T)), aes(x=datetime, label = uniqID, y=0),vjust=0.5,hjust = 1,angle = 90)+
     geom_line()+
     geom_point(data=subset(data_logger_tube, !is.na(condition_light)),aes(col=condition_light))+
     labs(col="Light?")+
     scale_x_datetime(breaks = "hour")+
     # coord_cartesian(ylim = c(-40000, NA)) +  
-    #scale y adjustment is what fails!
+    #scale y adjustment fails!
     # scale_y_continuous(limits = c(-45000,
     #                               max(data_logger_tube %>%
     #                                     filter(unixtime>min(corresp_fs$unix_start, na.rm=T)-(60*180)&unixtime<=max(corresp_fs$unix_stop,na.rm=T)+(60*180)) %>% pull(light))))+
     ggtitle(paste(subsite, "SN:",SN_logger_tube))+
     theme_bw()
-  # }else{
-  #   p<- ggplot()+ ggtitle(paste(subsite, "SN:",SN_logger_tube))+theme_bw()
+  }else{
+    p<- ggplot()+ ggtitle(paste(subsite, "File not found for SN:",SN_logger_tube))+theme_bw()
   }
-  
-  # Store each subsite light data plot in the list
+ 
+   # Store each subsite light data plot in the list
   plotslight[[subsite]] <- p
   
-}
+  }
+  
+#   }
+# }
 
 #save lightplot for every subsite: 
 pdf(file = paste0(lightplots_path,"Lightsensor_per_subsite.pdf"),width = 15)  # Open PDF device
@@ -450,19 +495,118 @@ for (plot_name in names(plotslight)) {
 dev.off()  # Close the PDF device
 
 
-####POR AQUI####
 
-#Up to here works, but many problems reading the tube_loggers. 
-#Some subsites have duplicated data logger info (eg. light sensor for S1-CU-P2 and S1-CU-P2 have the exact same light data). Check files and check loop (to know that the plot is not re-using the last valid  data_logger_tube data)
+#Save logger_summary
+write.csv(x = logger_summary, file = paste0(lifewatch_example_path,"logger_per_incubation.csv"),row.names = F)
+
+
+####Data loggers ISSUES: ####
+
+#Things to fix in loop: 
+
+
+#Subsites with no data: 
+    #No file found (check import of data logger files and the files themselves)
+    #No data in timewindow of incubations
+
+#Subsites with data but only 6-7 data-points check og files
+
 #Cannot find a way of consistently plotting the uniqID labels inside each plot (printing fails when there is an issue with the data)
-
-#ALSO probably time from fieldsheets not appropiate (alternative?).
 
 #REVISE import of data loggers for timezone changes. 
 #ASK Camille if he adjusted the times of LICOR PICARRO, LOS GATOS. 
 
-names(plotslight)[1]
 
 
 
+###Format data_logger data####
+logger_summary<- read.csv(paste0(lifewatch_example_path,"logger_per_incubation.csv"))
+
+logger_summary %>%   dplyr::summarise(n = dplyr::n(), .by = c(uniqID)) |>
+  dplyr::filter(n > 1L) 
+#The loop mantains uniqueness for uniqID (no duplicates)
+
+
+#WE HAVE TO INCLUDE a letter Denoting strata_short to plotcode to avoid duplicated records. 
+
+logger_summary_formated<- logger_summary %>% 
+  #Drop duplicated incubations (repetitions)
+  filter(!uniqID %in%duplicate_incubations) %>% 
+  separate(uniqID, into = c("campaign","case_pilot","status","plotnum","strat_short","light_short","startime"),sep = "-",remove = F) %>% 
+  mutate(plotcode=toupper(paste(campaign, case_pilot,status,plotnum,strat_short,sep = "-")),#Add 1st letter of strata to plotcode.eg: S1-CA-R2-9-V
+           light_condition=case_when(light_short=="d"~"dark",
+                                     light_short=="t"~"transparent",
+                                     TRUE~NA)) %>% 
+  #Drop plots with NA in light_condition:
+  filter(!is.na(light_condition)) %>% 
+  #Select central measure for temperature and light data: median (for the moment)
+  transmute(plotcode, light_condition, temperature=temp_median, light=light_median) %>% 
+  pivot_wider(names_from = light_condition, values_from = c(temperature, light))
+
+
+write.csv(logger_summary_formated, file = paste0(lifewatch_example_path, "logger_per_plot_formated.csv"),row.names = F)
+
+
+
+
+
+#JOIN 3 per-plot datasets####
+
+#Join GHG, Vegetation and data logger datasets into 1
+ghg<- read.csv(paste0(lifewatch_example_path,"GHG_per_plot_formated.csv"))
+veg<- read.csv(paste0(lifewatch_example_path,"vegetation_per_plot_formated.csv"))
+logger<- read.csv(paste0(lifewatch_example_path,"logger_per_plot_formated.csv"))
+
+#Add vegetation and logger data to GHG fluxes 
+all<- ghg %>% 
+  merge.data.frame(., veg, by="plotcode",all.x = T) %>% 
+  merge.data.frame(., logger, by="plotcode",all.x = T)
+
+
+#Save merged dataset 
+write.csv(all, file = paste0(lifewatch_example_path,"GHG_plus_metadata_per_plot.csv"),row.names = F)
+
+
+
+
+#Integrate day-night ####
+
+#Integrate day-night per strata
+
+#Calculate daylight hours using latitude and date (hours of light)
+install.packages("suncalc")
+library(dplyr)
+library(suncalc)
+
+# get median coordinates per pilot_site
+samplings <- ghg %>% 
+  select(pilot_site, latitude, longitude) %>% 
+  group_by(pilot_site) %>% 
+  summarise(latitude=median(latitude,na.rm=T),
+            longitude=median(longitude,na.rm=T)) %>% 
+  ungroup()
+
+
+#Use dplyr and suncalc to calculate daylight hours for each row
+sampling_dalight <- samplings %>%
+  merge.data.frame(y=ghg %>% select(pilot_site,date), by="pilot_site", all=T) %>% 
+  distinct() %>% 
+  mutate(date=as.Date(date)) %>% 
+  rowwise() %>%
+  mutate(
+    sunlight_times = list(getSunlightTimes(date = date, lat = latitude, lon = longitude, keep = c("sunrise","sunset"))),
+    daylight_duration = as.numeric(difftime(sunlight_times$sunset, sunlight_times$sunrise, units = "hours"))
+  ) %>%
+  ungroup() %>%
+  select(pilot_site, date, latitude, longitude, daylight_duration)
+
+
+
+
+#Scale transparent and dark fluxes according to daylight hours (for CO2 and for CH4)
+
+mean_latitude_case_pilots<- 
+
+ghg_summary<- ghg %>% 
+  select(season, case_pilot, subsite, sampling, latitude, longitude, strata, date, co2)
 
