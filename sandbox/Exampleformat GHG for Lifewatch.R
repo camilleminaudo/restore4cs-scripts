@@ -136,8 +136,10 @@ ghg_formated<- field2 %>% merge.data.frame(dat2, by="UniqueID",all = F) %>%
   filter(!UniqueID%in%duplicate_incubations) %>% 
   select(-UniqueID) %>% 
   pivot_wider(names_from = transparent_dark,values_from = c(start.time, CO2_best.flux, CH4_diffusive_flux,CH4_ebullitive_flux,comments)) %>% 
-  mutate(plot_startime=min(start.time_dark, start.time_transparent, na.rm=T),
-         plotcode=paste0(subsite,"-",plot_id,"-",toupper(substr(strata,1,1))),#Add first capitalized letter of strata to plotcode
+  rowwise() %>% 
+  mutate(plot_startime=min(start.time_dark, start.time_transparent, na.rm=T)) %>% 
+  ungroup() %>% 
+  mutate(plotcode=paste0(subsite,"-",plot_id,"-",toupper(substr(strata,1,1))),#Add first capitalized letter of strata to plotcode
          campaign=str_extract(subsite, pattern="S[0-9]{1}"),
          season=case_when(campaign=="S1"~"fall",
                           campaign=="S2"~"winter",
@@ -574,39 +576,74 @@ write.csv(all, file = paste0(lifewatch_example_path,"GHG_plus_metadata_per_plot.
 #Integrate day-night per strata
 
 #Calculate daylight hours using latitude and date (hours of light)
-install.packages("suncalc")
+# install.packages("suncalc")
 library(dplyr)
 library(suncalc)
 
-# get median coordinates per pilot_site
+# get median coordinates per subsite (including all seasons)
 samplings <- ghg %>% 
-  select(pilot_site, latitude, longitude) %>% 
-  group_by(pilot_site) %>% 
-  summarise(latitude=median(latitude,na.rm=T),
-            longitude=median(longitude,na.rm=T)) %>% 
+  select(subsite, latitude, longitude) %>% 
+  group_by(subsite) %>% 
+  summarise(subsite_latitude=median(latitude,na.rm=T),
+            subsite_longitude=median(longitude,na.rm=T)) %>% 
   ungroup()
 
 
-#Use dplyr and suncalc to calculate daylight hours for each row
-sampling_dalight <- samplings %>%
-  merge.data.frame(y=ghg %>% select(pilot_site,date), by="pilot_site", all=T) %>% 
+#Use dplyr and suncalc to calculate daylight hours for each subsite-date combination.
+sampling_daylight <- samplings %>%
+  merge.data.frame(y=ghg %>% select(subsite, date), by="subsite", all=T) %>% 
   distinct() %>% 
   mutate(date=as.Date(date)) %>% 
   rowwise() %>%
   mutate(
-    sunlight_times = list(getSunlightTimes(date = date, lat = latitude, lon = longitude, keep = c("sunrise","sunset"))),
+    sunlight_times = list(getSunlightTimes(date = date, lat = subsite_latitude, lon = subsite_longitude, keep = c("sunrise","sunset"))),
     daylight_duration = as.numeric(difftime(sunlight_times$sunset, sunlight_times$sunrise, units = "hours"))
   ) %>%
   ungroup() %>%
-  select(pilot_site, date, latitude, longitude, daylight_duration)
+  select(subsite, date, subsite_latitude, subsite_longitude, daylight_duration)
 
 
 
+#INTEGRATE to net_GHG exchange per plot (integrate dark and transparent with daylight_duration)
+net_ghg_per_plot<- ghg %>% 
+  mutate(date=as.Date(date)) %>% 
+  merge.data.frame(sampling_daylight, by=c("subsite","date"), all = T) %>% 
+  select(season, pilot_site, subsite, sampling, subsite_latitude, subsite_longitude, strata, date, daylight_duration, plotcode, latitude, longitude,  
+         CO2_best.flux_dark, CO2_best.flux_transparent,
+         CH4_diffusive_flux_dark, CH4_diffusive_flux_transparent,
+         CH4_ebullitive_flux_dark, CH4_ebullitive_flux_transparent) %>% 
+  #Get CH4 total flux (diffusion + ebullition)
+  mutate(CH4_total_dark=CH4_diffusive_flux_dark+CH4_ebullitive_flux_dark,
+         CH4_total_transparent=CH4_diffusive_flux_transparent+CH4_ebullitive_flux_transparent) %>% 
+  #Integrate transparent and dark with daylight_duration (fluxlight*lighthours+fluxdark*darkhours)/24: same units for net flux (umol/m2/s), but integrated for the whole day. For open water and bare plots, use directly the dark flux
+  #CO2:
+  mutate(net_CO2=case_when(grepl("vegetated",strata)~((CO2_best.flux_transparent*daylight_duration)+(CO2_best.flux_dark*(24-daylight_duration)))/24,
+                           grepl("open|bare",strata)~CO2_best.flux_dark),
+  #CH4:    
+         net_CH4=case_when(grepl("vegetated",strata)~((CH4_total_transparent*daylight_duration)+(CH4_total_dark*(24-daylight_duration)))/24,
+                           grepl("open|bare",strata)~CH4_total_dark+CH4_total_dark)) %>% 
+  #Discard _transparent/_dark ghg fluxes
+  select(-c(CO2_best.flux_dark,CO2_best.flux_dark, CO2_best.flux_transparent,
+            CH4_diffusive_flux_dark, CH4_diffusive_flux_transparent,
+            CH4_ebullitive_flux_dark, CH4_ebullitive_flux_transparent,CH4_total_dark,CH4_total_transparent)) 
 
-#Scale transparent and dark fluxes according to daylight hours (for CO2 and for CH4)
 
-mean_latitude_case_pilots<- 
+#Save net_ghg per plot
+write.csv(net_ghg_per_plot, file=paste0(lifewatch_example_path,"net_ghg_per_plot.csv"),row.names = F)
 
-ghg_summary<- ghg %>% 
-  select(season, case_pilot, subsite, sampling, latitude, longitude, strata, date, co2)
+#Average per subsite and strata
+net_ghg_summary<- net_ghg_per_plot %>% 
+  select(-c(plotcode,latitude, longitude)) %>% 
+  group_by(season, pilot_site, subsite, ,subsite_latitude,subsite_longitude, sampling, date, strata,daylight_duration) %>% 
+  summarise(avg_netCO2=mean(net_CO2, na.rm=T),
+            sd_netCO2=sd(net_CO2, na.rm=T),
+            n_netCO2=sum(!is.na(net_CO2)),
+            avg_netCH4=mean(net_CH4, na.rm=T),
+            sd_netCH4=sd(net_CH4, na.rm=T),
+            n_netCH4=sum(!is.na(net_CH4)),
+            .groups = "drop"
+  )
+
+#Save net_ghg per subsite-strata
+write.csv(net_ghg_summary,file = paste0(lifewatch_example_path, "net_ghg_summary.csv"),row.names = F)
 
