@@ -243,9 +243,10 @@ write.csv(veg_formated, file = paste0(lifewatch_example_path, "vegetation_per_pl
 #extract from data loggers files using info from field: logger_floating_chamber, logger_transparent_chamber, unixstart, unixstop, uniqID, chamber_type
 #In raw2flux, temperature extraction already implemented(CHECK and adapt for Light intensity)
 
-
+#Get info from fieldsheets
 loggers_maps<- field %>% 
-  select(subsite, logger_floating_chamber,logger_transparent_chamber,chamber_type, uniqID, unix_start, unix_stop) %>% 
+  select(subsite, logger_floating_chamber,logger_transparent_chamber,chamber_type, uniqID, unix_start, unix_stop) %>%
+  #REMOVE DUPLICATE INCUBATIONS
   filter(!uniqID%in%duplicate_incubations)
 
 
@@ -296,6 +297,7 @@ for (subsite in subsites){
   dir_exists_loggdata <- dir.exists(paste0(loggerspath,"/",site_ID,"/"))
   if(dir_exists_loggdata){
     f <- list.files(paste0(loggerspath,"/",site_ID,"/"), full.names = T)
+    #Discard hobo files and txt files as sources for data_logger (only import from .csv or .xlsx)
     r <- grep(pattern = ".hobo", x = f)
     if(length(r)>0){f <- f[-r]}
     r <- grep(pattern = ".txt", x = f)
@@ -317,7 +319,7 @@ for (subsite in subsites){
     }
     data_logger_float <- data_logger_float[,seq(1,3)]
     names(data_logger_float) <- c("sn","datetime","temperature")
-    ##DOUBT: Why replace SN?--------------
+    #add sn instead of rownumber
     data_logger_float$sn <- SN_logger_float
     
     #Format data (as numeric, datetime,..)
@@ -342,14 +344,18 @@ for (subsite in subsites){
   if(!is.na(SN_logger_tube) & !is.na(i_f_tube)){
     is_data_logger_tube = T
     # message("...reading corresponding temperature logger file for tube chamber")
+    
     if(f_ext[i_f_tube]=="xlsx"){
       data_logger_tube <- readxl::read_xlsx(f[i_f_tube],col_names = T)
     } else if(f_ext[i_f_tube]=="csv"){
       data_logger_tube <- read.csv(f[i_f_tube], header = T, fill = T)
     }
+    ##ISSUE: error when reading------
+    #Next line throws an error if data has less than 4 columns. If this happens, the loop re-uses the last data_logger_tube for all calculations and plots. 
+    #Decission: make a check for 4 columns or skip
     data_logger_tube <- data_logger_tube[,seq(1,4)]
     names(data_logger_tube) <- c("sn","datetime","temperature","light")
-    ##DOUBT: Why replace SN?--------------
+    #add sn instead of rownumber
     data_logger_tube$sn <- SN_logger_tube
     #Format data (as.numeric, datetime, )
     data_logger_tube$temperature <- as.numeric(data_logger_tube$temperature)
@@ -373,6 +379,7 @@ for (subsite in subsites){
     message("===> not enough data could be linked to the tube chamber!")
     is_data_logger_tube = F
   }
+
   
   
 
@@ -504,14 +511,92 @@ write.csv(x = logger_summary, file = paste0(lifewatch_example_path,"logger_per_i
 
 ####Data loggers ISSUES: ####
 
-#Things to fix in loop: 
+#Detail exploration per sn and subsites based on pdf: 
 
+#S1-CA: sn10237447 A1, A2, R1 ~5min
+#S1-CA: sn10257417 P1, P2,R2 ~5min
+
+#S1-CU: sn21329647 A1,P1, ~5min ,R1 no data (fieldsheet date for R1 and R2 is friday 2023-10-06, date in raw GHG analysers is 2023-10-06, data logger only until 2023-10-05 midday).
+#S1-CU: sn23524567 A2, P2, R2 no data (error within loop, no light data in file)
+
+#S1-DA: NOT SYNC CHECK SN, DATES, TIMEZONES
+
+#S1-DU: file not found for any (only 1 sensor-data in folder, is a floating SN)
+
+#S1-RI: sn10257417 A1,P2,R1  NOT SYNC CHECK SN, DATES, TIMEZONES
+#S1-RI: sn10257418  Good
+
+#S1-VA: all good, some light_condition erroneous in fieldsheets
+
+#S2-CA: sn10257417 P1,P2,R2 NOT SYNC CHECK SN, DATES, TIMEZONES
+#S2-CA: sn10257418 A1, A2, R1 very fewpoints (logger in hour resolution)
+
+#S2-CU: A1, A2 P1, P2, R1, R2 NOT SYNC CHECK SN, DATES, TIMEZONES
+
+#S2-DA: sn10257417 P2,R1,R2: NOT SYNC CHECK SN, DATES, TIMEZONES
+#S2-DA: sn10257418 A1,P1, very few points, A2 no data. (logger in hour resolution)
+
+#S2-DU: A1, A2 P1, P2, R1, R2 NOT SYNC CHECK SN, DATES, TIMEZONES
+
+#S2-RI: sn10257417 A1, P2, R1 ~5min
+#S2-RI: sn10257418 A2, P1, R2 ~5min
+
+#S2-VA: sn10257417 A1, P2, R1 ~1min
+#S2-VA: sn10257418 A2, P1, R2 ~5min, 
+
+#S3-CA: sn10257417 A1, A2, R1 ~5 min,
+#S3-CA: sn10257418 P1, P2, R2 ~5min
+
+#S3-CU: sn10257417 A2, P2, R2 ~5 min,
+#S3-CU: sn10257418 A1, P1, R1 ~5 min,
+
+#S3-DA: sn10257417 A1,A2,P1 ~5 min,
+#S3-DA: sn10257418 R1,R2,P2 ~1 min,
+
+#S3-DU: sn10257417 A1, A2, P2 ~5 min,
+#S3-DU: sn10257418 R1, R2, P1 ~1 min,
+
+#S3-RI: sn10257417 A2, P1, R2 ~1h delay TIMEZONE issue
+#S3-RI: sn10257418 A1, P2, R1 ~1h delay TIMEZONE issue
+
+#S3-VA: sn10257417 A1, P2, R1 ~1 min,
+#S3-VA: sn10257418 A2, P1, R2 ~5 min,
+
+#S4-CA: sn10257417 A1, P1, P2 NOT sync CHECK SN, DATES, TIMEZONES
+#S4-CA: sn10257418 A2, R1, R2 NOT sync CHECK SN, DATES, TIMEZONES
+
+#S4-CU: sn10257418 A1, R1, P1 ~1min
+#S4-CU: sn10257417 A2, R2, P2 ~3min
+
+#S4-DA: sn10257417 A1, A2, P1 ~5 min
+#S4-DA: sn10257418 P2, R1, R2 on time perfect
+
+#S4-DU: sn10257417 A1, A2, ~2 min delay, P2 unclear sync 
+#S4-DU: sn10257418 R1, R2, P1 ~2 min 
+
+#S4-RI: sn10257417 A1, P2, R1 ~2 min
+#S4-RI: sn10257418 A2, P1, R2 ~1 min
+ 
+#S4-VA: sn10257418 A1, A2, R1  NOT sync CHECK SN, DATES, TIMEZONES
+#S4-VA: sn10257417 P1, P2, R2 NOT sync CHECK SN, DATES, TIMEZONES
+
+
+
+
+#datetime in different format within same file: e.g. S1-CA-10237447
+
+#subsites with light data duplicated: eg. S1-CU-A1 light data is re-used for S1-CU-A2 (with a different SN_logger and which data-logger file does not have light data). 1st. WHY IS THE DATA RE-USED? 2nd(less important)Why no data in file
 
 #Subsites with no data: 
-    #No file found (check import of data logger files and the files themselves)
-    #No data in timewindow of incubations
+    #No file found (is_data_logger_tube==F) check import of data logger files and the files themselves)
+    #file exist (is_data_logger_tube==T) but empty light data in timewindow of incubations 
 
 #Subsites with data but only 6-7 data-points check og files
+
+
+
+#Things to fix in loop: 
+
 
 #Cannot find a way of consistently plotting the uniqID labels inside each plot (printing fails when there is an issue with the data)
 
