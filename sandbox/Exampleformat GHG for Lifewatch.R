@@ -511,18 +511,18 @@ write.csv(x = logger_summary, file = paste0(lifewatch_example_path,"logger_per_i
 
 ####Data loggers ISSUES: ####
 
-#Detail exploration per sn and subsites based on pdf: 
+#Detail exploration per sn and subsites based on pdf: Lightsensor_per_subsite.pdf 
 
 #S1-CA: sn10237447 A1, A2, R1 ~5min
 #S1-CA: sn10257417 P1, P2,R2 ~5min
 
-#S1-CU: sn21329647 A1,P1, ~5min ,R1 no data (fieldsheet date for R1 and R2 is friday 2023-10-06, date in raw GHG analysers is 2023-10-06, data logger only until 2023-10-05 midday).
-#S1-CU: sn23524567 A2, P2, R2 no data (error within loop, no light data in file)
+#S1-CU: sn21329647 A1,P1, ~5min. For R1 no data exist(confirmed with Benj)
+#S1-CU: sn23524567 A2, P2, R2 no data for light intensity exists (confirmed with Benj)
 
 #S1-DA: sn21245425  P2,R1,R2    NOT SYNC: TIMEZONES! "All sensors configured in local time (GMT+3)" note in excel
 #S1-DA: sn21329647  P1,A1,A2    NOT SYNC: TIMEZONES! "All sensors configured in local time (GMT+3)" note in excel
 
-#S1-DU: file not found for any (only 1 sensor-data in folder, is a floating SN)
+#S1-DU: file not found for any (only 1 sensor-data in folder, is a floating SN). Rafa Carballeira was in charge of loggers, contacted on 20241220 for feedback.
 
 #S1-RI: sn10257417 A1,P2,R1  NOT SYNC CHECK SN, DATES, TIMEZONES
 #S1-RI: sn10257418  Good
