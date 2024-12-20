@@ -519,7 +519,8 @@ write.csv(x = logger_summary, file = paste0(lifewatch_example_path,"logger_per_i
 #S1-CU: sn21329647 A1,P1, ~5min ,R1 no data (fieldsheet date for R1 and R2 is friday 2023-10-06, date in raw GHG analysers is 2023-10-06, data logger only until 2023-10-05 midday).
 #S1-CU: sn23524567 A2, P2, R2 no data (error within loop, no light data in file)
 
-#S1-DA: NOT SYNC CHECK SN, DATES, TIMEZONES
+#S1-DA: sn21245425  P2,R1,R2    NOT SYNC: TIMEZONES! "All sensors configured in local time (GMT+3)" note in excel
+#S1-DA: sn21329647  P1,A1,A2    NOT SYNC: TIMEZONES! "All sensors configured in local time (GMT+3)" note in excel
 
 #S1-DU: file not found for any (only 1 sensor-data in folder, is a floating SN)
 
@@ -528,7 +529,7 @@ write.csv(x = logger_summary, file = paste0(lifewatch_example_path,"logger_per_i
 
 #S1-VA: all good, some light_condition erroneous in fieldsheets
 
-#S2-CA: sn10257417 P1,P2,R2 NOT SYNC CHECK SN, DATES, TIMEZONES
+#S2-CA: sn10257417 P1,P2,R2 NOT SYNC: TIMEZONE issue most likely 
 #S2-CA: sn10257418 A1, A2, R1 very fewpoints (logger in hour resolution)
 
 #S2-CU: A1, A2 P1, P2, R1, R2 NOT SYNC CHECK SN, DATES, TIMEZONES
@@ -582,16 +583,14 @@ write.csv(x = logger_summary, file = paste0(lifewatch_example_path,"logger_per_i
 
 
 
+#Notes from first execution of loop: 
+  #subsites with light data duplicated: eg. S1-CU-A1 light data is re-used for S1-CU-A2 (with a different SN_logger and which data-logger file does not have light data). 1st. WHY IS THE DATA RE-USED? 2nd(less important)Why no data in file
 
-#datetime in different format within same file: e.g. S1-CA-10237447
-
-#subsites with light data duplicated: eg. S1-CU-A1 light data is re-used for S1-CU-A2 (with a different SN_logger and which data-logger file does not have light data). 1st. WHY IS THE DATA RE-USED? 2nd(less important)Why no data in file
-
-#Subsites with no data: 
+  #Subsites with no data: 
     #No file found (is_data_logger_tube==F) check import of data logger files and the files themselves)
     #file exist (is_data_logger_tube==T) but empty light data in timewindow of incubations 
 
-#Subsites with data but only 6-7 data-points check og files
+  #Subsites with data but only 6-7 data-points check og files (data in hourly resolution)
 
 
 
