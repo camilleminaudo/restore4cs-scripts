@@ -271,7 +271,7 @@ rm(designed_subsites)
 loggers_maps_nas <- loggers_maps[apply(loggers_maps, 1, function(x) any(is.na(x))), ]
 
 print(loggers_maps_nas)
-#14 incubations with undefined time-period (check fieldsheets and correct)
+#4 incubations with undefined time-period (check fieldsheets and correct)
 
 #Extract data from loggers only for well-defined incubations
 complete_loggers_maps<- loggers_maps %>% drop_na()
@@ -519,25 +519,30 @@ write.csv(x = logger_summary, file = paste0(lifewatch_example_path,"logger_per_i
 #S1-CU: sn21329647 A1,P1, ~5min. For R1 no data exist(confirmed with Benj)
 #S1-CU: sn23524567 A2, P2, R2 no data for light intensity exists (confirmed with Benj)
 
-#S1-DA: sn21245425  P2,R1,R2    NOT SYNC: TIMEZONES! "All sensors configured in local time (GMT+3)" note in excel
-#S1-DA: sn21329647  P1,A1,A2    NOT SYNC: TIMEZONES! "All sensors configured in local time (GMT+3)" note in excel
+#S1-DA: sn21245425  P2,R1,R2    ~3min
+#S1-DA: sn21329647  P1,A1,A2    Good
 
 #S1-DU: file not found for any (only 1 sensor-data in folder, is a floating SN). Rafa Carballeira was in charge of loggers, contacted on 20241220 for feedback.
 
-#S1-RI: sn10257417 A1,P2,R1  NOT SYNC CHECK SN, DATES, TIMEZONES
-#S1-RI: sn10257418  Good
+#S1-RI: sn10257417 A2, P1, R2 In utc (chekced!, starts 10:44am) Good!!
+#S1-RI: sn10257418  A1, P2, R1 In utc (checked!, but strats 11:45am) NOT SYNC!! ~1h delay 
 
-#S1-VA: all good, some light_condition erroneous in fieldsheets
+#S1-VA: all good, some light_condition erroneous in fieldsheets: toCHECK and toCORRECT
 
-#S2-CA: sn10257417 P1,P2,R2 NOT SYNC: TIMEZONE issue most likely 
+#S2-CA: sn10257417 P1,P2,R2 ~5min
 #S2-CA: sn10257418 A1, A2, R1 very fewpoints (logger in hour resolution)
 
-#S2-CU: A1, A2 P1, P2, R1, R2 NOT SYNC CHECK SN, DATES, TIMEZONES
+#S2-CU: ns10257417 A2, P2, R2 ~5min in UTC (checked!), starts at 03:00am
+#S2-CU: ns10257418 A1, P1, R1 in UTC (checked!), starts at 03:00am BUT NO SYNC ~1h delay
+#S2-CU: floating loggers (both), start at 10:18am (sync issue?)
 
-#S2-DA: sn10257417 P2,R1,R2: NOT SYNC CHECK SN, DATES, TIMEZONES
+#S2-DA: sn10257417 P2,R1,R2: ~2min
 #S2-DA: sn10257418 A1,P1, very few points, A2 no data. (logger in hour resolution)
+#S2-DA: floating loggers (both), start at 12:39pm (sync issue?)
 
-#S2-DU: A1, A2 P1, P2, R1, R2 NOT SYNC CHECK SN, DATES, TIMEZONES
+#S2-DU: ns10257417 A1, A2, P2, ~3min
+#S2-DU: ns10257418 P1, R1, R2 ~2min 
+#S2-DU: floating loggers (both), start at 12:25pm (sync issue?), tube loggers (in utc, checked)start at 02:00am
 
 #S2-RI: sn10257417 A1, P2, R1 ~5min
 #S2-RI: sn10257418 A2, P1, R2 ~5min
@@ -557,14 +562,14 @@ write.csv(x = logger_summary, file = paste0(lifewatch_example_path,"logger_per_i
 #S3-DU: sn10257417 A1, A2, P2 ~5 min,
 #S3-DU: sn10257418 R1, R2, P1 ~1 min,
 
-#S3-RI: sn10257417 A2, P1, R2 ~1h delay TIMEZONE issue
-#S3-RI: sn10257418 A1, P2, R1 ~1h delay TIMEZONE issue
+#S3-RI: sn10257417 A2, P1, R2 ~4min, 
+#S3-RI: sn10257418 A1, P2, R1 ~2min, 
 
 #S3-VA: sn10257417 A1, P2, R1 ~1 min,
 #S3-VA: sn10257418 A2, P1, R2 ~5 min,
 
-#S4-CA: sn10257417 A1, P1, P2 NOT sync CHECK SN, DATES, TIMEZONES
-#S4-CA: sn10257418 A2, R1, R2 NOT sync CHECK SN, DATES, TIMEZONES
+#S4-CA: sn10257417 A1, P1, P2, in UTC (checked!) NOT sync CHECK swap SN, Date?
+#S4-CA: sn10257418 A2, R1, R2, in UTC (checked!) NOT sync CHECK swap SN, Date?
 
 #S4-CU: sn10257418 A1, R1, P1 ~1min
 #S4-CU: sn10257417 A2, R2, P2 ~3min
@@ -578,8 +583,8 @@ write.csv(x = logger_summary, file = paste0(lifewatch_example_path,"logger_per_i
 #S4-RI: sn10257417 A1, P2, R1 ~2 min
 #S4-RI: sn10257418 A2, P1, R2 ~1 min
  
-#S4-VA: sn10257418 A1, A2, R1  NOT sync CHECK SN, DATES, TIMEZONES
-#S4-VA: sn10257417 P1, P2, R2 NOT sync CHECK SN, DATES, TIMEZONES
+#S4-VA: sn10257418 A1, A2, R1, in UTC (checked!) NOT sync CHECK SN, Date?
+#S4-VA: sn10257417 P1, P2, R2 , in UTC (checked!) NOT sync CHECK SN, Date?
 
 
 

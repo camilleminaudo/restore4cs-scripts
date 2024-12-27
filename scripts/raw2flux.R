@@ -70,7 +70,7 @@ fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 
 
 # ---- Correct fieldsheets in the case of Picarro data ---
-
+#MIGUEL: i.e. substitute start-stoptimes of fieldsheets with those recorded in picarro flux aplication
 read_map_incubations <- function(path2folder, sampling){
   
   my_maps_filenames <- list.files(path2folder, pattern = ".csv", all.files = T, full.names = T, recursive = T)
@@ -143,7 +143,7 @@ if(sum(is.na(corresponding_row))>0){
   corresponding_row <- corresponding_row[-ind_NAs]
 }
 
-# replacing unix_startand unix_stop with new values
+# replacing unix_start and unix_stop with new values
 fieldsheet_Picarro$unix_start <- map_incubations$start[corresponding_row]
 fieldsheet_Picarro$unix_stop <- map_incubations$stop[corresponding_row]
 
