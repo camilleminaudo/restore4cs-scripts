@@ -271,7 +271,9 @@ rm(designed_subsites)
 loggers_maps_nas <- loggers_maps[apply(loggers_maps, 1, function(x) any(is.na(x))), ]
 
 print(loggers_maps_nas)
-#4 incubations with undefined time-period (check fieldsheets and correct)
+#5 incubations with undefined time-period (check fieldsheets and correct)
+#s1-da-r1-12-v-d-na: Los Gatos off, no incubation, leftover in fieldsheet but does not exist
+#S2-cu-r1-8-o-d-09:38: Los Gatos runs out of battery (unclear endtime)
 
 #Extract data from loggers only for well-defined incubations
 complete_loggers_maps<- loggers_maps %>% drop_na()
@@ -522,10 +524,11 @@ write.csv(x = logger_summary, file = paste0(lifewatch_example_path,"logger_per_i
 #S1-DA: sn21245425  P2,R1,R2    ~3min
 #S1-DA: sn21329647  P1,A1,A2    Good
 
-#S1-DU: file not found for any (only 1 sensor-data in folder, is a floating SN). Rafa Carballeira was in charge of loggers, contacted on 20241220 for feedback.
+#S1-DU: sn21329647 A1, A2, P1 NO SYNC (WRONG UTC conversion)
+#S1-DU: sn21245425 P2, R1, R2 NO FILE EXIST (Checked with Rafa Carballeira)
 
-#S1-RI: sn10257417 A2, P1, R2 In utc (chekced!, starts 10:44am) Good!!
-#S1-RI: sn10257418  A1, P2, R1 In utc (checked!, but strats 11:45am) NOT SYNC!! ~1h delay 
+#S1-RI: sn10257417 A2, P1, R2 In utc (chekced!, starts 10:45am) Good!!
+#S1-RI: sn10257418  A1, P2, R1 In utc (checked!, but starts 11:44:04am) NOT SYNC!! ~1h delay 
 
 #S1-VA: all good, some light_condition erroneous in fieldsheets: toCHECK and toCORRECT
 
