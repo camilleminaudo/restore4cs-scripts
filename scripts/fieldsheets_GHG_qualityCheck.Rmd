@@ -93,8 +93,9 @@ if(length(ind_erronous_times)>0){
 ind_duration_neg <- which(fieldsheet$unix_stop-fieldsheet$unix_start < 0)
 ind_duration_tooshort <- which(fieldsheet$unix_stop-fieldsheet$unix_start < 3*60)
 ind_duration_toolong <- which(fieldsheet$unix_stop-fieldsheet$unix_start > 15*60)
+ind_duration_na<- which(is.na(fieldsheet$unix_stop*fieldsheet$unixstart))
 
-ind_duration <- c(ind_duration_neg, ind_duration_tooshort, ind_duration_toolong)
+ind_duration <- c(ind_duration_neg, ind_duration_tooshort, ind_duration_toolong,ind_duration_na)
 
 fieldsheet$duration <- fieldsheet$unix_stop-fieldsheet$unix_start
 

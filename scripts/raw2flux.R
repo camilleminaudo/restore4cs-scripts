@@ -41,14 +41,14 @@ for (f in files.sources){source(f)}
 
 
 #################################
-sampling <- "S4"
+sampling <- "S2"
 # USER, please specify if you want plots to be saved
-harmonize2RData <- F
+harmonize2RData <- T
 doPlot <- T
 #################################
 
 # ---- Directories ----
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
+dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 loggerspath <- paste0(datapath,"/RAW Data Logger")

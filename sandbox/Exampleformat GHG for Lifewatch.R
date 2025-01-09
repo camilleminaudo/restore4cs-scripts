@@ -9,7 +9,7 @@
 # --- Description of this script
 # This script re-formats the fluxes calculated in raw2flux script for the preeliminary data structure to send to LifeWatch Italy
 
-#Input: per-season CSV files with computed fluxes
+#Input: per-season CSV files with computed fluxes directly produced by raw2flux.R script
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -108,6 +108,9 @@ dat2<- dat %>%
 fieldsheets<- list.files(path= fieldsheetpath, recursive = T, pattern = "GHG.xlsx",full.names = T)
 field<- read_GHG_fieldsheets(fieldsheets)
 
+#Save all fieldsheet data in a date-named csv
+# write.csv(field, file = paste0(fieldsheetpath,"/compilation",today(),".csv"))
+
 #Drop unwanted variables and rename key UniqueID:
 field2<- field %>% 
   select(-c(person_sampling,gas_analyzer,logger_floating_chamber,logger_transparent_chamber,start_time,initial_co2,initial_ch4,end_time,final_ch4,final_co2,chamber_height_cm, unix_start,unix_stop)) %>% 
@@ -118,12 +121,53 @@ field2<- field %>%
 #Key for joining flux data and fieldsheet: 
 summary(dat$UniqueID%in%field$uniqID)
 
+#fluxes without fieldsheet details: arising from correction in fieldsheets
+dat[which(!dat$UniqueID%in%field$uniqID),]
+
+#fieldsheets without flux calculated (WHY?)
+incub_noflux<-field[which(!field$uniqID%in%dat$UniqueID),] %>% 
+  mutate(duration=unix_stop-unix_start)
+#74 incubations without a flux, without clear reason.
+
+write.csv(incub_noflux, file = paste0(lifewatch_example_path,"Incubations_without_flux.csv"),row.names = F)
+print(incub_noflux %>% 
+  group_by(subsite, gas_analyzer,date) %>% 
+  summarise(n=n()), n=50)
+
+
+
+#Try correspondences without timestamp in UniqueID (for field and dat)
+testdat<- dat %>% 
+  separate(UniqueID, into = c("id1","id2","id3","id4","id5","id6","id7"),sep = "-",remove = F) %>% 
+  mutate(semiuniqueID=paste(id1,id2,id3,id4,id5,id6, sep = "-")) %>% 
+  select(-c(id1,id2,id3,id4,id5,id6,id7))
+
+testfield<- field2 %>% 
+  separate(UniqueID, into = c("id1","id2","id3","id4","id5","id6","id7"),sep = "-",remove = F) %>% 
+  mutate(semiuniqueID=paste(id1,id2,id3,id4,id5,id6, sep = "-")) %>% 
+  select(-c(id1,id2,id3,id4,id5,id6,id7))
+
+testdat %>% select(semiuniqueID) %>% filter(duplicated(.) | duplicated(., fromLast = TRUE))
+
+testfield %>% select(semiuniqueID) %>% filter(duplicated(.) | duplicated(., fromLast = TRUE))
+
+incub_noflux_1<- testfield[which(!testfield$semiuniqueID%in%testdat$semiuniqueID),]
+
+
+
 
 #Check for duplicate incubations in fieldsheets (incubations performed 2 times with the same identity except for startime and uniqueID:  
 duplicate_incubations<-field2 %>% 
   dplyr::summarise(n = dplyr::n(), .by = c(pilot_site, subsite, date, plot_id, chamber_type, strata, longitude, latitude, water_depth,
                                            transparent_dark)) |>dplyr::filter(n > 1L) %>% 
   merge.data.frame(field2, by=c("pilot_site", "subsite", "date", "plot_id", "chamber_type", "strata", "longitude", "latitude", "water_depth","transparent_dark"), all = F) %>% pull(UniqueID)
+duplicate_incubations
+
+#Remove suspicious/erroneous incubations from duplicate_incubations: removed 2 incubations from fieldsheet
+#S1-VA-A1-12-v-d-15:06 wrong
+#S1-VA-A1-12-v-t-14:58 wrong
+#there are repetition with good-looking fluxes for these two incubations.
+
 
 
 #Check for missing transparent_dark
@@ -246,7 +290,7 @@ write.csv(veg_formated, file = paste0(lifewatch_example_path, "vegetation_per_pl
 #Get info from fieldsheets
 loggers_maps<- field %>% 
   select(subsite, logger_floating_chamber,logger_transparent_chamber,chamber_type, uniqID, unix_start, unix_stop) %>%
-  #REMOVE DUPLICATE INCUBATIONS
+  #REMOVE DUPLICATE INCUBATIONS with wrong fluxes (if they exist)
   filter(!uniqID%in%duplicate_incubations)
 
 
@@ -272,7 +316,7 @@ loggers_maps_nas <- loggers_maps[apply(loggers_maps, 1, function(x) any(is.na(x)
 
 print(loggers_maps_nas)
 #5 incubations with undefined time-period (check fieldsheets and correct)
-#s1-da-r1-12-v-d-na: Los Gatos off, no incubation, leftover in fieldsheet but does not exist
+#s1-da-r1-12-v-d-na: Los Gatos off, no incubation was done, leftover in fieldsheet but does not exist
 #S2-cu-r1-8-o-d-09:38: Los Gatos runs out of battery (unclear endtime)
 
 #Extract data from loggers only for well-defined incubations
