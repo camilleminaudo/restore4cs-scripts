@@ -37,7 +37,7 @@ library(purrr)
 # Path to your GAIA folder (1 per user) where we will have GeoJSON files exported from GAIA (folders and potentially single waypoints). Here we will store the compiled table with all sampling information from each user. 
 
 #A name for us to know who took the pictures & coordinates with GAIA
-gaia_user<- "Miguel"
+gaia_user<- "DaniMorant"
 
 #dropbox path
 dropbox_path<- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data/"
@@ -129,6 +129,7 @@ if (geo==geojson_files[1]){
 
 }
 
+all_waypoints<- all_waypoints %>% arrange(time_created)  
 
 #SAVE TABLE####
 #Save GAIA data (expandoing any previous data)

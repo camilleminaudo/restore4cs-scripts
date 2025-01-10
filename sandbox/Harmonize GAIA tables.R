@@ -13,7 +13,8 @@ harmonized_jorge<- rawjorge %>%
          subsite=case_when(subsite=="S1-CA-A1"~"S1-CA-R2",
                            TRUE~subsite),#Subsite was missidentified
          plotcode=case_when(!is.na(plotnum)~paste(subsite, plotnum, sep="-"),
-                            TRUE~NA))
+                            TRUE~NA),
+         user="Jorge")
 
 #Miguel
 
@@ -24,7 +25,8 @@ harmonized_miguel<- rawmiguel %>%
   mutate(plotnum=tolower(str_extract(string=title, pattern="plot [0-9]{1,2}|plot[0-9]{1,2}")),
          subsite=toupper(str_extract(string=title, pattern="S[0-9]{1}-[A-Z]{2}-[A-Z]{1}[0-9]{1}")),
          plotcode=case_when(!is.na(plotnum)~paste(subsite, plotnum, sep="-"),
-                            TRUE~NA))
+                            TRUE~NA),
+         user="Miguel")
 
 #Benj
 
@@ -46,7 +48,17 @@ harmonized_benj<- rawbenj %>%
   mutate(plotnum=gsub("GHG","", str_extract(string=title, pattern="GHG[0-9]{1,2}")),
          subsite=toupper(str_extract(string=title, pattern="S[0-9]{1}-[A-Z]{2}-[A-Z]{1}[0-9]{1}")),
          plotcode=case_when(!is.na(plotnum)~paste0(subsite, "-plot",plotnum),
-                            TRUE~NA))
+                            TRUE~NA),
+         user="Benj")
+
+
+#Dani Morant: STILL TO WRITE HARMONIZATION 
+
+#note from Dani: Descarta el S1 CA P1, porque las coordenadas estaban mal, y tendrás de esa campaña lo de Jorge (si no lo tubieras, puedes coger los datos que te envío, pero sin coordenadas correctas). En esa campaña, no tenía los guiones entre los códigos, si me dices, los cambio, aquí o en el Teams cuando lo subas, en un segundo. Si ya están inlcuidos los de Jorge, nada.
+
+rawdanimorant<- read.csv(paste0(gaia_path, "GAIA_table_DaniMorant.csv"))
+
+harmonized_danimorant<- rawdanimorant
 
 
 

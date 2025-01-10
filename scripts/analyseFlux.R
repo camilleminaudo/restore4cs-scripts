@@ -33,14 +33,16 @@ repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
 
 
 # ---- Directories and data loading ----
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
+dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
 results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
 plots_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/plots")
 
 
 setwd(results_path)
-listf <- list.files(path = results_path, pattern = ".csv", all.files = T, full.names = T, recursive = F)
+
+listf<- list.files(path = results_path, pattern = "^S", full.names = T)
+
 table_results_all <- NULL
 for (f in listf){
   table_results_all <- rbind(table_results_all, 
@@ -144,6 +146,7 @@ n_less_1perc <- length(which(abs(table_co2$diff_model)<0.01))
 
 message("Linear and non-linear models have less than 1% difference for ",round(n_less_1perc/n*100*100)/100,"% of the measurements")
 
+n_less_10perc<- length(which(abs(table_co2$diff_model)<0.1))
 ggplot(table_co2[order((table_co2$diff_model)),], aes(seq(1,n)/n*100, (diff_model)*100))+
   geom_vline(xintercept = seq(0,100,50), color = "grey70")+
   geom_hline(yintercept = c(-100,-10,0,10,100), color = "grey70")+
@@ -152,7 +155,7 @@ ggplot(table_co2[order((table_co2$diff_model)),], aes(seq(1,n)/n*100, (diff_mode
   ylim(c(-50,120))+
   xlab("Proportion of timeseries")+
   ylab("Relative difference [% of HM flux]")+
-  theme_article()+ggtitle(paste0("HM-LM models difference is below 10% for ",round(n_less_1perc/n*100*10)/10,"% of the measurements"))
+  theme_article()+ggtitle(paste0("HM-LM models difference is below 10% for ",round(n_less_10perc/n*100*10)/10,"% of the measurements"))
 
 
 ggplot(table_co2, aes(abs(best.flux), abs(diff_model)*100))+
@@ -286,7 +289,7 @@ table_co2_out <- table_co2_sel[,c(which(names(table_co2_sel)=="UniqueID"),
                                   which(names(table_co2_sel)=="sampling"):which(names(table_co2_sel)=="lightCondition"),
                                   which(names(table_co2_sel)=="best.flux"))]
 
-myfilename <- paste("all_CO2_fluxes",min(as.Date(table_co2_out$start.time)),"to",
+myfilename <- paste("all_good_CO2_fluxes",min(as.Date(table_co2_out$start.time)),"to",
                     max(as.Date(table_co2_out$start.time)), sep = "_")
 write.csv(x = table_co2_out, file = paste0(myfilename,".csv"), 
           row.names = F)
@@ -297,7 +300,7 @@ table_ch4_out <- table_ch4_sel[,c(which(names(table_ch4_sel)=="UniqueID"),
                                   which(names(table_ch4_sel)=="ebullition"),
                                   which(names(table_ch4_sel)=="diffusion"))]
 
-myfilename <- paste("all_CH4_fluxes",min(as.Date(table_ch4_out$start.time)),"to",
+myfilename <- paste("all_good_CH4_fluxes",min(as.Date(table_ch4_out$start.time)),"to",
                     max(as.Date(table_ch4_out$start.time)), sep = "_")
 write.csv(x = table_ch4_out, file = paste0(myfilename,".csv"), 
           row.names = F)

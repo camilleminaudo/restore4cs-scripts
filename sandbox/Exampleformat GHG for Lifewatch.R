@@ -90,7 +90,15 @@ str(dat)
 #Keep only fluxes data, start.time and UniqueID.
 #For CO2 fluxes, take only CO2_best.flux
 #For CH4 fluxes, take CH4_diffusive_flux and CH4_ebullitive_flux
-#We will have to adapt the raw2flux script so that CH4 has always data for diffusion and ebullition (if no ebullition, ebullition==0)
+
+##ADAPT##### 
+#Adapt to include best.flux CH4 whenever water_depth==0 (i.e. NA for ebullition), ebullition==0  (if no ebullition or negative ebullition, goflux should perform better than Camille's method)
+#Best aproach will be to substitute diffussion flux with goflux best.flux whenever ebullition ==0 or ebullition==NA, when ebullition exists and is positive, leave camilles difusion estimate. 
+
+
+#Adapt to filter out unreliable fluxes (see AnalyseFlux.R for inspiration on filter criteria), No criteria for diffusion ebullition other than if ebullition==0 (in which case we take best.flux from goflux). This means we will not filter out fluxes from camilles method if they produce a positive value for ebullition.
+
+
 
 dat2<- dat %>% 
   select(UniqueID,
@@ -109,7 +117,7 @@ fieldsheets<- list.files(path= fieldsheetpath, recursive = T, pattern = "GHG.xls
 field<- read_GHG_fieldsheets(fieldsheets)
 
 #Save all fieldsheet data in a date-named csv
-# write.csv(field, file = paste0(fieldsheetpath,"/compilation",today(),".csv"))
+write.csv(field, file = paste0(fieldsheetpath,"/compilation",today(),".csv"))
 
 #Drop unwanted variables and rename key UniqueID:
 field2<- field %>% 
@@ -127,32 +135,10 @@ dat[which(!dat$UniqueID%in%field$uniqID),]
 #fieldsheets without flux calculated (WHY?)
 incub_noflux<-field[which(!field$uniqID%in%dat$UniqueID),] %>% 
   mutate(duration=unix_stop-unix_start)
-#74 incubations without a flux, without clear reason.
 
+#17 incubations without a flux
 write.csv(incub_noflux, file = paste0(lifewatch_example_path,"Incubations_without_flux.csv"),row.names = F)
-print(incub_noflux %>% 
-  group_by(subsite, gas_analyzer,date) %>% 
-  summarise(n=n()), n=50)
-
-
-
-#Try correspondences without timestamp in UniqueID (for field and dat)
-testdat<- dat %>% 
-  separate(UniqueID, into = c("id1","id2","id3","id4","id5","id6","id7"),sep = "-",remove = F) %>% 
-  mutate(semiuniqueID=paste(id1,id2,id3,id4,id5,id6, sep = "-")) %>% 
-  select(-c(id1,id2,id3,id4,id5,id6,id7))
-
-testfield<- field2 %>% 
-  separate(UniqueID, into = c("id1","id2","id3","id4","id5","id6","id7"),sep = "-",remove = F) %>% 
-  mutate(semiuniqueID=paste(id1,id2,id3,id4,id5,id6, sep = "-")) %>% 
-  select(-c(id1,id2,id3,id4,id5,id6,id7))
-
-testdat %>% select(semiuniqueID) %>% filter(duplicated(.) | duplicated(., fromLast = TRUE))
-
-testfield %>% select(semiuniqueID) %>% filter(duplicated(.) | duplicated(., fromLast = TRUE))
-
-incub_noflux_1<- testfield[which(!testfield$semiuniqueID%in%testdat$semiuniqueID),]
-
+#Reasons and checks in Incubations_without_flux_fixed.xlsx (same folder LifeWatch)
 
 
 
@@ -221,7 +207,7 @@ veg %>%
 
 #2. Extract from fieldsheets the comments of vegetated plots. Format into comments_dark and comments_transparent
 vegetated_plots<- field2 %>% 
-  filter(!UniqueID%in%c("s1-va-a1-12-v-t-14:58","s1-va-a1-12-v-d-15:06")) %>% #remove repeated incubation
+  filter(!UniqueID%in%c(duplicate_incubations)) %>% #remove repeated incubation
   filter(strata=="vegetated") %>%#Select only vegetated plots
   mutate(plotcode=paste(subsite, plot_id,sep="-")) %>% 
   select(plotcode, strata,transparent_dark, comments) %>% 
@@ -242,7 +228,7 @@ veg[!veg$plotcode%in%vegetated_plots$plotcode,]
 
 
 #Vegetated plotsGHG without vegetationDW 92 chambers without vegetation data
-vegetated_plots[!vegetated_plots$plotcode%in%veg$plotcode,]
+print(vegetated_plots[!vegetated_plots$plotcode%in%veg$plotcode,],n=150)
 
 
 
@@ -315,9 +301,8 @@ rm(designed_subsites)
 loggers_maps_nas <- loggers_maps[apply(loggers_maps, 1, function(x) any(is.na(x))), ]
 
 print(loggers_maps_nas)
-#5 incubations with undefined time-period (check fieldsheets and correct)
+#1 incubations with undefined time-period (check fieldsheets and correct)
 #s1-da-r1-12-v-d-na: Los Gatos off, no incubation was done, leftover in fieldsheet but does not exist
-#S2-cu-r1-8-o-d-09:38: Los Gatos runs out of battery (unclear endtime)
 
 #Extract data from loggers only for well-defined incubations
 complete_loggers_maps<- loggers_maps %>% drop_na()
@@ -738,6 +723,8 @@ sampling_daylight <- samplings %>%
   ungroup() %>%
   select(subsite, date, subsite_latitude, subsite_longitude, daylight_duration)
 
+####ADAPT####
+#We have to adapt the code to integrate transparent bare plots with dark bare fluxes when they exist. Similar approach to vegetation but conditional to if there are transparent and dark corresponding bare incubations. 
 
 
 #INTEGRATE to net_GHG exchange per plot (integrate dark and transparent with daylight_duration)
