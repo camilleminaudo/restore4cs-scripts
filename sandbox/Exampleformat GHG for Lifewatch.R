@@ -996,5 +996,102 @@ net_ghg_per_plot %>%
   facet_grid(pilot_site~., scales = "free")+
   ggtitle("CH4 daily balances in all pilot_sites")
 
+####Exploration####
+#Exploration of vegetated fluxes (net_CO2) according to vegetation biomass and light intensity
+
+#No relationship CO2~vegetation is obvious for any case-pilot
+
+dat<- read.csv(paste0(lifewatch_example_path,"GHG_plus_metadata_per_plot.csv"))
+
+veg_plots<- dat %>% 
+  filter(strata%in%c("vegetated land","vegetated water")) %>% 
+  mutate(CO2_balance=CO2_best.flux_transparent+CO2_best.flux_dark)
+
+
+#number of veg plots with veg data
+sum(!is.na(veg_plots$ABG_biomass_gpersquaremeter))
+
+#Number of veg plots with dark and transparent flux
+sum(!is.na(veg_plots$CO2_balance))
+
+#Number of veg plots with both CO2 balance and vegetation ABG data
+sum(!is.na(veg_plots$ABG_biomass_gpersquaremeter*veg_plots$CO2_balance))
+
+#Proportion of total veg_plots with complete data
+sum(!is.na(veg_plots$ABG_biomass_gpersquaremeter*veg_plots$CO2_balance))/sum(!is.na(veg_plots$CO2_balance))
+
+print(veg_plots %>% 
+        mutate(status=substr(subsite, 4,4)) %>% 
+  group_by(pilot_site, status) %>% 
+  summarise(n_vegdata=sum(!is.na(ABG_biomass_gpersquaremeter)),
+            n_CO2balance=sum(!is.na(CO2_balance)),
+            n_combined=sum(!is.na(CO2_balance*ABG_biomass_gpersquaremeter))) %>% 
+  arrange(pilot_site,status), n=35)
+
+
+
+
+library(ggpmisc)
+
+ggplot(veg_plots,aes(x=ABG_biomass_gpersquaremeter, y=CO2_balance))+
+  geom_point()+
+  stat_poly_line() +
+  stat_poly_eq(use_label(c("eq", "R2"))) +
+  facet_wrap(.~pilot_site,scales = "free")
+
+ggplot(veg_plots,aes(x=ABG_biomass_gpersquaremeter, y=CO2_best.flux_transparent))+
+  geom_point()+
+  stat_poly_line() +
+  stat_poly_eq(use_label(c("eq", "R2"))) +
+  facet_wrap(.~pilot_site,scales = "free")
+
+ggplot(veg_plots,aes(x=ABG_biomass_gpersquaremeter, y=CO2_best.flux_dark))+
+  geom_point()+
+  stat_poly_line() +
+  stat_poly_eq(use_label(c("eq", "R2"))) +
+  facet_wrap(.~pilot_site,scales = "free")
+#No aparent relationship CO2~veg_biomass
+
+
+
+ggplot(veg_plots,aes(x=ABG_biomass_gpersquaremeter, y=CH4_diffusive_flux_dark))+
+  geom_point()+
+  stat_poly_line() +
+  stat_poly_eq(use_label(c("eq", "R2"))) +
+  facet_wrap(.~pilot_site,scales = "free")
+
+ggplot(veg_plots,aes(x=ABG_biomass_gpersquaremeter, y=CH4_diffusive_flux_transparent))+
+  geom_point()+
+  stat_poly_line() +
+  stat_poly_eq(use_label(c("eq", "R2"))) +
+  facet_wrap(.~pilot_site,scales = "free")
+
+
+
+#Dark vs Transparent CH4 fluxes
+veg_plots %>% 
+  filter(!is.na(CH4_diffusive_flux_dark*CH4_diffusive_flux_transparent)) %>% 
+  # filter(CH4_diffusive_flux_dark>0) %>% 
+  # filter(CH4_diffusive_flux_transparent>0) %>% 
+  ggplot(aes(x=CH4_diffusive_flux_dark, y=CH4_diffusive_flux_transparent))+
+  geom_point()+
+  geom_abline(slope = 1,intercept = 0)+
+  stat_poly_line() +
+  stat_poly_eq(use_label(c("eq", "R2","n")))
+
+
+#Many outliers/unreliable fluxes (negative and cero fluxes ~244), but log-log relationship quite good and near 1:1
+veg_plots %>% 
+  filter(!is.na(CH4_diffusive_flux_dark*CH4_diffusive_flux_transparent)) %>% 
+  filter(CH4_diffusive_flux_dark>0) %>% 
+  filter(CH4_diffusive_flux_transparent>0) %>% 
+ggplot(aes(x=CH4_diffusive_flux_dark, y=CH4_diffusive_flux_transparent))+
+  geom_point()+
+  geom_abline(slope = 1,intercept = 0)+
+  stat_poly_line() +
+  scale_y_log10()+
+  scale_x_log10()+
+  stat_poly_eq(use_label(c("eq", "R2","n")))
+
 
 
