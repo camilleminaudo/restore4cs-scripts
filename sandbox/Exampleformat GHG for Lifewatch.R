@@ -169,7 +169,7 @@ table_results_good<- table_results_all %>%
                                        TRUE~CH4_ebullitive_flux),
          CH4_diffusive_flux=case_when(CH4_ebullitive_flux==0~CH4_best.flux, #when camille method fails (ebullition ==0 or ebullition ==NA), take best.flux as diffusion
                                       TRUE~CH4_diffusive_flux),
-         CH4_ebullitive_flux=case_when(is.na(CH4_diffusive_flux)~NA_real_, #set ebullition to NA, when CH4 does not produce a reliable flux 
+         CH4_ebullitive_flux=case_when(is.na(CH4_diffusive_flux)~NA_real_, #set ebullition to NA, when CH4 does not produce a reliable diffusive flux 
                                        TRUE~CH4_ebullitive_flux)) %>% 
   select(UniqueID,
          start.time,
@@ -179,10 +179,10 @@ table_results_good<- table_results_all %>%
 
 #Keep only fluxes data, start.time and UniqueID.
 #For CO2 fluxes, take only CO2_best.flux
-#For CH4 fluxes, take CH4_diffusive_flux and CH4_ebullitive_flux (adapted to include CH4_best.flux when EbullitionVSdiffusion si not apropiate)
+#For CH4 fluxes, take CH4_diffusive_flux and CH4_ebullitive_flux (adapted to include CH4_best.flux when EbullitionVSdiffusion is not apropiate)
 rm(table_ch4_MAE, table_co2_MAE, table_ch4, table_co2)
 
-
+#How many fluxes have we removed with the above filtering?
 sum(is.na(table_results_good$CO2_best.flux))
 sum(is.na(table_results_good$CH4_diffusive_flux))
 
