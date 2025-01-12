@@ -74,39 +74,117 @@ lifewatch_example_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/
 # ---- Import fluxes per season ----
 
 #Read all computed fluxes per season
-season_csvs<- list.files(path = results_path, pattern = "^S")
-dat<- data.frame()
-for (i in season_csvs){
-  s<- read.csv(paste0(results_path,i))
-  
-  dat<- rbind(dat,s)
+listf<- list.files(path = results_path, pattern = "^S", full.names = T)
+
+table_results_all <- NULL
+for (f in listf){
+  table_results_all <- rbind(table_results_all, 
+                             read.csv(file = f, header = T))
 }
-rm(s, i)
 
 
-str(dat)
+table_results_all <- table_results_all[!is.na(table_results_all$lightCondition),]
+
+# table_results_all <- table_results_all[table_results_all$CO2_best.flux<1000,]
 
 
-#Keep only fluxes data, start.time and UniqueID.
-#For CO2 fluxes, take only CO2_best.flux
-#For CH4 fluxes, take CH4_diffusive_flux and CH4_ebullitive_flux
+get_full_detailed_table <- function(table_results_all, variable){
+  
+  listf <- list.files(path = paste0(results_path,"level_incubation"), pattern = ".csv", all.files = T, full.names = T, recursive = F)
+  mytable <- NULL
+  for (f in listf[grep(pattern = variable, x = listf)]){
+    mytable.tmp <- read.csv(file = f, header = T)
+    mytable <- rbind(mytable, mytable.tmp)
+  }
+  mytable$sampling <- str_sub(mytable$UniqueID, start = 1, 2)
+  mytable$pilotsite <- str_sub(mytable$UniqueID, start = 4, 5)
+  mytable$subsite <- str_sub(mytable$UniqueID, start = 7, 8)
+  mytable$siteID <- str_sub(mytable$UniqueID, start = 4, 8)
+  
+  ind_match <- match(mytable$UniqueID, table_results_all$UniqueID)
+  
+  
+  mytable <- cbind(mytable, table_results_all[ind_match,c("gas_analiser","start.time","duration","water_depth","strata","chamberType","lightCondition")])
+  mytable <- mytable[!is.na(ind_match),]
+  return(mytable)
+}
 
-##ADAPT##### 
+table_co2 <- get_full_detailed_table(table_results_all, variable = "co2")
+table_ch4 <- get_full_detailed_table(table_results_all, "ch4")
+
+
+#Get model MAE for each gas:
+
+table_co2_MAE<- table_co2 %>% 
+  select(UniqueID, HM.MAE) %>% 
+  rename(HM.MAE.co2=HM.MAE)
+
+table_ch4_MAE<- table_ch4 %>% 
+  select(UniqueID, HM.MAE) %>% 
+  rename(HM.MAE.ch4=HM.MAE)
+  
+table_results_all<- merge.data.frame(table_results_all, table_ch4_MAE,by="UniqueID") %>% 
+  merge.data.frame(table_co2_MAE,by="UniqueID" )
+
+
+
+#Select and filter Fluxes####
+#Selection of fluxes CO2: take CO2 flux from best.flux
+
+
+#Selection of fluxes CH4:
 #Adapt to include best.flux CH4 whenever water_depth==0 (i.e. NA for ebullition), ebullition==0  (if no ebullition or negative ebullition, goflux should perform better than Camille's method)
 #Best aproach will be to substitute diffussion flux with goflux best.flux whenever ebullition ==0 or ebullition==NA, when ebullition exists and is positive, leave camilles difusion estimate. 
 
+#Ebullition: if ebullition ==0 | ebullition== NA --> set ebullition to 0
+#Diffusion: if ebullition !=0 and != NA --> set diffusion to diffusion
+#if ebullition ==0 | ebullition==NA --> set difussion as best.flux from goflux method.
+#total flux = diffussion + ebullition
 
+
+
+#Filtering of fluxes: 
+
+#for CO2: set to NA fluxes with HM.MAE >10
+#for CH4: set to NA the fluxes from go.flux (water_depth==0|ebullition==0) with HM.MAE >100
+#No filtering for CH4 fluxes comming from camilles method (ebullition!=NA, ebullition!=0)
 #Adapt to filter out unreliable fluxes (see AnalyseFlux.R for inspiration on filter criteria), No criteria for diffusion ebullition other than if ebullition==0 (in which case we take best.flux from goflux). This means we will not filter out fluxes from camilles method if they produce a positive value for ebullition.
 
 
 
-dat2<- dat %>% 
+#Set unreliable fluxes to NA, and combine CH4 fluxes into diffusive and ebulitive flux
+table_results_good<- table_results_all %>% 
+  select(UniqueID,
+         start.time,
+         CO2_best.flux,HM.MAE.co2,
+         #CO2_LM.flux,CO2_HM.flux,CO2_best.flux,CO2_best.model,CO2_quality.check,
+         #CH4_LM.flux,CH4_HM.flux,CH4_best.flux,CH4_best.model, CH4_quality.check,
+         CH4_best.flux, HM.MAE.ch4,
+         CH4_diffusive_flux,CH4_ebullitive_flux) %>% 
+  mutate(CO2_best.flux=case_when(HM.MAE.co2>10~NA_real_,#Set CO2 best flux with MAE >10 to NA (Unreliable)
+                                 TRUE~CO2_best.flux),
+         CH4_best.flux=case_when(HM.MAE.ch4>100~NA_real_,#Set CH4 best flux with MAE >100 to NA (Unreliable)
+                                 TRUE~CH4_best.flux),
+         CH4_ebullitive_flux=case_when(is.na(CH4_ebullitive_flux)~0, #substitute NAs ebullition with zero
+                                       TRUE~CH4_ebullitive_flux),
+         CH4_diffusive_flux=case_when(CH4_ebullitive_flux==0~CH4_best.flux, #when camille method fails (ebullition ==0 or ebullition ==NA), take best.flux as diffusion
+                                      TRUE~CH4_diffusive_flux),
+         CH4_ebullitive_flux=case_when(is.na(CH4_diffusive_flux)~NA_real_, #set ebullition to NA, when CH4 does not produce a reliable flux 
+                                       TRUE~CH4_ebullitive_flux)) %>% 
   select(UniqueID,
          start.time,
          CO2_best.flux,
-         #CO2_LM.flux,CO2_HM.flux,CO2_best.flux,CO2_best.model,CO2_quality.check,
-         #CH4_LM.flux,CH4_HM.flux,CH4_best.flux,CH4_best.model, CH4_quality.check,
-         CH4_diffusive_flux,CH4_ebullitive_flux)
+         CH4_diffusive_flux, 
+         CH4_ebullitive_flux)
+
+#Keep only fluxes data, start.time and UniqueID.
+#For CO2 fluxes, take only CO2_best.flux
+#For CH4 fluxes, take CH4_diffusive_flux and CH4_ebullitive_flux (adapted to include CH4_best.flux when EbullitionVSdiffusion si not apropiate)
+rm(table_ch4_MAE, table_co2_MAE, table_ch4, table_co2)
+
+
+sum(is.na(table_results_good$CO2_best.flux))
+sum(is.na(table_results_good$CH4_diffusive_flux))
 
 
 
@@ -117,7 +195,7 @@ fieldsheets<- list.files(path= fieldsheetpath, recursive = T, pattern = "GHG.xls
 field<- read_GHG_fieldsheets(fieldsheets)
 
 #Save all fieldsheet data in a date-named csv
-write.csv(field, file = paste0(fieldsheetpath,"/compilation",today(),".csv"))
+# write.csv(field, file = paste0(fieldsheetpath,"/compilation",today(),".csv"))
 
 #Drop unwanted variables and rename key UniqueID:
 field2<- field %>% 
@@ -127,13 +205,13 @@ field2<- field %>%
 
 # ---- Format and join ----
 #Key for joining flux data and fieldsheet: 
-summary(dat$UniqueID%in%field$uniqID)
+summary(table_results_good$UniqueID%in%field$uniqID)
 
 #fluxes without fieldsheet details: arising from correction in fieldsheets
-dat[which(!dat$UniqueID%in%field$uniqID),]
+table_results_good[which(!table_results_good$UniqueID%in%field$uniqID),]
 
 #fieldsheets without flux calculated (WHY?)
-incub_noflux<-field[which(!field$uniqID%in%dat$UniqueID),] %>% 
+incub_noflux<-field[which(!field$uniqID%in%table_results_good$UniqueID),] %>% 
   mutate(duration=unix_stop-unix_start)
 
 #17 incubations without a flux
@@ -161,7 +239,7 @@ field2 %>% filter(is.na(transparent_dark))
 
 
 #merge fluxes with fieldsheets dropping the unmatched observations, problematic values and duplicated incubations
-ghg_formated<- field2 %>% merge.data.frame(dat2, by="UniqueID",all = F) %>%
+ghg_formated<- field2 %>% merge.data.frame(table_results_good, by="UniqueID",all = F) %>%
   filter(!is.na(transparent_dark)) %>% 
   filter(!UniqueID%in%duplicate_incubations) %>% 
   select(-UniqueID) %>% 
@@ -177,8 +255,8 @@ ghg_formated<- field2 %>% merge.data.frame(dat2, by="UniqueID",all = F) %>%
                           campaign=="S4"~"summer"),
          subsite=str_extract(subsite, pattern="[A-Z]{2}-[A-Z]{1}[0-9]{1}"),
          sampling=paste(campaign, subsite,sep="-"),
-         strata=case_when(strata=="vegetated"&water_depth>=10~"vegetated water",#Re-classify strata using water depth (vegetated water when water_depth>=10cm, otherwise vegetated land)
-                          strata=="vegetated"&water_depth<10~"vegetated land",
+         strata=case_when(strata=="vegetated"&water_depth>0~"vegetated water",#Re-classify strata using water depth (vegetated water when water_depth>0cm, otherwise vegetated land)
+                          strata=="vegetated"&water_depth==0~"vegetated land",
                           TRUE~strata)) %>% 
   select(season, campaign,pilot_site, subsite, sampling, date, latitude, longitude, water_depth, strata, plotcode, plot_startime, CO2_best.flux_dark, CO2_best.flux_transparent, CH4_diffusive_flux_dark, CH4_ebullitive_flux_dark, CH4_diffusive_flux_transparent, CH4_ebullitive_flux_transparent)
 
@@ -227,7 +305,7 @@ veg[!veg$plotcode%in%vegetated_plots$plotcode,]
 #S2-RI had some correction, but remaining unmatched vegetation data cannot be assigned to vegetated chambers (no obvious correspondence or typos)
 
 
-#Vegetated plotsGHG without vegetationDW 92 chambers without vegetation data
+#Vegetated plotsGHG without vegetationDW 91 chambers without vegetation data
 print(vegetated_plots[!vegetated_plots$plotcode%in%veg$plotcode,],n=150)
 
 
@@ -723,11 +801,19 @@ sampling_daylight <- samplings %>%
   ungroup() %>%
   select(subsite, date, subsite_latitude, subsite_longitude, daylight_duration)
 
-####ADAPT####
-#We have to adapt the code to integrate transparent bare plots with dark bare fluxes when they exist. Similar approach to vegetation but conditional to if there are transparent and dark corresponding bare incubations. 
+print(sampling_daylight %>% 
+  group_by(subsite) %>% 
+  summarise(n=n()), n=50)
+
+sampling_daylight %>% filter(subsite=="RI-R2")
+#ISSUE: RI-R2 has been sampled in different days in S1 (november2023), S2 (january2024) and S3 (march2024)
 
 
-#INTEGRATE to net_GHG exchange per plot (integrate dark and transparent with daylight_duration)
+
+
+
+
+#INTEGRATE to net_GHG exchange per plot (integrate dark and transparent with daylight_duration for vegetated plots and for bare plots (when we have bare-transparent AND bare-dark))
 net_ghg_per_plot<- ghg %>% 
   mutate(date=as.Date(date)) %>% 
   merge.data.frame(sampling_daylight, by=c("subsite","date"), all = T) %>% 
@@ -738,26 +824,42 @@ net_ghg_per_plot<- ghg %>%
   #Get CH4 total flux (diffusion + ebullition)
   mutate(CH4_total_dark=CH4_diffusive_flux_dark+CH4_ebullitive_flux_dark,
          CH4_total_transparent=CH4_diffusive_flux_transparent+CH4_ebullitive_flux_transparent) %>% 
-  #Integrate transparent and dark with daylight_duration (fluxlight*lighthours+fluxdark*darkhours)/24: same units for net flux (umol/m2/s), but integrated for the whole day. For open water and bare plots, use directly the dark flux
+  #Remove CH4 diffusion and CH4 ebullition
+  select(-c(CH4_diffusive_flux_dark,CH4_ebullitive_flux_dark,CH4_diffusive_flux_transparent,CH4_ebullitive_flux_transparent)) %>% 
+  #Integrate transparent and dark with daylight_duration (fluxlight*lighthours+fluxdark*darkhours)/24: same units for net flux (umol/m2/s), but integrated for the whole day. 
   #CO2:
   mutate(net_CO2=case_when(grepl("vegetated",strata)~((CO2_best.flux_transparent*daylight_duration)+(CO2_best.flux_dark*(24-daylight_duration)))/24,
-                           grepl("open|bare",strata)~CO2_best.flux_dark),
-  #CH4:    
+                           #For Bare plots, whenever we have light AND dark CO2 fluxes, integrate with daylighthours (same as vegetated plots)
+                           grepl("bare",strata)&!is.na(CO2_best.flux_transparent*CO2_best.flux_dark)~((CO2_best.flux_transparent*daylight_duration)+(CO2_best.flux_dark*(24-daylight_duration)))/24,
+                           #For Bare plots with NA for light BUT data for dark CO2, use CO2_best.flux dark flux for the whole day
+                           grepl("bare",strata)&is.na(CO2_best.flux_transparent)&!is.na(CO2_best.flux_dark)~CO2_best.flux_dark,
+                           #For bare plots with NA for dark BUT data for light CO2, use CO2_best.flux_light for the whole day
+                           grepl("bare",strata)&is.na(CO2_best.flux_dark)&!is.na(CO2_best.flux_transparent)~CO2_best.flux_transparent,
+                           #For open water plots, use dark flux for whole day
+                           grepl("open",strata)~CO2_best.flux_dark),
+         #CH4: same approach than for CO2 (bare-dark, bare-light)
          net_CH4=case_when(grepl("vegetated",strata)~((CH4_total_transparent*daylight_duration)+(CH4_total_dark*(24-daylight_duration)))/24,
-                           grepl("open|bare",strata)~CH4_total_dark+CH4_total_dark)) %>% 
+                           #For Bare plots, whenever we have light AND dark CH4 fluxes, integrate with daylighthours (same as vegetated plots)
+                           grepl("bare",strata)&!is.na(CH4_total_transparent*CH4_total_dark)~((CH4_total_transparent*daylight_duration)+(CH4_total_dark*(24-daylight_duration)))/24,
+                           #For Bare plots with NA for light BUT data for dark CH4, use CH4_total_dark dark flux for the whole day
+                           grepl("bare",strata)&is.na(CH4_total_transparent)&!is.na(CH4_total_dark)~CH4_total_dark,
+                           #For bare plots with NA for dark BUT data for light CH4, use CH4_total_transparent for the whole day
+                           grepl("bare",strata)&is.na(CH4_total_dark)&!is.na(CH4_total_transparent)~CH4_total_transparent,
+                           #For open water plots, use dark flux for whole day
+                           grepl("open",strata)~CH4_total_dark)) %>% 
+  
   #Discard _transparent/_dark ghg fluxes
-  select(-c(CO2_best.flux_dark,CO2_best.flux_dark, CO2_best.flux_transparent,
-            CH4_diffusive_flux_dark, CH4_diffusive_flux_transparent,
-            CH4_ebullitive_flux_dark, CH4_ebullitive_flux_transparent,CH4_total_dark,CH4_total_transparent)) 
+  select(-c(CO2_best.flux_dark, CO2_best.flux_transparent,CH4_total_dark,CH4_total_transparent)) 
+
 
 
 #Save net_ghg per plot
 write.csv(net_ghg_per_plot, file=paste0(lifewatch_example_path,"net_ghg_per_plot.csv"),row.names = F)
 
 #Average per subsite and strata
-net_ghg_summary<- net_ghg_per_plot %>% 
+net_ghg_summary_season_subsite_strata<- net_ghg_per_plot %>% 
   select(-c(plotcode,latitude, longitude)) %>% 
-  group_by(season, pilot_site, subsite, ,subsite_latitude,subsite_longitude, sampling, date, strata,daylight_duration) %>% 
+  group_by(season, pilot_site, subsite ,subsite_latitude,subsite_longitude, sampling, strata,daylight_duration) %>% 
   summarise(avg_netCO2=mean(net_CO2, na.rm=T),
             sd_netCO2=sd(net_CO2, na.rm=T),
             n_netCO2=sum(!is.na(net_CO2)),
@@ -768,5 +870,131 @@ net_ghg_summary<- net_ghg_per_plot %>%
   )
 
 #Save net_ghg per subsite-strata
-write.csv(net_ghg_summary,file = paste0(lifewatch_example_path, "net_ghg_summary.csv"),row.names = F)
+write.csv(net_ghg_summary_season_subsite_strata,file = paste0(lifewatch_example_path, "net_ghg_summary_season_subsite_strata.csv"),row.names = F)
+
+
+
+
+#Integrated per subsite-season using all available data (no %cover, but sum of all daily fluxes): 
+net_ghg_subsite<- net_ghg_per_plot %>% 
+  select(-c(plotcode, latitude, longitude, strata,date)) %>% 
+  group_by(season, pilot_site, subsite ,subsite_latitude,subsite_longitude, sampling)%>% 
+  summarise(avg_netCO2=mean(net_CO2, na.rm=T),
+            sd_netCO2=sd(net_CO2, na.rm=T),
+            n_netCO2=sum(!is.na(net_CO2)),
+            avg_netCH4=mean(net_CH4, na.rm=T),
+            sd_netCH4=sd(net_CH4, na.rm=T),
+            n_netCH4=sum(!is.na(net_CH4)),
+            .groups = "drop"
+  )
+
+
+#obtain %cover of 4 strata based on chamber distribution for each subsite*season
+cover_chambers<- net_ghg_per_plot %>% 
+  group_by(pilot_site, subsite,season, strata) %>% 
+  summarise(chambers=n()) %>% 
+  group_by(pilot_site, subsite,season) %>% 
+  mutate(total_chambers=sum(chambers),
+         prop_strata=chambers/total_chambers)
+
+#Save net_ghg_subsite_integratedcover
+write.csv(cover_chambers,file = paste0(lifewatch_example_path, "proportion_stratacover_chambers.csv"),row.names = F)
+
+#Scale strata-level averages to subsite-level using chamber distribution as proportion of strata
+net_ghg_summary_season_subsite_chambercover<- net_ghg_summary_season_subsite_strata %>% 
+  merge.data.frame(cover_chambers, by=c("pilot_site", "subsite","season", "strata")) %>% 
+  select(-c(chambers, total_chambers)) %>% 
+  mutate(avg_net_CO2_subsite=avg_netCO2*prop_strata,
+         sd_net_CO2_subsite=sd_netCO2*prop_strata,
+         avg_net_CH4_subsite=avg_netCH4*prop_strata,
+         sd_net_CH4_subsite=sd_netCH4*prop_strata
+  ) %>% 
+  group_by(pilot_site,subsite,season, subsite_latitude,subsite_longitude, sampling) %>% 
+  summarise(avg_net_CO2_subsite=sum(avg_net_CO2_subsite, na.rm = T),
+            sd_net_CO2_subsite=sum(sd_net_CO2_subsite, na.rm = T),
+            avg_net_CH4_subsite=sum(avg_net_CH4_subsite, na.rm = T),
+            sd_net_CH4_subsite=sum(sd_net_CH4_subsite, na.rm = T))
+
+#Save net_ghg_summary_season_subsite_chambercover
+write.csv(net_ghg_summary_season_subsite_chambercover,file = paste0(lifewatch_example_path, "net_ghg_summary_season_subsite_chambercover.csv"),row.names = F)
+
+
+####NOTES for INTERPRETATION####
+#Curonian lagoon: alteration mostly impacts ch4 emissions, relevant strata are open water and vegetated water only
+net_ghg_per_plot %>% 
+  mutate(status=substr(subsite,4,4)) %>% 
+  filter(pilot_site=="CU") %>% 
+  filter(strata%in%c("open water","vegetated water")) %>% 
+  filter(net_CH4<14000) %>% #Removed 1 outlier flux
+ggplot(aes(x=status, y=net_CH4))+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(strata~season, scales = "free")+
+  ggtitle("CH4 daily balances in Curonian lagoon")
+
+#Aveiro: alteration influences mostly % cover between bare and vegetated land, we dont have representative data for high tide. Comparison based on average CO2 fluxes (combining all bare and vegetated strata)
+#Note*: Many bare-plots from restored sites should not be considered (taken outside restored area)
+net_ghg_per_plot %>% 
+  mutate(status=substr(subsite,4,4)) %>% 
+  filter(pilot_site=="RI") %>% 
+  filter(strata%in%c("bare","vegetated land")) %>% 
+  ggplot(aes(x=status, y=net_CO2))+
+  geom_boxplot()+
+  geom_point()+
+  facet_grid(.~season, scales = "free")+
+  ggtitle("CO2 daily balances in Ria d'Aveiro")
+
+
+net_ghg_per_plot %>% 
+  mutate(status=substr(subsite,4,4)) %>% 
+  filter(pilot_site=="RI") %>% 
+  filter(strata%in%c("bare","vegetated land")) %>% 
+  ggplot(aes(x=status, y=net_CH4))+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(.~season, scales = "free")+
+  ggtitle("CH4 daily balances in Ria d'Aveiro")
+
+
+
+
+#Valencia: alteration influences microbial metabolism, low-salinity enables methanogenesis. 
+net_ghg_per_plot %>% 
+  mutate(status=substr(subsite,4,4)) %>% 
+  filter(pilot_site=="VA") %>% 
+  ggplot(aes(x=status, y=net_CH4))+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(.~season, scales = "free")+
+  ggtitle("CH4 daily balances in Valencia")
+
+net_ghg_per_plot %>% 
+  mutate(status=substr(subsite,4,4)) %>% 
+  filter(pilot_site=="VA") %>% 
+  ggplot(aes(x=status, y=net_CO2))+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(.~season, scales = "free")+
+  ggtitle("CO2 daily balances in Valencia")
+
+
+
+#All sites
+net_ghg_per_plot %>% 
+  mutate(status=substr(subsite,4,4)) %>% 
+  ggplot(aes(x=status, y=net_CO2))+
+  geom_boxplot()+
+  facet_grid(pilot_site~., scales = "free")+
+  ggtitle("CO2 daily balances in all pilot_sites")
+
+#All sites
+net_ghg_per_plot %>% 
+  mutate(status=substr(subsite,4,4)) %>% 
+  filter(net_CH4<14000) %>%
+  ggplot(aes(x=status, y=net_CH4))+
+  geom_boxplot()+
+  facet_grid(pilot_site~., scales = "free")+
+  ggtitle("CH4 daily balances in all pilot_sites")
+
+
 
