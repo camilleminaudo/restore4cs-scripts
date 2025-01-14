@@ -1095,3 +1095,115 @@ ggplot(aes(x=CH4_diffusive_flux_dark, y=CH4_diffusive_flux_transparent))+
 
 
 
+####Contingency tables (N)####
+
+#GHG fluxes available (NA denotes missing chamber or flux not good-enough)
+dat<- read.csv(paste0(lifewatch_example_path,"GHG_plus_metadata_per_plot.csv"))
+
+head(dat)
+
+
+#Read all GHGfieldsheets (using function from Camille)
+fieldsheets<- list.files(path= fieldsheetpath, recursive = T, pattern = "GHG.xlsx",full.names = T)
+field<- read_GHG_fieldsheets(fieldsheets)
+
+
+head(field)
+incubations_without_flux<- read.csv(file = paste0(lifewatch_example_path,"Incubations_without_flux.csv"))
+
+
+#How many incubations performed per strata and light-condition
+chamber_deployments<- field %>% 
+  select(-c(logger_floating_chamber,logger_transparent_chamber,chamber_type,longitude,latitude, start_time,end_time, initial_co2,initial_ch4,final_co2,final_ch4, chamber_height_cm, unix_start,unix_stop, plot_id,comments,date, person_sampling, gas_analyzer)) %>% 
+  filter(!uniqID%in%incubations_without_flux$uniqID) %>% 
+  mutate(campaign=substr(subsite, 1,2),
+         status=substr(subsite, 7,7),
+         sampling=subsite,
+         subsite=substr(sampling,4,8),
+         water_presence=case_when(water_depth>0~T,
+                                  water_depth==0~F,
+                                  TRUE~NA),
+         vegetation_presence=case_when(strata=="vegetated"~T,
+                                       TRUE~F),
+         transparent_condition=case_when(transparent_dark=="dark"~F,
+                                   transparent_dark=="transparent"~T)
+         
+         ) %>% 
+  select(campaign, pilot_site, status, subsite,sampling, uniqID, water_presence, vegetation_presence, transparent_condition)
+  
+
+head(chamber_deployments)
+#Table_incubationtypes_all
+incubationtypes_strata_light<- chamber_deployments %>% 
+  group_by(water_presence, vegetation_presence,transparent_condition) %>% 
+  summarise(incubation_n=n()) %>% 
+  ungroup() %>% 
+  mutate(percent_dataset=incubation_n/sum(incubation_n)*100,
+         strata_light=case_when((water_presence==T&vegetation_presence==F&transparent_condition==F)~"Open Water-Dark",
+                                (water_presence==T&vegetation_presence==F&transparent_condition==T)~"Open Water-Light (inundated bare)",
+                                (water_presence==T&vegetation_presence==T&transparent_condition==F)~"Vegetated water-Dark",
+                                (water_presence==T&vegetation_presence==T&transparent_condition==T)~"Vegetated water-Light",
+                                (water_presence==F&vegetation_presence==T&transparent_condition==F)~"Vegetated land-Dark",
+                                (water_presence==F&vegetation_presence==T&transparent_condition==T)~"Vegetated land-Light",
+                                (water_presence==F&vegetation_presence==F&transparent_condition==F)~"Bare land-Dark",
+                                (water_presence==F&vegetation_presence==F&transparent_condition==T)~"Bare land-Light",
+                                TRUE~NA))
+                                
+
+incubationstrata_only<- chamber_deployments %>% 
+  group_by(water_presence, vegetation_presence) %>% 
+  summarise(incubation_n=n()) %>% 
+  ungroup() %>% 
+  mutate(percent_dataset=incubation_n/sum(incubation_n)*100,
+         description=case_when((water_presence==T&vegetation_presence==F)~"Open Water",
+                                (water_presence==T&vegetation_presence==T)~"Vegetated water",
+                                (water_presence==F&vegetation_presence==T)~"Vegetated land",
+                                (water_presence==F&vegetation_presence==F)~"Bare land",
+                                TRUE~NA))
+
+
+incubations_waterORnot<- chamber_deployments %>% 
+  group_by(water_presence) %>% 
+  summarise(incubation_n=n()) %>% 
+  ungroup() %>% 
+  mutate(percent_dataset=incubation_n/sum(incubation_n)*100,
+         description=case_when((water_presence==T)~"Water (depth>0cm)",
+                                (water_presence==F)~"No water (depth=0cm)",
+                                TRUE~NA))
+
+incubations_vegORnot<- chamber_deployments %>% 
+  group_by(vegetation_presence) %>% 
+  summarise(incubation_n=n()) %>% 
+  ungroup() %>% 
+  mutate(percent_dataset=incubation_n/sum(incubation_n)*100,
+         description=case_when((vegetation_presence==T)~"Vegetated",
+                               (vegetation_presence==F)~"Non-vegetated",
+                               TRUE~NA))
+
+
+
+incubationtypes_strata_light
+incubationstrata_only
+incubations_waterORnot
+incubations_vegORnot
+
+
+#Test Venn Diagrams
+install.packages("ggvenn")
+library(ggvenn)
+
+#Water& vegetation Venn Diagram
+chamber_deployments %>% 
+  mutate(description=case_when((water_presence==T&vegetation_presence==F)~"Open Water",
+                                        (water_presence==T&vegetation_presence==T)~"Vegetated water",
+                                        (water_presence==F&vegetation_presence==T)~"Vegetated land",
+                                        (water_presence==F&vegetation_presence==F)~"Bare land",
+                                        TRUE~NA)) %>% 
+  ggplot()+
+  geom_venn(aes(A=water_presence, B=vegetation_presence),set_names = c("Water","Vegetation"))
+
+
+#Water, vegetation, light conditon venn diagram
+
+ggplot(chamber_deployments, aes(A=water_presence, B=transparent_condition,C=vegetation_presence))+
+  geom_venn(set_names = c("Water", "Light","Vegetation"))
