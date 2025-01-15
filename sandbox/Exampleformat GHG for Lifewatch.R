@@ -1111,6 +1111,13 @@ field<- read_GHG_fieldsheets(fieldsheets)
 head(field)
 incubations_without_flux<- read.csv(file = paste0(lifewatch_example_path,"Incubations_without_flux.csv"))
 
+#Open water chambers floating & dark 
+field %>% 
+  select(-c(logger_floating_chamber,logger_transparent_chamber,chamber_type,longitude,latitude, start_time,end_time, initial_co2,initial_ch4,final_co2,final_ch4, chamber_height_cm, unix_start,unix_stop, plot_id,comments,date, person_sampling, gas_analyzer)) %>% 
+  filter(!uniqID%in%incubations_without_flux$uniqID) %>%
+  filter(strata=="open water") %>% 
+  summarise(n=n())
+
 
 #How many incubations performed per strata and light-condition
 chamber_deployments<- field %>% 
@@ -1206,4 +1213,55 @@ chamber_deployments %>%
 #Water, vegetation, light conditon venn diagram
 
 ggplot(chamber_deployments, aes(A=water_presence, B=transparent_condition,C=vegetation_presence))+
-  geom_venn(set_names = c("Water", "Light","Vegetation"))
+  geom_venn(set_names = c("Water", "Light","Vegetation"))+
+  theme_bw()+
+  ggtitle("Available fluxes conditions (N=3019)")
+
+
+
+#VEGETATED CHAMBERS, veg_DW & veg_ID
+
+
+veg<- read.csv(file = paste0(lifewatch_example_path, "vegetation_per_plot_formated.csv"))
+
+veg_logical<- veg %>% 
+  mutate(ABG_available=!is.na(ABG_biomass_gpersquaremeter),
+         ID_available=!is.na(vegetation_description))
+
+
+ggplot(veg_logical, aes(A=ABG_available, B=ID_available))+
+  geom_venn(set_names = c("ABG_biomass", "Veg_description"),fill_color = c("brown","lightgreen"))+
+  ggtitle("Vegetation data for vegetated chambers (N=833,L&D)")+
+  theme_bw()
+
+
+
+
+#Open water chambers with water-sample data 
+water<- read_xlsx(path = paste0(dropbox_root, "/Water/Water sampling and filtration_all data.xlsx"), sheet=1) %>% 
+  select(Survey, Site,Subsite,Replicate, `Label Sample ID`, `Vtot sampled (L)`) %>% 
+  rename(campaign=Survey, pilot_site=Site, status=Subsite, replicate=Replicate,waterID=`Label Sample ID`, volsampled= `Vtot sampled (L)`) %>% 
+  mutate(subsite=paste0(pilot_site,"-",status),
+         status=substr(status,1,1)) %>% 
+  filter(!is.na(volsampled))
+         
+head(water)
+names(chamber_deployments)
+
+
+
+#Bare chambers with sediment-sample
+#bare chambers: 
+dat %>% filter(strata=="bare") %>% summarise(n=n())
+
+#Sediment&soil samples:
+sediment<- read_xlsx(path = paste0(dropbox_root, "/Sediment/Lab data/RESTORE4Cs_Sediment_Data_complete.xlsx"), sheet=1) %>% 
+  select(sample_id, Season, Site, Subsite, Replicate, water_depth)
+
+sediment_nowater<- sediment %>% 
+  filter(water_depth==0)
+
+sediment_water<- sediment %>% 
+  filter(water_depth>0)
+
+head(sediment)
