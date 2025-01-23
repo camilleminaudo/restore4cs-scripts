@@ -293,9 +293,26 @@ vegetated_plots<- field2 %>%
   distinct()
 
 
+#2.1 Add GAIA notes and picture availability to vegetated_plots
+
+gaiadata_veg<- read.csv(paste0(dropbox_root,"/GHG/Gaia_GPS/full_gaia_table_allusers.csv")) %>% 
+  select(plotcode, notes, fullsize_url) %>% 
+  mutate(plotcode=gsub("plot","",plotcode),
+         picture_available=!is.na(fullsize_url)) %>% 
+  rename(comment_gaia=notes)%>%
+  select(plotcode, comment_gaia, picture_available) %>% 
+  group_by(plotcode) %>% 
+  summarise(pictures_available=sum(picture_available, na.rm = T),
+            comments_gaia = paste(unique(comment_gaia[comment_gaia != "" & !is.na(comment_gaia)]), collapse = ", "),#Combined notes of all observations with same plotcode (those with multiple pictures) 
+            .groups="drop") %>% 
+  filter(plotcode%in%vegetated_plots$plotcode)
+
+
+
 #Join fieldsheet and vegetation info
 vegetated_plots_veg<- vegetated_plots %>% 
-  merge.data.frame(veg, by=c("plotcode"),all = T)
+  merge.data.frame(veg, by=c("plotcode"),all = T) %>% 
+  merge.data.frame(gaiadata_veg, by=c("plotcode"),all=T)
 
 #vegetation DW data without vegetated plotGHG: 7 unmatched vegetation samples
 veg[!veg$plotcode%in%vegetated_plots$plotcode,]
@@ -313,17 +330,25 @@ print(vegetated_plots[!vegetated_plots$plotcode%in%veg$plotcode,],n=150)
 #3. Join and combine comments to get vegetation description (sp/genus/family/), calculate ABG_biomass using tube area (pi*(12.1cm radius)^2)
 #Unmatched vegetation data (veg data without chamber) are excluded
 vegetation_dw_final<- vegetated_plots %>% 
-  merge.data.frame(veg, by=c("plotcode"),all.x = T) %>% 
+  merge.data.frame(x=.,y = veg, by=c("plotcode"),all.x = T) %>% 
+  merge.data.frame(x=.,y= gaiadata_veg, by=c("plotcode"),all.x = T) %>% 
   mutate(ABG_biomass_gpersquaremeter=dry_weight/(pi*0.121^2)) %>%# g/square m (radius in meters) 
   select(plotcode,
-         strata, ABG_biomass_gpersquaremeter, transparent, dark, comments) %>% 
-  rename(comment1=transparent, comment2=dark, comment3=comments)
+         strata, ABG_biomass_gpersquaremeter, transparent, dark, comments, comments_gaia, pictures_available) %>% 
+  rename(comment1=transparent, comment2=dark, comment3=comments, gaiaNotes=comments_gaia, gaiaPictures=pictures_available)
+
+
+vegetation_dw_final[!vegetation_dw_final$plotcode%in%vegetated_plots$plotcode,]
+
 
 write.csv(vegetation_dw_final,file = paste0(vegetation_path, "RESTORE4Cs_ABGbiomass_vegetated_plots.csv"), row.names = F)
 
 
-rm(veg, vegetated_plots,vegetated_plots_veg,vegetation_dw_final)
-#DONE____Manually, harmonize plot vegetation description: DONE, some inconsistencies found.
+rm(veg, vegetated_plots,vegetated_plots_veg,vegetation_dw_final, gaiadata_veg)
+
+# harmonize plot vegetation description: DONE for comments from veg data and fieldsheets, some inconsistencies found.
+#TODO____CHECK gaiaNotes and inspect Pictures to get vegetation description
+
 
 #Check harmonized vegetation
 
