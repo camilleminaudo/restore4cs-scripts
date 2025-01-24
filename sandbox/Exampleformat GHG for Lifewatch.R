@@ -335,10 +335,11 @@ vegetation_dw_final<- vegetated_plots %>%
   mutate(ABG_biomass_gpersquaremeter=dry_weight/(pi*0.121^2)) %>%# g/square m (radius in meters) 
   select(plotcode,
          strata, ABG_biomass_gpersquaremeter, transparent, dark, comments, comments_gaia, pictures_available) %>% 
-  rename(comment1=transparent, comment2=dark, comment3=comments, gaiaNotes=comments_gaia, gaiaPictures=pictures_available)
-
-
-vegetation_dw_final[!vegetation_dw_final$plotcode%in%vegetated_plots$plotcode,]
+  rename(comment1=transparent, comment2=dark, comment3=comments, gaiaNotes=comments_gaia, gaiaPictures=pictures_available) %>% 
+  mutate(comment1=case_when(is.na(comment1)~"",TRUE~comment1),
+         comment2=case_when(is.na(comment2)~"",TRUE~comment2),
+         comment3=case_when(is.na(comment3)~"",TRUE~comment3),
+         gaiaNotes=case_when(is.na(gaiaNotes)~"",TRUE~gaiaNotes))
 
 
 write.csv(vegetation_dw_final,file = paste0(vegetation_path, "RESTORE4Cs_ABGbiomass_vegetated_plots.csv"), row.names = F)
