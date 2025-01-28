@@ -48,8 +48,8 @@ require(data.table)
 require(tools)
 
 repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
-# files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
-# for (f in files.sources){source(f)}
+files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
+for (f in files.sources){source(f)}
 
 
 # ---- Directories and data loading ----
@@ -58,7 +58,7 @@ results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
 plots_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/plots")
 
-
+fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
 #Load csv files produced by raw2flux.R. script
 setwd(results_path)
@@ -891,4 +891,88 @@ dat %>%
   geom_point()+
   geom_abline(slope = 1)
 str(a)
+
+
+
+####CH4 veg-land vs veg-water####
+
+
+#Load CH4 data after filter implemented table_ch4$HM.MAE<100
+
+ch4<- read.csv(paste0(results_path,"all_good_CH4_fluxes_2023-10-03_to_2024-08-01.csv"))
+
+
+#####1. Strata distribution####
+
+#Check the strata distribution (veg-land vs veg-water) in each subsite
+#I.e. for which subsites would it make a difference to separate?
+#Use distribution from fieldsheets
+
+fieldsheets<- list.files(path= fieldsheetpath, recursive = T, pattern = "GHG.xlsx",full.names = T)
+field<- read_GHG_fieldsheets(fieldsheets)
+
+incubations_without_flux<- read.csv(file = paste0(lifewatch_example_path,"Incubations_without_flux.csv"))
+
+#How many incubations performed per strata and light-condition
+chamber_deployments<- field %>% 
+  select(-c(logger_floating_chamber,logger_transparent_chamber,chamber_type,longitude,latitude, start_time,end_time, initial_co2,initial_ch4,final_co2,final_ch4, chamber_height_cm, unix_start,unix_stop, plot_id,comments,date, person_sampling, gas_analyzer)) %>% 
+  filter(!uniqID%in%incubations_without_flux$uniqID) %>% 
+  mutate(campaign=substr(subsite, 1,2),
+         status=substr(subsite, 7,7),
+         sampling=subsite,
+         subsite=substr(sampling,4,8),
+         water_presence=case_when(water_depth>0~T,
+                                  water_depth==0~F,
+                                  TRUE~NA),
+         vegetation_presence=case_when(strata=="vegetated"~T,
+                                       TRUE~F),
+         transparent_condition=case_when(transparent_dark=="dark"~F,
+                                         transparent_dark=="transparent"~T)
+         
+  ) %>% 
+  select(campaign, pilot_site, status, subsite,sampling, uniqID,water_depth, water_presence, vegetation_presence, transparent_condition)
+
+
+chamber_deployments %>% 
+  group_by(pilot_site, campaign, subsite, vegetation_presence) %>% 
+  summarise(withwater=sum(water_presence),
+            withoutwater=sum(!water_presence)) %>% 
+  filter(vegetation_presence==T) %>% 
+  pivot_longer(cols=c(withwater, withoutwater),names_to = "water_presence",values_to = "num_fluxes") %>% 
+  rbind(tibble(pilot_site=c("RI","RI"), campaign=c("S1","S3"), subsite=c("RI-A1","RI-A1"), vegetation_presence=c(T,T), water_presence=c("withwater","withoutwater"), num_fluxes=c(0,0))) %>% 
+  rowwise() %>% 
+  mutate(subsite_only=gsub(paste0(pilot_site,"-"), "", subsite)) %>% 
+  ggplot(aes(x=campaign, y=num_fluxes, fill=water_presence))+
+  geom_bar(stat = "identity", position = "dodge")+
+  scale_y_continuous(name = "Number of vegetated fluxes")+
+  facet_grid(subsite_only~pilot_site)+
+  ggtitle("Water presence (depth>0cm) in vegetated plots (number of fluxes)")
+  
+
+#CASE PILOTS with uniform water presence in each subsite (for relevant fluxes): CU, DA, RI  
+
+#CASE PILOTS with variable water presence: CA, DU, VA. 
+#How relevant is the water variability? Is  just for a couple of chambers?
+
+#CA: Sites with very mixed water presence 
+
+
+#DECISSION: separating vegetated-land and vegetated-water will be the best option for coherence across case-pilots IF there is any obvious effect of water presence on the fluxes of vegetated plots. 
+
+
+
+#####2.Veg-land vs Veg-water####
+library(ggpubr)
+
+#Overview CA, DU, VA
+#CA shows significant differences in CH4 emissions between vegetated land and vegetated water, not so clear for DU and VA using the best.flux CH4 dataset (after filtering out non-reliable fluxes based on model fit)
+ch4 %>% 
+  filter(strata=="vegetated") %>% 
+  filter(pilotsite%in%c("ca","du","va")) %>%
+  ggplot(aes(x=water_depth>0,y=best.flux, col=water_depth>0,))+
+  geom_boxplot()+
+  stat_compare_means()+
+  stat_summary(fun = length, aes(label = paste("n =", ..y..)), geom = "text", vjust = -2.5, size = 3) +
+  facet_grid(pilotsite~subsite,scales = "free")
+
 

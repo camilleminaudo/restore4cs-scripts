@@ -1022,12 +1022,15 @@ net_ghg_per_plot %>%
   facet_grid(pilot_site~., scales = "free")+
   ggtitle("CH4 daily balances in all pilot_sites")
 
-####Exploration####
+#Exploration####
+
+dat<- read.csv(paste0(lifewatch_example_path,"GHG_plus_metadata_per_plot.csv"))
+
+###Exploration_veg-biomass####
 #Exploration of vegetated fluxes (net_CO2) according to vegetation biomass and light intensity
 
 #No relationship CO2~vegetation is obvious for any case-pilot
 
-dat<- read.csv(paste0(lifewatch_example_path,"GHG_plus_metadata_per_plot.csv"))
 
 veg_plots<- dat %>% 
   filter(strata%in%c("vegetated land","vegetated water")) %>% 
@@ -1094,7 +1097,7 @@ ggplot(veg_plots,aes(x=ABG_biomass_gpersquaremeter, y=CH4_diffusive_flux_transpa
 
 
 
-#Dark vs Transparent CH4 fluxes
+###Dark vs Trans CH4####
 veg_plots %>% 
   filter(!is.na(CH4_diffusive_flux_dark*CH4_diffusive_flux_transparent)) %>% 
   # filter(CH4_diffusive_flux_dark>0) %>% 
@@ -1118,6 +1121,29 @@ ggplot(aes(x=CH4_diffusive_flux_dark, y=CH4_diffusive_flux_transparent))+
   scale_y_log10()+
   scale_x_log10()+
   stat_poly_eq(use_label(c("eq", "R2","n")))
+
+
+###Exploration strata discrimination####
+
+dat %>% 
+  filter(grepl("vegetated",strata)) %>% 
+  ggplot(aes(x=strata, y=CH4_diffusive_flux_dark))+
+  geom_boxplot()
+
+
+dat %>% 
+  filter(grepl("vegetated",strata)) %>% 
+  mutate(total_ch4_dark=CH4_diffusive_flux_dark+CH4_ebullitive_flux_dark,
+         total_ch4_transparent=CH4_diffusive_flux_dark+CH4_ebullitive_flux_dark) %>% 
+  ggplot(aes(x=water_depth>0))+
+  geom_point(aes(y=total_ch4_dark, col="ch4_dark"))+
+  geom_point(aes(y=total_ch4_transparent, col="ch4_trans"))
+
+dat %>% 
+  filter(grepl("vegetated",strata)) %>% 
+  ggplot(aes(x=water_depth))+
+  geom_point(aes(y=CH4_ebullitive_flux_dark, col="ebu_dark"))+
+  geom_point(aes(y=CH4_ebullitive_flux_transparent, col="ebu_trans"))
 
 
 
@@ -1162,7 +1188,7 @@ chamber_deployments<- field %>%
                                    transparent_dark=="transparent"~T)
          
          ) %>% 
-  select(campaign, pilot_site, status, subsite,sampling, uniqID, water_presence, vegetation_presence, transparent_condition)
+  select(campaign, pilot_site, status, subsite,sampling, uniqID,water_depth, water_presence, vegetation_presence, transparent_condition)
   
 
 head(chamber_deployments)
