@@ -911,6 +911,7 @@ ch4<- read.csv(paste0(results_path,"all_good_CH4_fluxes_2023-10-03_to_2024-08-01
 fieldsheets<- list.files(path= fieldsheetpath, recursive = T, pattern = "GHG.xlsx",full.names = T)
 field<- read_GHG_fieldsheets(fieldsheets)
 
+lifewatch_example_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/LifeWatch Italy GHG dataset example/")
 incubations_without_flux<- read.csv(file = paste0(lifewatch_example_path,"Incubations_without_flux.csv"))
 
 #How many incubations performed per strata and light-condition
@@ -935,17 +936,19 @@ chamber_deployments<- field %>%
 
 chamber_deployments %>% 
   group_by(pilot_site, campaign, subsite, vegetation_presence) %>% 
-  summarise(withwater=sum(water_presence),
-            withoutwater=sum(!water_presence)) %>% 
+  summarise(Yes=sum(water_presence),
+            No=sum(!water_presence)) %>% 
   filter(vegetation_presence==T) %>% 
-  pivot_longer(cols=c(withwater, withoutwater),names_to = "water_presence",values_to = "num_fluxes") %>% 
-  rbind(tibble(pilot_site=c("RI","RI"), campaign=c("S1","S3"), subsite=c("RI-A1","RI-A1"), vegetation_presence=c(T,T), water_presence=c("withwater","withoutwater"), num_fluxes=c(0,0))) %>% 
+  pivot_longer(cols=c(No, Yes),names_to = "water_presence",values_to = "num_fluxes") %>% 
+  rbind(tibble(pilot_site=c("RI","RI"), campaign=c("S1","S3"), subsite=c("RI-A1","RI-A1"), vegetation_presence=c(T,T), water_presence=c("No","Yes"), num_fluxes=c(0,0))) %>% 
   rowwise() %>% 
   mutate(subsite_only=gsub(paste0(pilot_site,"-"), "", subsite)) %>% 
   ggplot(aes(x=campaign, y=num_fluxes, fill=water_presence))+
+  scale_fill_manual(values = c("No" = "brown", "Yes" = "blue")) +
   geom_bar(stat = "identity", position = "dodge")+
   scale_y_continuous(name = "Number of vegetated fluxes")+
-  facet_grid(subsite_only~pilot_site)+
+  facet_grid(pilot_site~subsite_only, scales = "free")+
+  theme_bw()+
   ggtitle("Water presence (depth>0cm) in vegetated plots (number of fluxes)")
   
 
@@ -969,10 +972,16 @@ library(ggpubr)
 ch4 %>% 
   filter(strata=="vegetated") %>% 
   filter(pilotsite%in%c("ca","du","va")) %>%
-  ggplot(aes(x=water_depth>0,y=best.flux, col=water_depth>0,))+
+  mutate(water_presence=case_when(water_depth>0~"Yes",
+                                  water_depth<=0~"No",
+                                  T~NA)) %>% 
+  ggplot(aes(x=water_presence,y=best.flux, col=water_presence))+
   geom_boxplot()+
-  stat_compare_means()+
+  scale_color_manual(values = c("No" = "brown", "Yes" = "blue")) +
+  stat_compare_means(label.sep = "\n",label.y.npc = 0.8)+
+  scale_y_continuous(name="CH4 best.flux")+
   stat_summary(fun = length, aes(label = paste("n =", ..y..)), geom = "text", vjust = -2.5, size = 3) +
+  theme_bw()+
   facet_grid(pilotsite~subsite,scales = "free")
 
 
