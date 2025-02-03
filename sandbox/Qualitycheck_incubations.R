@@ -2,33 +2,15 @@
 # ---
 # Authors: Miguel Cabrera
 # Project: "RESTORE4Cs"
-# date: "Dec 2023"
+# date: "Feb 2025"
 # https://github.com/camilleminaudo/restore4cs-scripts
 # ---
 
 # --- Description of this script
-# This script makes summaries of CO2 and CH4 fluxes calculated in the raw2flux for each season, subsite and strata. 
-#ALL GHGflux are expresed in umol m-2 s-1 
-
-
-#1st. Incubation fluxes to plot daily fluxes: Combine Vegetated plots transparent and dark CO2flux with daylight hours into dailyNEE_CO2, same approach for CH4 (although not conceptually necessary, for consistency) 
-
-#For plots with Open water and bare strata: take CO2flux and CH4flux as representative for the whole day. 
-#For plots with Vegetated strata: use night_CO2flux (CO2flux for dark) and day_CO2flux (CO2flux for transparent) to calculate ER, GPP. 
+# This script analyses the quality of fit of all fluxes. First by ranking and flagging incubations based on regression fit. Then by flagging incubations that include artefacts (examining deltaGHG and flagging incubations with more than 5% of deltaGHG==0)
 
 
 
-
-
-#TODO:
-
-#Create folders to save summaries and plots. 
-
-
-
-#Inputs: 
-    #per-season CSV files with computed fluxes
-    #fieldsheets 
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -133,22 +115,112 @@ message(round(length(ind_flagged)/n*100*100)/100,"% of the measurements are flag
 in_hm_notflagged <- which(table_co2$model=="HM" & table_co2$quality.check=="")
 message("Best model is non-linear for ",round(length(in_hm_notflagged)/(n-length(ind_flagged))*100*100)/100,"% of the measurements not flagged")
 
-table.flags <- NULL
+table.flags_co2 <- NULL
 for(flag in unique(table_co2$quality.check[ind_flagged])){
   ind_mdf <- which(table_co2$quality.check==flag)
   message(round(length(ind_mdf)/n*100*100)/100,"% of the measurements are flagged because of ",flag)
   
-  table.flags <- rbind(table.flags,
+  table.flags_co2 <- rbind(table.flags_co2,
                        data.frame(flag = flag,
                                   n = length(ind_mdf)))
 }
-table.flags$perc <- round(table.flags$n/n*100*100)/100
-table.flags <- table.flags[order(table.flags$n, decreasing = T),]
-table.flags
+table.flags_co2$perc <- round(table.flags_co2$n/n*100*100)/100
+table.flags_co2 <- table.flags_co2[order(table.flags_co2$n, decreasing = T),]
+table.flags_co2
 
 
-
+#Only a few co2 fluxes without any flag:
 table_co2[which(is.na(table_co2$quality.check)),]
+
+#Goflux meaning of different flags: 
+#SE: "Standard Error" it tells us that the noise in our incubation is larger than the instrument accuracy (i.e. we have more noise than we would expect just from "instrumental noise").
+#MDF: "minimum detectable flux". I.e. flux is Below detection limit. 
+#gfact > 2: the ratio bettewwn the non-linear(HM) flux  estimate and the linear flux estimate is larger than 2: i.e. HM.flux > 2*LM.flux . IF this happens, we assume that the HM.flux is overestimated, so we take the LM.flux instead (more or less arbitrary decission, different thresholds can be selected (relaxed gfact>4, medium gfact>2, strict gfact>1.25))
+#gfact < 0.5: same as above but for the case when LM.flux is higher than HM.flux
+#HM.flux is NA: non-linear model failed to return a flux.
+
+
+
+table.flags_ch4 <- NULL
+for(flag in unique(table_ch4$quality.check[ind_flagged])){
+  ind_mdf <- which(table_ch4$quality.check==flag)
+  message(round(length(ind_mdf)/n*100*100)/100,"% of the measurements are flagged because of ",flag)
+  
+  table.flags_ch4 <- rbind(table.flags_ch4,
+                       data.frame(flag = flag,
+                                  n = length(ind_mdf)))
+}
+table.flags_ch4$perc <- round(table.flags_ch4$n/n*100*100)/100
+table.flags_ch4 <- table.flags_ch4[order(table.flags_ch4$n, decreasing = T),]
+table.flags_ch4
+
+
+#No ch4 fluxes without any flag:
+table_ch4[which(is.na(table_ch4$quality.check)),]
+
+
+####poraqui####
+
+#Examine R2 for CO2
+
+#LM.flux R2
+
+ggplot(table_co2)+
+  geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40)+
+  geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40)+
+  labs(fill="R2")
+
+#Examine R2 for CH4
+ggplot(table_ch4)+
+  geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40)+
+  geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40)+
+  labs(fill="R2")
+
+
+#extract a few candidates for inspection based on R2:
+#CO2 good fits r2>0.95: all looks good
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.5, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.57, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2)%>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+#Some more noise, dubious minor outliers
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.4, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.43, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2)%>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+#Poraqui
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.35, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.36, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2)%>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.30, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.32, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2)%>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.25, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.26, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2) %>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
 
 ggplot(table_co2[which(!is.na(table_co2$quality.check)),], 
        aes(quality.check, (HM.flux-LM.flux)/HM.flux, fill = model))+
