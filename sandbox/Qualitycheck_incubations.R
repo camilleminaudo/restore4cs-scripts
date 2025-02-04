@@ -159,21 +159,21 @@ table.flags_ch4
 table_ch4[which(is.na(table_ch4$quality.check)),]
 
 
-####poraqui####
+
 
 #Examine R2 for CO2
 
 #LM.flux R2
 
 ggplot(table_co2)+
-  geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40)+
-  geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40)+
+  geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40,alpha = 0.5)+
+  geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40,alpha=0.5)+
   labs(fill="R2")
 
 #Examine R2 for CH4
 ggplot(table_ch4)+
-  geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40)+
-  geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40)+
+  geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40,alpha = 0.5)+
+  geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40,alpha=0.5)+
   labs(fill="R2")
 
 
@@ -187,7 +187,7 @@ table_co2 %>%
   select(UniqueID, best.flux, HM.r2)%>% 
   filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
 
-#Some more noise, dubious minor outliers
+#CO2 good fits r2>0.90: A bit more noise, dubious minor outliers
 table_co2 %>% 
   filter(between(x=HM.r2,
                  lower= quantile(.$HM.r2,probs = 0.4, na.rm = T),
@@ -196,7 +196,7 @@ table_co2 %>%
   select(UniqueID, best.flux, HM.r2)%>% 
   filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
 
-#Poraqui
+#CO2 acceptable fits r2>0.85: A bit more noise, overall good
 table_co2 %>% 
   filter(between(x=HM.r2,
                  lower= quantile(.$HM.r2,probs = 0.35, na.rm = T),
@@ -205,6 +205,7 @@ table_co2 %>%
   select(UniqueID, best.flux, HM.r2)%>% 
   filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
 
+#CO2 acceptable fits r2>0.80: A bit more noise, overall good (reliable fluxes)
 table_co2 %>% 
   filter(between(x=HM.r2,
                  lower= quantile(.$HM.r2,probs = 0.30, na.rm = T),
@@ -213,6 +214,7 @@ table_co2 %>%
   select(UniqueID, best.flux, HM.r2)%>% 
   filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
 
+#CO2 dubious fits r2>0.75: noisy but flux discernible, manipulation artefacts seen.
 table_co2 %>% 
   filter(between(x=HM.r2,
                  lower= quantile(.$HM.r2,probs = 0.25, na.rm = T),
@@ -220,6 +222,40 @@ table_co2 %>%
   filter(model=="HM") %>% 
   select(UniqueID, best.flux, HM.r2) %>% 
   filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+#CO2 fits: r2 0.65: noisy but clear
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.2, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.21, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2) %>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+#Co2 fits r2 ~0.5: noise & a few outliers but clear trend
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.12, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.18, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2) %>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+#CO2 fits r2 ~0.15-0.3, Artefact instrument, nonconsistent trends, 
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.05, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.11, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2) %>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+
+####poraqui####
+#Many different cases, most likely "manual" cropping for incubations with less than R2=0.8 is recomended (this represents 815 inspections, doable semi-automatically). 
+table_co2 %>% filter(HM.r2<0.8) %>% summarise(n=n()) %>% pull(n)
+
+#First build artefact detector: deltaGHG2 is constant for more than 5s--> artefact.
+
+
 
 
 ggplot(table_co2[which(!is.na(table_co2$quality.check)),], 
