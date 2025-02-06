@@ -45,7 +45,7 @@ results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/"
 
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
-quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality") #to save quality assesment and flags.
+quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #to save quality assesment and flags.
 
 
 
