@@ -23,8 +23,10 @@ MAE_threshold_CO2<- 10
 MAE_threshold_CH4<- 100
 
 #Threshold for MAE taken from Camille's decision in analyseFlux.R script. 
-#Possibility to adapt filter based on R2 of models from go-flux
 
+#Additionally, we filter based on R2 of models from go-flux
+R2_threshold_CO2 <- 0.75
+R2_threshold_CH4 <- 0.75
 
 #Save today in order to paste daystamp to output csv-file:
 dayoflastrun <- today()
@@ -95,14 +97,16 @@ table_co2 <- get_full_detailed_table(table_results_all, variable = "co2")
 table_ch4 <- get_full_detailed_table(table_results_all, "ch4")
 
 
-#Get model MAE for each gas:
+#Get model MAE and R2 for each gas:
 table_co2_MAE<- table_co2 %>% 
-  select(UniqueID, HM.MAE) %>% 
-  rename(HM.MAE.co2=HM.MAE)
+  select(UniqueID, HM.MAE,  HM.r2) %>% 
+  rename(HM.MAE.co2 = HM.MAE,
+         HM.r2.co2 = HM.r2)
 
 table_ch4_MAE<- table_ch4 %>% 
-  select(UniqueID, HM.MAE) %>% 
-  rename(HM.MAE.ch4=HM.MAE)
+  select(UniqueID, HM.MAE,  HM.r2) %>% 
+  rename(HM.MAE.ch4=HM.MAE,
+         HM.r2.ch4 = HM.r2)
 
 #Add model MAE to full table: 
 table_results_all<- merge.data.frame(table_results_all, table_ch4_MAE,by="UniqueID") %>% 
@@ -128,9 +132,9 @@ table_results_all<- merge.data.frame(table_results_all, table_ch4_MAE,by="Unique
 
 #Filtering of fluxes: 
 
-#for CO2: set to NA fluxes with HM.MAE > MAE_threshold_CO2
+#for CO2: set to NA fluxes with HM.MAE > MAE_threshold_CO2, and fluxes with HM.r2 > R2_threshold_CO2
 
-#for CH4: set to NA the fluxes from go.flux (water_depth==0|ebullition==0) with HM.MAE > MAE_threshold_CH4
+#for CH4: set to NA the fluxes from go.flux (water_depth==0|ebullition==0) with HM.MAE > MAE_threshold_CH4 and with HM.r2 > R2_threshold_CH4
 #No filtering for CH4 fluxes coming from camilles method (ebullition!=NA, ebullition!=0). This means we will not filter out fluxes from camilles method if they produce a positive value for ebullition.
 
 
@@ -139,12 +143,14 @@ table_results_all<- merge.data.frame(table_results_all, table_ch4_MAE,by="Unique
 table_results_good<- table_results_all %>% 
   select(UniqueID,
          start.time,
-         CO2_best.flux,HM.MAE.co2,
-         CH4_best.flux, HM.MAE.ch4,
+         CO2_best.flux,HM.MAE.co2,HM.r2.co2,
+         CH4_best.flux, HM.MAE.ch4,HM.r2.ch4,
          CH4_diffusive_flux,CH4_ebullitive_flux) %>% 
-  mutate(CO2_best.flux=case_when(HM.MAE.co2>MAE_threshold_CO2~NA_real_,#Set CO2 best flux with MAE >10 to NA (Unreliable)
+  mutate(CO2_best.flux=case_when(HM.MAE.co2>MAE_threshold_CO2~NA_real_,#Set CO2 best.flux with MAE > threshold  to NA (Unreliable)
+                                 HM.r2.co2<R2_threshold_CO2~NA_real_, #set CO2 best.flux with R2 < threshold to NA (Unreliable)
                                  TRUE~CO2_best.flux),
-         CH4_best.flux=case_when(HM.MAE.ch4>MAE_threshold_CH4~NA_real_,#Set CH4 best flux with MAE >100 to NA (Unreliable)
+         CH4_best.flux=case_when(HM.MAE.ch4>MAE_threshold_CH4~NA_real_,#Set CH4 best.flux with MAE > threshold to NA (Unreliable)
+                                 HM.r2.ch4<R2_threshold_CH4~NA_real_, #set CH4 best.flux with R2 < threshold to NA (Unreliable)
                                  TRUE~CH4_best.flux),
          CH4_ebullitive_flux=case_when(is.na(CH4_ebullitive_flux)~0, #substitute NAs ebullition with zero
                                        TRUE~CH4_ebullitive_flux),
@@ -164,10 +170,11 @@ table_results_good<- table_results_all %>%
 rm(table_ch4_MAE, table_co2_MAE, table_ch4, table_co2)
 
 
-#How many fluxes have we removed with the above filtering?
-sum(is.na(table_results_good$CO2_best.flux))
-sum(is.na(table_results_good$CH4_total))
-#very few fluxes removed, specially for CH4 (due to lack of filtering criteria for Camille's method ebullitionVSdiffusion)
+#How many fluxes have we removed with the above filtering (% of total)?
+sum(is.na(table_results_good$CO2_best.flux))/sum(!is.na(table_results_good$UniqueID))*100
+
+sum(is.na(table_results_good$CH4_total))/sum(!is.na(table_results_good$UniqueID))*100
+
 
 
 
@@ -302,6 +309,14 @@ net_ghg_per_plot<- ghg_formated %>%
   select(-c(CO2_best.flux_dark, CO2_best.flux_transparent,CH4_total_dark,CH4_total_transparent)) 
 
 
+#How many plots end up with a valid net_flux after all filtering (%oftotal)
+message(paste0("We have valid net_CO2 fluxes for ",round(sum(!is.na(net_ghg_per_plot$net_CO2))/dim(net_ghg_per_plot)[1]*100,2),"% of the chambers deployed, after filtering and integrating"))
+
+message(paste0("We have valid net_CH4 fluxes for ",round(sum(!is.na(net_ghg_per_plot$net_CH4))/dim(net_ghg_per_plot)[1]*100,2),"% of the chambers deployed, after filtering and integrating"))
+
+
+
+
 #Summary per subsite####
 
 #Summarise day-integrated fluxes without strata or seasonal groupings, save in export_path.
@@ -320,7 +335,65 @@ net_ghg_summary_persubsite<- net_ghg_per_plot %>%
   )
 
 
+
+# Summarise day-integrated fluxes using only the central 95% of each variable in each subsite, handling NAs
+net_ghg_summary_central95_persubsite<- net_ghg_per_plot %>%
+  select(-c(season, pilot_site, sampling, strata, daylight_duration, plotcode,latitude, longitude,date)) %>% 
+  group_by(subsite ,subsite_latitude,subsite_longitude) %>% 
+  # For net_CO2
+  summarise(
+    net_CO2_lower = quantile(net_CO2, 0.025, na.rm = TRUE),
+    net_CO2_upper = quantile(net_CO2, 0.975, na.rm = TRUE),
+    avg_netCO2 = mean(net_CO2[net_CO2 >= net_CO2_lower & net_CO2 <= net_CO2_upper], na.rm = TRUE),
+    sd_netCO2 = sd(net_CO2[net_CO2 >= net_CO2_lower & net_CO2 <= net_CO2_upper], na.rm = TRUE),
+    n_netCO2 = sum(!is.na(net_CO2) & net_CO2 >= net_CO2_lower & net_CO2 <= net_CO2_upper),
+    
+    # For net_CH4
+    net_CH4_lower = quantile(net_CH4, 0.025, na.rm = TRUE),
+    net_CH4_upper = quantile(net_CH4, 0.975, na.rm = TRUE),
+    avg_netCH4 = mean(net_CH4[net_CH4 >= net_CH4_lower & net_CH4 <= net_CH4_upper], na.rm = TRUE),
+    sd_netCH4 = sd(net_CH4[net_CH4 >= net_CH4_lower & net_CH4 <= net_CH4_upper], na.rm = TRUE),
+    n_netCH4 = sum(!is.na(net_CH4) & net_CH4 >= net_CH4_lower & net_CH4 <= net_CH4_upper),
+    
+    .groups = "drop"
+  ) %>% 
+  select(-c(net_CO2_lower,net_CO2_upper,net_CH4_lower,net_CH4_upper))
+
+
+
+#Plot results: 
+net_ghg_per_plot_toplot<- net_ghg_per_plot %>% 
+  mutate(subsite_only=substr(subsite,4,5),
+         status=substr(subsite_only,1,1))
+
+net_ghg_per_plot_95<- net_ghg_per_plot_toplot %>% 
+  group_by(pilot_site) %>% 
+  mutate(upper_netCO2=quantile(net_CO2,0.975,na.rm=T),
+         lower_netCO2=quantile(net_CO2,0.025,na.rm=T),
+         upper_netCH4=quantile(net_CH4,0.975,na.rm=T),
+         lower_netCH4=quantile(net_CH4,0.025,na.rm=T)) %>% 
+  mutate(net_CO2=case_when(between(net_CO2,left = lower_netCO2, right = upper_netCO2)~net_CO2,
+                           TRUE~NA_real_),
+         net_CH4=case_when(between(net_CH4,left = lower_netCH4, right = upper_netCH4)~net_CH4,
+                           TRUE~NA_real_))
+  
+  #net_CO2: in black the data outside the 95% central distribution
+ggplot(net_ghg_per_plot_95, aes(x=subsite_only, y=net_CO2, col=status))+
+  geom_point(data=net_ghg_per_plot_toplot, col="black")+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(pilot_site~., scales="free")
+
+  #net_CH4: in black the data outside the 95% central distribution
+ggplot(net_ghg_per_plot_95, aes(x=subsite_only, y=net_CH4, col=status))+
+  geom_point(data=net_ghg_per_plot_toplot, col="black")+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(pilot_site~., scales="free")
+
+
 #Save net_ghg per subsite_with explicit date of last update.
 write.csv(net_ghg_summary_persubsite,file = paste0(export_path, "net_ghg_summary_persubsite_V",dayoflastrun, ".csv"),row.names = F)
 
-
+#Save the central 95% summary
+write.csv(net_ghg_summary_central95_persubsite,file = paste0(export_path, "net_ghg_summary_central95_persubsite_V",dayoflastrun, ".csv"),row.names = F)
