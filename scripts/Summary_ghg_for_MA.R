@@ -28,8 +28,6 @@ MAE_threshold_CH4<- 100
 R2_threshold_CO2 <- 0.75
 R2_threshold_CH4 <- 0.75
 
-#Save today in order to paste daystamp to output csv-file:
-dayoflastrun <- today()
 
 
 
@@ -57,6 +55,8 @@ export_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/Summaries f
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
 
+#Save today in order to paste daystamp to output csv-file:
+dayoflastrun <- today()
 
 
 # ---- Import fluxes per season ----
@@ -324,7 +324,9 @@ message(paste0("We have valid net_CH4 fluxes for ",round(sum(!is.na(net_ghg_per_
 
 net_ghg_summary_persubsite<- net_ghg_per_plot %>% 
   select(-c(season, pilot_site, sampling, strata, daylight_duration, plotcode,latitude, longitude,date)) %>% 
-  group_by(subsite ,subsite_latitude,subsite_longitude) %>% 
+  separate(subsite, into=c("pilot_site","subsite")) %>% 
+  mutate(status=substr(subsite,1,1)) %>% 
+  group_by(pilot_site, status, subsite ,subsite_latitude,subsite_longitude) %>% 
   summarise(avg_netCO2=mean(net_CO2, na.rm=T),
             sd_netCO2=sd(net_CO2, na.rm=T),
             n_netCO2=sum(!is.na(net_CO2)),
@@ -339,7 +341,9 @@ net_ghg_summary_persubsite<- net_ghg_per_plot %>%
 # Summarise day-integrated fluxes using only the central 95% of each variable in each subsite, handling NAs
 net_ghg_summary_central95_persubsite<- net_ghg_per_plot %>%
   select(-c(season, pilot_site, sampling, strata, daylight_duration, plotcode,latitude, longitude,date)) %>% 
-  group_by(subsite ,subsite_latitude,subsite_longitude) %>% 
+  separate(subsite, into=c("pilot_site","subsite")) %>% 
+  mutate(status=substr(subsite,1,1)) %>% 
+  group_by(pilot_site, status, subsite ,subsite_latitude,subsite_longitude) %>% 
   # For net_CO2
   summarise(
     net_CO2_lower = quantile(net_CO2, 0.025, na.rm = TRUE),
