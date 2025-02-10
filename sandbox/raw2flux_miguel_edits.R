@@ -461,8 +461,14 @@ for (subsite in subsites){
           if(is_data_logger_float){
             myTemp <- median(approx(data_logger_float$unixtime, data_logger_float$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
           }
-          myArea = 14365.4439 # cm2
-          myVtot = 115/2 # L
+          #Floating chamber used in Restore4Cs is half sphere of 38cm diameter. radius=19cm
+          myArea<- pi*19^2 #cm2
+          myVtot<- (((4/3)*pi*(19^3))/1000 )/2# L
+          
+          #OLD VALUES, Unclear where they came from, wrong!          
+          # myArea = 14365.4439 # cm2
+          # myVtot = 115/2 # L
+          
         } else if (corresp_fs$chamber_type[incub] == "tube"){
           if(is_data_logger_tube){
             myTemp <- median(approx(data_logger_tube$unixtime, data_logger_tube$temperature, xout = as.numeric(my_incub$POSIX.time))$y )

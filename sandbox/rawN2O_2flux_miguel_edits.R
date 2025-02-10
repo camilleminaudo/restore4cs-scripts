@@ -182,9 +182,6 @@ for (subsite in subsites){
   
     #For each row in corresp_fs (i.e. for each incubation in subsite-fieldsheet)
     for (incub in seq_along(corresp_fs$plot_id)){
-      
-        myTemp <- 15 #ºC (a default temperature to run the flux calculation if no temperature is found)
-        myPcham <- 100.1 #kPa (default atmospheric pressure is assumed for all chambers)
         
         #Parameters for floating chambers:
         if (corresp_fs$chamber_type[incub] == "floating"){
@@ -192,8 +189,14 @@ for (subsite in subsites){
             #Calculate median temperature of data_logger_float during duration of floating incubation.
             myTemp <- median(approx(data_logger_float$unixtime, data_logger_float$temperature, xout = as.numeric(corresp_fs$unix_start[incub]:corresp_fs$unix_stop[incub]))$y )
           }
-          myArea = 14365.4439 # cm2
-          myVtot = 115/2 # L
+          
+          #Floating chamber used in Restore4Cs is half sphere of 38cm diameter. radius=19cm
+          myArea<- pi*19^2 #cm2
+          myVtot<- (((4/3)*pi*(19^3))/1000 )/2# L
+
+          #OLD VALUES, Unclear where they came from, wrong!          
+          # myArea = 14365.4439 # cm2
+          # myVtot = 115/2 # L
           
           #Parameters for tube chambers:
         } else if (corresp_fs$chamber_type[incub] == "tube"){
@@ -207,6 +210,9 @@ for (subsite in subsites){
           warning("chamber type not correct!")
         }
 
+      if(is.na(myTemp)){myTemp <- 25} #ºC (a default temperature to run the flux calculation if no temperature is found)
+      myPcham <- 100.1 #kPa (default atmospheric pressure is assumed for all chambers)
+      
         
         # --- 1.3. Create auxfile table ----
         # An auxfile table, made of fieldsheet, adding important variables. The auxfile
@@ -238,17 +244,68 @@ for (subsite in subsites){
 rm(f,f_ext,data_logger_float,data_logger_tube,corresp_fs, auxfile_tmp,i,i_f_float,i_f_tube,incub, gs, is_data_logger_float, is_data_logger_tube, isF_incub, isFsubsite, myArea, myPcham, myTemp, myVtot, dir_exists_loggdata, r, site_ID, SN_logger_float, SN_logger_tube, subsite,subsites, myfieldsheets_list)
 
    
-# ---- 4. N2O flux calculation-------
-#---TO ADAPT!! to N2O####
+# ---- 2. N2O flux calculation-------
+
+#Overall approach:
+#1st calculate deltaN2O in nmols (using chamber volume and Ideal Gas Law)
+#2nd calculate change in nmols per second 
+#3rd calculate areal flux in nmols s^-1 m^-2  
+
+#Using Ideal Gas Law: PV = nRT, where:
+#P: Pressure (atm)
+#V: Volume (L)
+#n: number of mols
+#T: Temperature (ºK)
+#R: Gas Constant,  R = 0.08206 (L·atm·K-1·mol-1)
+R_constant<- 0.08206
+
+#Re-arranging: n = PV/RT
+
+#to calculate mols of gas in the chamber at t0 and tf, we will 1st calculate the Volume of n2o (Vn2o, in L) using the ppm and total volume of chamber. Then apply the ideal gas law to get the mols at the given Tcham and Pressure.
+
+#the goflux package uses a slightly different function, with P in KPa, and incorporating a water-vapor correction. Unclear why, we will stick to the more simple Ideal Gas Law. 
+
+# 4.1. Import N2O_ppm and transform units.
+
+#Import atm and tf N2O concentration in ppm, identified with "UniqueID_notime", atm_N2Oppm, tf_N2Oppm 
+n2o<- read.csv(paste0(results_path,"/S4_restore4cs_N2Oppm_atmchambers.csv"))
+
+
+#FLUX CAlCULATION: #Auxfile has Pcham in kPa, Area in cm2 and Tcham in ºcelsius, Vtot is already in L
+n2o_flux<- n2o %>% 
+  #Join with auxfile
+  merge.data.frame(auxfile, by="UniqueID_notime", all.x = T) %>% 
+  #Transform Units:
+  mutate(Vtot, #Vtot is already in L
+         Pcham_atm= 1, # set Pcham to 1 atm
+         Tcham_k= Tcham+273.15, #Transform Tcham to Kelvin
+         duration,#Duration of incubation (in seconds) calculated from fieldsheet times
+         Area_m2=Area*1e-4) %>% # divide by 10,000 to transform cm2 to m2  
+  #calculate Vn2o, at t0 and tf
+  mutate(V_n2o_t0 = (atm_N2Oppm/1e6)*Vtot, 
+         V_n2o_tf = (tf_N2Oppm/1e6)*Vtot) %>% 
+  #calculate nmol_n2o at t0 and tf (apply mol = PV/RT and then multiply by 1e9 to get nmol)
+  mutate(nmol_n2o_t0 = 1e9* ( (Pcham_atm*V_n2o_t0)/(R_constant*Tcham_k) ),
+         nmol_n2o_tf = 1e9* ( (Pcham_atm*V_n2o_tf)/(R_constant*Tcham_k) )) %>% 
+  #calculate delta_nmol_n2o (as nmol difference tf-t0)
+  mutate(delta_nmol_n2o = nmol_n2o_tf-nmol_n2o_t0) %>% 
+  #calculate absolute flux: nmol_n2o_per_second
+  mutate(nmol_n2o_per_second=delta_nmol_n2o/duration) %>% 
+  #calculate areal flux: nmol_n2o_per_second_m2
+  mutate(nmol_n2o_per_second_m2=nmol_n2o_per_second/Area_m2)
+
 
 #__________________####
 
 
 #SAVE RESULTS####
 
+write.csv(n2o_flux, file = paste0(datapath,"/S4_restore4cs_N2O_arealflux_nmol_s-1_m-2.csv"),row.names = F)
 
 
 
 
+#Miscelanea: 
 
-
+ggplot(n2o_flux, aes(y=nmol_n2o_per_second_m2))+
+  geom_histogram()
