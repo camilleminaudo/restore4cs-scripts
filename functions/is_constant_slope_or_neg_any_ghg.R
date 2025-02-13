@@ -7,8 +7,8 @@
 
 
 # Simplified function to detect constant slope for a specified duration in selected columns: 
-#This function esentially provides a check for artefacts: constant concentration or constant slope for a given duration for any ghg
-is_constant_slope_any_ghg <- function(my_incub, POSIX.time, check_cols=c("CO2dry_ppm","CH4dry_ppb"), duration = 5) {
+#This function essentially provides a check for artefacts: constant concentration or constant slope for a given duration for any ghg, also checks for negative ghg. 
+is_constant_slope_or_neg_any_ghg <- function(my_incub, POSIX.time, check_cols=c("CO2dry_ppm","CH4dry_ppb"), duration = 5) {
   
   # Ensure POSIX.time is present in the data
   if (!(POSIX.time %in% colnames(my_incub))) {
@@ -27,16 +27,21 @@ is_constant_slope_any_ghg <- function(my_incub, POSIX.time, check_cols=c("CO2dry
   for (col_name in check_cols) {
     # Calculate the slope (difference between consecutive values) for the current column
     slopes <- diff(my_incub[[col_name]])
+    #Calculate minimum value for current column
+    minimum<- min(my_incub[[col_name]],na.rm = T)
     
-    # Check for constant slope in the current column for the specified duration
+    #Return TRUE if negative GHG found
+    if(minimum<0){return("negative values")} else{
+    
+    #IF all positive,  Check for constant slope in the current column for the specified duration
     for (i in 1:(length(slopes) - duration)) {
       if (all(slopes[i] == slopes[i:(i + duration - 1)])) {
-        return(TRUE)  # Return TRUE as soon as we find a constant slope
+        return("constant slope")  # Return TRUE as soon as we find a constant slope
       }
     }
   }
-  
-  return(FALSE)  # Return FALSE if no constant slope is found
+  }
+  return("no artefact")  # Return FALSE if no constant slope is found and all values are positive
 }
 
 

@@ -9,9 +9,9 @@
 
 # --- Description of this script
 # This script computes fluxes for all incubations present in the fieldsheet for a given sampling season
-# Use has to sepcify which sampling has to be processed, and all the rest is done automatically.
+# Use has to specify which sampling has to be processed, and all the rest is done automatically.
 #EDITS: 
-  #Artefact detector
+  #Artefact detector (constant slope or negative GHG)
   #Reduction of "safety margins" to 5s afterstar and 5s beforend
 
 
@@ -47,13 +47,13 @@ for (f in files.sources){source(f)}
 
 #---USER OPTIONS ----- 
 #sampling is the pattern to select in the fieldsheet filenames, every matching fieldsheet will have their incubations processed.
-sampling <- "S4" 
+sampling <- "S" 
 
 #create/update RDATA?
 harmonize2RData <- F
 
 #Save plots from goflux?
-doPlot <- T
+doPlot <- F
 
 #Incubation definition: margins (to be cropped of every incubation) and minimum duration threshold (avoids flux calculation of any incubation shorter than threshold, after removing the margins.
 margin_s_after_start<- 5
@@ -620,12 +620,12 @@ for (subsite in subsites){
                            as.numeric(mydata$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
       # my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
       
-      #Function looks for constant slope using second order derivative
+      #Function looks for constant slope using second order derivative (also flags negative GHG)
       #Check for artefact in CO2 series and flag if found
-      CO2_flux_res_auto$contains.artefact[which(CO2_flux_res_auto$UniqueID==auxfile$UniqueID[i])] <- is_constant_slope_any_ghg(my_incub=my_incub, POSIX.time = "POSIX.time", check_cols = c("CO2dry_ppm"), duration = artefact_duration_threshold)
+      CO2_flux_res_auto$contains.artefact[which(CO2_flux_res_auto$UniqueID==auxfile$UniqueID[i])] <- is_constant_slope_or_neg_any_ghg(my_incub=my_incub, POSIX.time = "POSIX.time", check_cols = c("CO2dry_ppm"), duration = artefact_duration_threshold)
       
       #Check for artefact in CH4 series and flag if found
-      CH4_res_meth1$contains.artefact[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- is_constant_slope_any_ghg(my_incub=my_incub, POSIX.time = "POSIX.time", check_cols = c("CO2dry_ppm"), duration = artefact_duration_threshold)
+      CH4_res_meth1$contains.artefact[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- is_constant_slope_or_neg_any_ghg(my_incub=my_incub, POSIX.time = "POSIX.time", check_cols = c("CO2dry_ppm"), duration = artefact_duration_threshold)
       
       
     }
