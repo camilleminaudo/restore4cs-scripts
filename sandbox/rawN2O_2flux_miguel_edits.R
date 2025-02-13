@@ -282,8 +282,8 @@ n2o_flux<- n2o %>%
          duration,#Duration of incubation (in seconds) calculated from fieldsheet times
          Area_m2=Area*1e-4) %>% # divide by 10,000 to transform cm2 to m2  
   #calculate Vn2o, at t0 and tf
-  mutate(V_n2o_t0 = (atm_N2Oppm/1e6)*Vtot, 
-         V_n2o_tf = (tf_N2Oppm/1e6)*Vtot) %>% 
+  mutate(V_n2o_t0 = (atm_avgN2Oppm/1e6)*Vtot, 
+         V_n2o_tf = (tf_avgN2Oppm/1e6)*Vtot) %>% 
   #calculate nmol_n2o at t0 and tf (apply mol = PV/RT and then multiply by 1e9 to get nmol)
   mutate(nmol_n2o_t0 = 1e9* ( (Pcham_atm*V_n2o_t0)/(R_constant*Tcham_k) ),
          nmol_n2o_tf = 1e9* ( (Pcham_atm*V_n2o_tf)/(R_constant*Tcham_k) )) %>% 
@@ -292,20 +292,65 @@ n2o_flux<- n2o %>%
   #calculate absolute flux: nmol_n2o_per_second
   mutate(nmol_n2o_per_second=delta_nmol_n2o/duration) %>% 
   #calculate areal flux: nmol_n2o_per_second_m2
-  mutate(nmol_n2o_per_second_m2=nmol_n2o_per_second/Area_m2)
+  mutate(nmol_n2o_per_second_m2=nmol_n2o_per_second/Area_m2) %>% 
+
+
+#CHUNK to calculate the significance of the fluxes (i.e. if the concentration at tf is significantly different from atmospheric.)
+mutate(
+  # Calculate standard deviations from cv (cv = SD / Mean, so SD = Mean * cv)
+  tf_sd = tf_avgN2Oppm * tf_cv,
+  atm_sd = atm_avgN2Oppm * atm_cv,
+  
+  # Calculate standard error for the difference
+  se_diff = sqrt((tf_sd^2 / tf_n) + (atm_sd^2 / atm_n)),
+  
+  # Calculate the t-statistic for the difference
+  t_stat = (tf_avgN2Oppm - atm_avgN2Oppm) / se_diff,
+  
+  # Calculate the degrees of freedom using the formula for unequal variances
+  df_ = (((tf_sd^2 / tf_n) + (atm_sd^2 / atm_n))^2) /
+    (((tf_sd^2 / tf_n)^2 / (tf_n - 1)) + ((atm_sd^2 / atm_n)^2 / (atm_n - 1))),
+  
+  # Calculate the p-value using the t-distribution
+  p_value = 2 * pt(-abs(t_stat), df_)
+)
+
+
+
+
+
+# ---- 3. N2O flux filtering-------
+
+
+#Add significance and clean up table (remove unncecessary variables.)
+#FILTER also fluxes of which we cannot be sure (plotincubation==2, unclear or incomplete ventilation between transparent and dark incubation)
+n2o_flux_simple<- n2o_flux %>% 
+  separate(UniqueID_notime, into = c("sampling","pilotsite","subsite","plot","d1","d2"),remove = F) %>% 
+  mutate(siteID=paste(pilotsite,subsite, sep = "-")) %>% 
+  filter(plotincubation==1) %>% 
+  select(UniqueID_notime, sampling, pilotsite, subsite, siteID, start.time, duration, water_depth, strata, chamberType,lightCondition, 
+         nmol_n2o_per_second_m2, p_value)
+  
+
+message(paste("All Fluxes: Out of ", dim(n2o_flux)[1]), " N2O fluxes, we have ", sum(n2o_flux$p_value<0.05), " significant fluxes (",  round(sum(n2o_flux$p_value<0.05)/dim(n2o_flux)[1]*100,2), "%), at the p<0.05 level")
+
+
+message(paste("Only reliable fluxes (clear ventilation): Out of ", dim(n2o_flux_simple)[1]), " N2O fluxes, we have ", sum(n2o_flux$p_value<0.05), " significant fluxes (",  round(sum(n2o_flux$p_value<0.05)/dim(n2o_flux_simple)[1]*100,2), "%), at the p<0.05 level")
 
 
 #__________________####
 
 
+
 #SAVE RESULTS####
+write.csv(n2o_flux, file = paste0(datapath,"/S4_restore4cs_N2O_EXTRADATA_n2ofluxes.csv.csv"),row.names = F)
 
-write.csv(n2o_flux, file = paste0(datapath,"/S4_restore4cs_N2O_arealflux_nmol_s-1_m-2.csv"),row.names = F)
-
+write.csv(n2o_flux_simple, file=paste0(datapath,"/S4_restore4cs_N2O_arealflux_nmol_s-1_m-2.csv.csv"),row.names = F)
 
 
 
 #Miscelanea: 
 
-ggplot(n2o_flux, aes(y=nmol_n2o_per_second_m2))+
-  geom_histogram()
+ggplot(n2o_flux_simple, aes(y=nmol_n2o_per_second_m2,  fill=p_value<0.05))+
+  geom_histogram(position = "identity", alpha=0.3)
+
