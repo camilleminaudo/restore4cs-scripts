@@ -49,10 +49,12 @@ quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #to
 
 
 
-#Load csv files produced by raw2flux.R. script
-setwd(results_path)
+#Load csv files produced by raw2flux_miguelEdit.R. script
+#Last run with 5second crop of start-times and end-times (croped after all map_incubations corrections). 
 
-listf <- list.files(path = results_path, pattern = "^S[0-9]{1}_fluxes", all.files = T, full.names = T, recursive = F)
+# setwd(results_path)
+
+listf <- list.files(path = results_path, pattern = "^S_fluxes", all.files = T, full.names = T, recursive = F)
 table_results_all <- NULL
 
 for (f in listf){
@@ -93,6 +95,7 @@ get_full_detailed_table <- function(table_results_all, variable){
 }
 
 
+#Get detailed table for each gas
 table_co2 <- get_full_detailed_table(table_results_all, variable = "co2")
 table_ch4 <- get_full_detailed_table(table_results_all, "ch4")
 
@@ -161,27 +164,122 @@ table.flags_ch4 <- table.flags_ch4[order(table.flags_ch4$n, decreasing = T),]
 table.flags_ch4
 
 
-#No ch4 fluxes without any flag:
+#No ch4 fluxes without any goflux-flag:
 table_ch4[which(is.na(table_ch4$quality.check)),]
 
 
 
-
 #Examine R2 for CO2
-
-#LM.flux R2
-
 ggplot(table_co2)+
   geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40,alpha = 0.5)+
   geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40,alpha=0.5)+
-  labs(fill="R2")
+  labs(fill="R2")+
+  geom_vline(xintercept = 0.9)
 
 #Examine R2 for CH4
 ggplot(table_ch4)+
   geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40,alpha = 0.5)+
   geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40,alpha=0.5)+
-  labs(fill="R2")
+  labs(fill="R2")+
+  geom_vline(xintercept = 0.9)
 
+
+
+#Many different cases, most likely "manual" cropping for incubations with less than R2=0.8 is recomended (this represents ~1000 inspections, doable semi-automatically). 
+table_co2 %>% filter(HM.r2<0.8|LM.r2<0.8) %>% summarise(n=n()) %>% pull(n)
+table_ch4 %>% filter(HM.r2<0.8|LM.r2<0.8) %>% summarise(n=n()) %>% pull(n)
+
+
+
+#List of fit-Flagged####
+
+#Get full table with fit qualities: 
+#UniqueID, start.time_gofluxfit, duration, 
+#CO2_best.model, CO2_quality.check, CO2_contains.artefact, CO2_best.model.R2,
+#CH4_best.model, CH4_quality.check, CH4_contains.artefact, CH4_best.model.R2,
+
+co2_quality<- table_co2 %>% 
+  select(UniqueID, start.time,duration, 
+         model, quality.check, contains.artefact, LM.r2, HM.r2) %>% 
+  mutate(best.model.r2=case_when(model=="LM"~LM.r2,
+                                 model=="HM"~HM.r2)) %>% 
+  rename(start.time_gofluxfit=start.time, co2_best.model=model, co2_contains.artefact=contains.artefact, co2_best.model.r2=best.model.r2, co2_quality.check=quality.check) %>% select(-c(LM.r2,HM.r2))
+
+ch4_quality<- table_ch4 %>% 
+  select(UniqueID, start.time,duration, 
+         model, quality.check, contains.artefact, LM.r2, HM.r2) %>% 
+  mutate(best.model.r2=case_when(model=="LM"~LM.r2,
+                                 model=="HM"~HM.r2)) %>% 
+  rename(start.time_gofluxfit=start.time, ch4_best.model=model, ch4_contains.artefact=contains.artefact, ch4_best.model.r2=best.model.r2,ch4_quality.check=quality.check) %>% select(-c(LM.r2,HM.r2))
+
+
+table_quality<- co2_quality %>% 
+  merge.data.frame(ch4_quality, by=c("UniqueID", "start.time_gofluxfit","duration")) %>% 
+  mutate(co2_to_inspect= (co2_contains.artefact!="no artefact") | (co2_best.model.r2<0.8),
+         ch4_to_inspect= (ch4_contains.artefact!="no artefact") | (ch4_best.model.r2<0.8),
+         any_to_inspect= co2_to_inspect|ch4_to_inspect)
+
+
+#save table of incubations to inspect.
+write.csv(table_quality, file = paste0(quality_path,"fit_models_flags_5smargin.csv"),row.names = F)
+
+
+table_quality %>% 
+  summarise(co2_flags=sum(co2_to_inspect),
+            ch4_flags=sum(ch4_to_inspect),
+            all_flags=sum(any_to_inspect))
+
+# Fieldsheet notes####
+
+#Compile all fieldsheets with comments
+fieldsheets<- list.files(path= fieldsheetpath, recursive = T, pattern = "GHG.xlsx",full.names = T)
+field<- read_GHG_fieldsheets(fieldsheets)
+
+fnotes<- field %>% 
+  filter(!is.na(comments))
+
+write.csv(fnotes, file=paste0(quality_path,"fieldsheets_with_comments.csv"),row.names = F)
+
+notes_unique <-fnotes %>% group_by(comments) %>% summarise(n=n())
+
+#Manual step: inspect comments and add decissions
+#DONE. 
+
+#Import and Join inspectionlist-----
+
+field_withcoments<- read.csv(paste0(quality_path,"decisions_from_fieldsheets_with_comments.csv"))
+
+field_decissions<- field_withcoments %>% 
+  filter(decission_for_incubation!="") %>%
+  select(uniqID, start_time, end_time, decission_for_incubation, crop_start_s, crop_end_s, comments) %>% rename(UniqueID=uniqID, start_timefield=start_time, end_timefield=end_time, decissionfield=decission_for_incubation, commentfield=comments)
+
+
+#Join and re-arrange order to check (we will do 1 pdf per season)
+table_quality_field<- table_quality %>% 
+  merge.data.frame(field_decissions, by="UniqueID",all = T) %>% 
+  mutate(season=substr(UniqueID,1,2)) %>% 
+  select(season,UniqueID,start.time_gofluxfit,duration,
+         co2_best.model,co2_quality.check,co2_contains.artefact,co2_best.model.r2,
+         ch4_best.model,ch4_quality.check,ch4_contains.artefact,ch4_best.model.r2,
+         co2_to_inspect,ch4_to_inspect,any_to_inspect,
+         start_timefield, end_timefield, decissionfield, crop_start_s, crop_end_s, commentfield) %>% 
+  arrange(UniqueID, decissionfield, !any_to_inspect)
+
+write.csv(table_quality_field, file=paste0(quality_path,"Inspection_table_allincubations_withfielddecissions_toFILL.csv"),row.names = F)
+
+#Inspection plots-----
+
+#Use the pdfs created by raw2flux_miguel_edits to inspect and note weird things in the inspection_table_TOFILL
+
+#What time exactly is in plots?
+#In all plots we have 2 seconds of shoulder (2 points before actual flux calculation). second 0 in plots is exactly start.time_gofluxfit (wich is 5s after the start-time from fieldsheet-corrections)
+
+#Common patterns: 
+#LM CO2 underestimating photosynthetic flux, curving of HM too limited (Kappa). Inpect examples and set new criteria for best.flux g-factor limit (the maximum disparity allowed for HMflux/LMflux)
+
+
+
+#Miscelaneous plots####
 
 #extract a few candidates for inspection based on R2:
 #CO2 good fits r2>0.95: all looks good
@@ -255,49 +353,10 @@ table_co2 %>%
   filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
 
 
-####poraqui####
-#Many different cases, most likely "manual" cropping for incubations with less than R2=0.8 is recomended (this represents 815 inspections, doable semi-automatically). 
-table_co2 %>% filter(HM.r2<0.8) %>% summarise(n=n()) %>% pull(n)
-
-table_ch4 %>% filter(HM.r2<0.8) %>% summarise(n=n()) %>% pull(n)
 
 
 
-#List Artefact incubations####
 
-
-#After running adapted raw2flux_miguel_edits.R , compile incubations with artefacts: 
-
-#A copy of raw2flux adapted to clarify some settings and with added artefact detector can be found in raw2flux_miguel_edits.R in sandbox
-#Criteria for artefact presence: in the incubation there is at least 5 seconds where the second order derivative is 0 (i.e. slope doesnt change for 5 seconds, this includes constant concentration and constant slope (both types of artefact have been observed by visual inspection of some of the incubations)
-
-artefact_incubations<- table_results_all %>% 
-  filter(CO2_contains.artefact|CH4_contains.artefact)
-
-#All artefacts identified n=30 are from LICOR analyzer
-artefact_incubations %>% 
- group_by(gas_analiser, sampling, pilotsite) %>% summarise(n=n())
-
-write.csv(artefact_incubations, file=paste0(quality_path, "incubations_with_artefacts.csv"),row.names = F)
-
-####poraqui####
-
-
-# Fieldsheet notes####
-
-fieldsheets<- list.files(path= fieldsheetpath, recursive = T, pattern = "GHG.xlsx",full.names = T)
-field<- read_GHG_fieldsheets(fieldsheets)
-
-fnotes<- field %>% 
-  filter(!is.na(comments))
-
-write.csv(fnotes, file=paste0(quality_path,"fieldsheets_with_comments.csv"),row.names = F)
-
-notes_unique <-fnotes %>% group_by(comments) %>% summarise(n=n())
-
-
-
-#Miscelaneous plots####
 
 ggplot(table_co2[which(!is.na(table_co2$quality.check)),], 
        aes(quality.check, (HM.flux-LM.flux)/HM.flux, fill = model))+
