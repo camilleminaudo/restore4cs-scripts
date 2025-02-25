@@ -343,9 +343,9 @@ message(paste("Only reliable fluxes (clear ventilation): Out of ", dim(n2o_flux_
 
 
 #SAVE RESULTS####
-write.csv(n2o_flux, file = paste0(datapath,"/S4_restore4cs_N2O_EXTRADATA_n2ofluxes.csv.csv"),row.names = F)
+write.csv(n2o_flux, file = paste0(datapath,"/S4_restore4cs_N2O_EXTRADATA_n2ofluxes.csv"),row.names = F)
 
-write.csv(n2o_flux_simple, file=paste0(datapath,"/S4_restore4cs_N2O_arealflux_nmol_s-1_m-2.csv.csv"),row.names = F)
+write.csv(n2o_flux_simple, file=paste0(datapath,"/S4_restore4cs_N2O_arealflux_nmol_s-1_m-2.csv"),row.names = F)
 
 
 
