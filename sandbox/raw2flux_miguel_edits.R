@@ -9,10 +9,10 @@
 
 # --- Description of this script
 # This script computes fluxes for all incubations present in the fieldsheet for a given sampling season
-# Use has to specify which sampling has to be processed, and all the rest is done automatically.
+# User has to specify which sampling has to be processed, and all the rest is done automatically.
 #EDITS: 
   #Artefact detector (constant slope or negative GHG)
-  #Reduction of "safety margins" to 5s afterstar and 5s beforend
+  #Implemented per-incubation cropping of start and stop after visual inspection of every incubation. 
 
 
 
@@ -53,11 +53,11 @@ sampling <- "S"
 harmonize2RData <- F
 
 #Save plots from goflux?
-doPlot <- F
+doPlot <- T
 
-#Incubation definition: margins (to be cropped of every incubation) and minimum duration threshold (avoids flux calculation of any incubation shorter than threshold, after removing the margins.
-margin_s_after_start<- 5
-margin_s_before_end<- 5
+#Incubation definition: margins (to be cropped of every incubation) and minimum duration threshold (avoids flux calculation of any incubation shorter than threshold, after removing the margins. Do not aply margings, cropping is already done per incubation based on inspection.
+margin_s_after_start<- 0
+margin_s_before_end<- 0
 minimum_duration_for_flux<- 100
 
 #Shoulder goflux is the oposite of margins: number of seconds to look outside of incubation start-end suplied.
@@ -74,9 +74,10 @@ RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
 
 # results_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
-# results_path <- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #Modified folder to save data
+#Modified folder to save data
 results_path <- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/"
 plots_path <- paste0(results_path,"level_incubation/")
+quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #quality assessment, crop decisions and flags after inspection.
 
 
 
@@ -149,10 +150,19 @@ corresponding_row <- NA*fieldsheet_Picarro$plot_id
 for (i in seq_along(fieldsheet_Picarro$plot_id)){
   ind <- which.min(abs(fieldsheet_Picarro$unix_start[i] - map_incubations$start))
   if(length(ind)>0){
-    if(abs(fieldsheet_Picarro$unix_start[i] - map_incubations$start[ind])<5*60){
+    if(abs(fieldsheet_Picarro$unix_start[i] - map_incubations$start[ind])<4*60){
       corresponding_row[i] <- ind
     }
   }
+}
+
+#Check if the 5minute lookup worked for all
+if(sum(is.na(corresponding_row))==0){
+  message("All fielsheet incubations could be assigned to corrected start-stop times from picarro software")
+}
+if(sum(is.na(corresponding_row))>0){
+message(paste("looking in a plus or minus 5-minute window did not work for", sum(is.na(corresponding_row)), "incubations:"))
+print(fieldsheet_Picarro[which(is.na(corresponding_row)),]$uniqID)
 }
 
 # finding corresponding row in case of NA in corresponding_row
@@ -163,10 +173,12 @@ if(sum(is.na(corresponding_row))>0){
   is_integer <- (interp - floor(interp)) == 0
   corresponding_row[ind_NAs][is_integer] <- interp[is_integer]
 }
+
 if(sum(is.na(corresponding_row))>0){
   ind_NAs <- which(is.na(corresponding_row))
   message("Could not find a corresponding incubation map for the following incubations:")
-  fieldsheet_Picarro$uniqID[ind_NAs]
+  print(fieldsheet_Picarro$uniqID[ind_NAs])
+  
   # removing rows from fieldsheet_Picarro with missing correspondance
   fieldsheet_Picarro <- fieldsheet_Picarro[-ind_NAs,]
   corresponding_row <- corresponding_row[-ind_NAs]
@@ -177,8 +189,19 @@ fieldsheet_Picarro$unix_start <- map_incubations$start[corresponding_row]
 fieldsheet_Picarro$unix_stop <- map_incubations$stop[corresponding_row]
 
 
+#Check that unix_start and Unix_stop are not duplicated after picarro time-matching: 
+duplicated_starts_picarro<- fieldsheet_Picarro %>% 
+  filter(unix_start %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_start,incomparables = F),]$unix_start)
+duplicated_stops_picarro<-fieldsheet_Picarro %>% 
+  filter(unix_stop %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_stop,incomparables = F),]$unix_stop)
 
-
+#Check potential duplicate incubations created by the approach, code below.
+if(sum(dim(duplicated_starts_picarro)[1],dim(duplicated_stops_picarro)[1])>0){
+  message(paste("CAUTION: picarro correction duplicates incubations, check duplicates and correct fieldsheet times"))
+  print(duplicated_starts_picarro$uniqID)
+}else{
+  message(paste("Picarro fieldsheet start-stop times are now corrected"))
+  rm(duplicated_starts_picarro, duplicated_stops_picarro)}
 
 
 ## ---- Correct LiCOR fieldsheets ----
@@ -218,8 +241,45 @@ fieldsheet_LosGatos <- fieldsheet[fieldsheet$gas_analyzer=="Los Gatos",]
 fieldsheet <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
 
 
+## ----Cropping after inspection-----
+
+#Import table with decissions and cropping ammounts: all cropping is based on last run of 5-s margin script, so we have to re-add this 5 seconds to the cropping margins
+croping<- read_xlsx(paste0(quality_path, "Inspection_table_allincubations_tocrop.xlsx"),na = "NA")
+
+
+#Simplify and add the additional 5s of cropping to all crop_start_s and crop_end_s
+croping_simple<- croping %>% 
+  select(UniqueID, crop_start_s, crop_end_s) %>% 
+  mutate(crop_start_s=case_when(is.na(crop_start_s)~5,
+                                TRUE~crop_start_s+5),
+         crop_end_s=case_when(is.na(crop_end_s)~5,
+                              TRUE~crop_end_s+5)) %>% 
+  rename(uniqID=UniqueID)
+
+#These incubations need to be re-checked and re-cropped
+croping %>% 
+  filter(!is.na(To_recheck)) %>% 
+  select(UniqueID)
+
+
+message("The following incubations were never inspected or cropped, script did not produce a flux for them:")
+print(fieldsheet[!fieldsheet$uniqID%in%croping_simple$uniqID,c("uniqID","gas_analyzer","comments")])
+
+
+#Add the cropping decission to the fieldsheets:
+fieldsheet<- fieldsheet %>% 
+  merge.data.frame(croping_simple, by="uniqID",all = T) %>% 
+  mutate(unix_start=case_when(!is.na(crop_start_s)~unix_start+crop_start_s,
+                              TRUE~unix_start),
+         unix_stop=case_when(!is.na(crop_end_s)~unix_stop-crop_end_s,
+                              TRUE~unix_start)) %>% 
+  select(-c(crop_end_s,crop_start_s ))
+
+
+
+
 ## ----Margins incubations-----
-# taking a little margin to avoid critical moments of manipulation with the chamber and manual gas sampling
+#This is legacy, once we implement the detailed cropping above, we do not need to set any margins here.
 fieldsheet$unix_start <- fieldsheet$unix_start+margin_s_after_start
 fieldsheet$unix_stop <- fieldsheet$unix_stop-margin_s_before_end
 

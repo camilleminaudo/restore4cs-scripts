@@ -238,10 +238,10 @@ message(paste("CH4 Fluxes: Out of ", dim(ch4_flux)[1]), " CH4 fluxes, we have ",
 deltaGHG_ppm_pval %>% 
   ungroup() %>% 
   filter(gas=="n2o") %>% 
-  filter(source_t0=="averaget0s") %>% 
+  # filter(source_t0=="averaget0s") %>% 
   mutate(t0_cv=t0_sd/t0_avg) %>% 
-  ggplot(aes(x=t0_cv))+
-  geom_histogram(bins=50)+
+  ggplot(aes(x=t0_cv, fill=source_t0))+
+  geom_histogram(position = "identity",bins=50,alpha=0.3)+
   geom_vline(xintercept=0.05)+
   facet_wrap(.~gas, scales="free")
 
@@ -270,11 +270,72 @@ injections_ppm %>%
   geom_point()+
   facet_grid(site~subsite,scales="free")
 
-
-
 head(deltaGHG_ppm_pval %>% 
        filter(gas=="n2o") %>% 
        arrange(desc(tf_avg)))
+
+
+
+##---Decide CH4&CO2 t0 to analyze----
+#Check CV of allt0 
+deltaGHG_ppm_pval %>% 
+  ungroup() %>% 
+  filter(gas=="ch4") %>% 
+  # filter(source_t0=="averaget0s") %>% 
+  mutate(t0_cv=t0_sd/t0_avg) %>% 
+  ggplot(aes(x=t0_cv, fill=source_t0))+
+  geom_histogram(position = "identity",bins=50,alpha=0.3)+
+  geom_vline(xintercept=0.05)+
+  facet_wrap(.~gas, scales="free")
+
+
+
+#Check CV of allt0 CO2
+deltaGHG_ppm_pval %>% 
+  ungroup() %>% 
+  filter(gas=="co2") %>% 
+  # filter(source_t0=="averaget0s") %>% 
+  mutate(t0_cv=t0_sd/t0_avg) %>% 
+  ggplot(aes(x=t0_cv, fill=source_t0))+
+  geom_histogram(position = "identity",bins=50,alpha=0.3)+
+  geom_vline(xintercept=0.05)+
+  facet_wrap(.~gas, scales="free")
+
+
+unreliable_t0_avg_ch4<- deltaGHG_ppm_pval %>% 
+  ungroup() %>% 
+  filter(gas=="ch4") %>% 
+  filter(source_t0=="averaget0s") %>% 
+  mutate(t0_cv=t0_sd/t0_avg) %>% 
+  filter((t0_cv>0.05&p_value>0.01)|t0_cv>0.1) %>% #cores with slightly variable t0 average and unclear flux OR cores with very variable t0 average 
+  mutate(available_exetainer=grepl("S2|S3|S4-CA", coreID))
+
+
+
+unreliable_t0_avg_co2<- deltaGHG_ppm_pval %>% 
+  ungroup() %>% 
+  filter(gas=="co2") %>% 
+  filter(source_t0=="averaget0s") %>% 
+  mutate(t0_cv=t0_sd/t0_avg) %>% 
+  filter((t0_cv>0.05&p_value>0.01)|t0_cv>0.1) %>% #cores with slightly variable t0 average and unclear flux OR cores with very variable t0 average 
+  mutate(available_exetainer=grepl("S2|S3|S4-CA", coreID))
+
+#Potential Cores to repeat if we use t0 CO2 and CH4 from exetainers
+cores_to_analyze_co2_ch4<- rbind(unreliable_t0_avg_ch4,unreliable_t0_avg_co2) %>% 
+  select(coreID, available_exetainer) %>% 
+  distinct() 
+
+#42 cores t0 needed to analyse IF we use t0 concentrations of CO2&CH4 from exetainers
+sum(cores_to_analyze_co2_ch4$available_exetainer)
+
+#9 cores for which we cannot recover accurate t0 initial concentrations
+sum(!cores_to_analyze_co2_ch4$available_exetainer)
+
+#Out of 9 cores without accurate t0, 2 ch4 fluxes would remain unclear: from sampling S4-DA-A1
+unreliable_t0_avg_ch4 %>% filter(available_exetainer==F) %>% mutate(clearflux=p_value<0.01) %>% select(-sampling)
+
+#Out of 9 cores without accurate t0, 2 co2 fluxes would remain unclear: from sampling S4-VA-R2
+unreliable_t0_avg_co2 %>% filter(available_exetainer==F) %>% mutate(clearflux=p_value<0.01) %>% select(-sampling)
 
 
 

@@ -97,7 +97,7 @@ get_full_detailed_table <- function(table_results_all, variable){
 
 #Get detailed table for each gas
 table_co2 <- get_full_detailed_table(table_results_all, variable = "co2")
-table_ch4 <- get_full_detailed_table(table_results_all, "ch4")
+table_ch4 <- get_full_detailed_table(table_results_all, variable = "ch4")
 
 
 
@@ -138,8 +138,8 @@ table.flags_co2 <- table.flags_co2[order(table.flags_co2$n, decreasing = T),]
 table.flags_co2
 
 
-#Only a few co2 fluxes without any flag:
-table_co2[which(is.na(table_co2$quality.check)),]
+#co2 fluxes without any flag:
+table_co2[which(is.na(table_co2$quality.check)|table_co2$quality.check==""),]
 
 #Goflux meaning of different flags: 
 #SE: "Standard Error" it tells us that the noise in our incubation is larger than the instrument accuracy (i.e. we have more noise than we would expect just from "instrumental noise").
@@ -149,6 +149,10 @@ table_co2[which(is.na(table_co2$quality.check)),]
 #HM.flux is NA: non-linear model failed to return a flux.
 
 
+
+ind_flagged <- which(table_ch4$quality.check!="")
+# table_co2$quality.check[ind_flagged]
+message(round(length(ind_flagged)/n*100*100)/100,"% of the measurements are flagged")
 
 table.flags_ch4 <- NULL
 for(flag in unique(table_ch4$quality.check[ind_flagged])){
@@ -164,8 +168,8 @@ table.flags_ch4 <- table.flags_ch4[order(table.flags_ch4$n, decreasing = T),]
 table.flags_ch4
 
 
-#No ch4 fluxes without any goflux-flag:
-table_ch4[which(is.na(table_ch4$quality.check)),]
+#ch4 fluxes without any goflux-flag:
+table_ch4[which(is.na(table_ch4$quality.check)|table_ch4$quality.check==""),]
 
 
 
@@ -267,16 +271,26 @@ table_quality_field<- table_quality %>%
 
 write.csv(table_quality_field, file=paste0(quality_path,"Inspection_table_allincubations_withfielddecissions_toFILL.csv"),row.names = F)
 
+
+
+#MANUAL STEP: 
+
+#Inspect all suspect incubations and decide cropping or discarding fluxes.
+
+#All incubations inspected: crop and discard decissions noted in excel:
+# Inspection_table_allincubations_tocrop.xlsx
+
+
+
 #Inspection plots-----
 
 #Use the pdfs created by raw2flux_miguel_edits to inspect and note weird things in the inspection_table_TOFILL
 
 #What time exactly is in plots?
-#In all plots we have 2 seconds of shoulder (2 points before actual flux calculation). second 0 in plots is exactly start.time_gofluxfit (wich is 5s after the start-time from fieldsheet-corrections)
+#Second 0 in plots is exactly start.time_gofluxfit (wich is 5s after the start-time from fieldsheet-corrections)
 
 #Common patterns: 
 #LM CO2 underestimating photosynthetic flux, curving of HM too limited (Kappa). Inpect examples and set new criteria for best.flux g-factor limit (the maximum disparity allowed for HMflux/LMflux)
-
 
 
 #Miscelaneous plots####
