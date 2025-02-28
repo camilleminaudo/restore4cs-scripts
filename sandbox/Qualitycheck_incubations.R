@@ -279,7 +279,11 @@ write.csv(table_quality_field, file=paste0(quality_path,"Inspection_table_allinc
 
 #All incubations inspected: crop and discard decissions noted in excel:
 # Inspection_table_allincubations_tocrop.xlsx
+#Inspection based on plots of fluxes produced by start-stop times of corrected fieldsheets (raw2flux) plus a 5 second margin to start_time and stop_time: all start-stop times for final calculations have to include the 5 second margins plus (if aplicable) the cropping decission logged in excell.
 
+
+#Common patterns during inspection: 
+#LM CO2 underestimating photosynthetic flux, curving of HM too limited (Kappa). Inpect examples and set new criteria for best.flux g-factor limit (the maximum disparity allowed for HMflux/LMflux)
 
 
 #Inspection plots-----
