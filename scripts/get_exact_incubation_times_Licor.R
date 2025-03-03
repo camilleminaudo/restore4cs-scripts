@@ -35,7 +35,7 @@ for (f in files.sources){source(f)}
 
 
 # ---- Directories ----
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data"
+dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data"
 datapathRAW <- paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810")
 datapath <- paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810/RData")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
@@ -46,30 +46,34 @@ data_folders <- list.dirs(datapath, full.names = T, recursive = F)
 subsites <- basename(data_folders)
 print(subsites)
 
-# go through the RAW data
-fs <- list.files(path = datapathRAW, pattern = c(".txt", ".data"), full.names = T, recursive = T)
-r <- grep(pattern = ".RData",x=fs)
+# go through the RAW data (.txt or .data, not .Rdata, not Licor850)
+fs <- list.files(path = datapathRAW, pattern = c(".txt|.data"), full.names = T, recursive = T)
+# fs <- list.files(path = datapathRAW, pattern = c(".txt", ".data"), full.names = T, recursive = T)
+r <- grep(pattern = ".RData|Licor850",x=fs)
 fs <- fs[-r]
 
+
+#Issue: some data files span multiple days and remarks are re-used "1", "2", "3",... which precludes us from getting the "true" stop of remark. 
+#Use date_label to search for remarks instead of just label.
 
 isF = T
 for (f in fs){
   message(paste0("extracting info from ",basename(f)))
   data <- read_Licor(file = f)
-  labels <- unique((data$label))
+  labels <- unique(paste0(data$date,"_",data$label))
   labels <- labels[!is.na(labels)]
   # labels<- labels[-which(labels=="")]
 
   # get start and stop times for each label
   for (label in labels){
-    ind_corresp <- which(data$label == label)
+    ind_corresp <- which(paste0(data$date,"_",data$label) == label)
     
     start <- min(data$unixtime[ind_corresp])
     stop <- max(data$unixtime[ind_corresp])
-    
-
-    map_incubations_temp <- data.frame(date = first(data$date[ind_corresp]),
-                                       label = label,
+    date_i<- first(data$date[ind_corresp])
+    lab<- first(data$label[ind_corresp])
+    map_incubations_temp <- data.frame(date = date_i,
+                                       label = lab,
                                        start = start,
                                        stop = stop,
                                        time_start = strftime(start, format="%H:%M:%S", tz = 'utc'),
@@ -87,19 +91,18 @@ for (f in fs){
 }
 
 
-# uniqueID <- paste0(map_incubations$date, map_incubations$label)
-map_incubations <- map_incubations[!duplicated(map_incubations$start),]
+map_incubations_all<- map_incubations
+
+
+#The previous filter for duplicates removed all instances of duplicated start, in practice removing entirely the data (duplicated and original). FIXED: for each duplicated start&label, keep only 1 instance 
+map_incubations <- map_incubations_all %>% group_by(label,start) %>% mutate(mapid=paste0(start, path)) %>% filter(mapid==first(mapid)) %>% select(-mapid)
+
 map_incubations <- map_incubations[order(map_incubations$start),]
 
-# Save incubtion map to Dropbox
+# Save incubation map to Dropbox
 write.csv(x = map_incubations, file = paste0(datapathRAW,"/map_incubations.csv"), row.names = F)
 
 
-
-ggplot(map_incubations, aes(start, stop-start))+geom_point()+theme_article()+scale_y_log10()+geom_hline(yintercept = 900)
-
-
-map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$start < 15*60),]
 
 
 # ---- Load fieldsheets ----
@@ -109,19 +112,35 @@ myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx"
 # myfieldsheets_list <- myfieldsheets_list[i]
 # Read all fieldsheets and put them in a single dataframe
 fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
+fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",] %>% 
+  mutate(field_duration=unix_stop-unix_start)
 
-fieldsheet$uniqID <- tolower(paste(fieldsheet$subsite,fieldsheet$plot_id,substr(fieldsheet$transparent_dark, 1, 1), sep = "-"))
+#Check fieldsheet durations: 
+ggplot(fieldsheet_Licor, aes(x=unix_start, y=field_duration))+
+  geom_point()
+max(fieldsheet_Licor$field_duration)
+min(fieldsheet_Licor$field_duration)
 
+#Check  map_incubation durations, remove those with unrealistic long durations 
+map_incubations_all %>% 
+  filter(label!="") %>% 
+  ggplot( aes(start, stop-start))+geom_point()+theme_article()+geom_hline(yintercept = 1320)
+
+map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$start < 22*60),]
+
+
+#ANY field-day without map_incubations?
+unique(fieldsheet_Licor$date)[!unique(fieldsheet_Licor$date)%in%unique(map_incubations$date)]
 
 
 # check the closest incubation in map_incubations for each row in fieldsheet.
-# if more than 4 minutes apart, we consider the row in map_incubations out of sampling
-fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
+# if more than 3 minutes apart, we consider the row in map_incubations out of sampling
 fieldsheet_Licor$corresponding_row <- NA
 fieldsheet_Licor$label <- "none"
 fieldsheet_Licor$unix_start_corr <- fieldsheet_Licor$unix_stop_corr <- NA
 
 
+#Assign correspondence if start-fieldsheet is less than 4 minutes appart from start-map_incubation
 for (i in seq_along(fieldsheet_Licor$plot_id)){
   ind <- which.min(abs(fieldsheet_Licor$unix_start[i] - map_incubations$start))
   if(length(ind)>0){
@@ -136,6 +155,21 @@ for (i in seq_along(fieldsheet_Licor$plot_id)){
   }
 }
 
+fieldsheet_Licor$map_duration=fieldsheet_Licor$unix_stop_corr-fieldsheet_Licor$unix_start_corr
+fieldsheet_Licor$error_time_start <- fieldsheet_Licor$unix_start_corr - fieldsheet_Licor$unix_start
+fieldsheet_Licor$error_time_stop <- fieldsheet_Licor$unix_stop_corr - fieldsheet_Licor$unix_stop
+
+
+#Check correspondence: After inspecting the correspondence, the overwhelming majority of incubations with remarks are matched to the remarks correctly (some are not found >3min apart, not critical). No missidentifications (i.e. not wrong corrections of start-time).  
+
+
+
+ggplot(fieldsheet_Licor, aes(x=field_duration, y=map_duration))+
+  geom_point()+
+  geom_abline(intercept = 0, slope = 1)
+
+ggplot(fieldsheet_Licor,aes(x=unix_start, y=unix_start_corr))+
+  geom_point()
 
 # # finding corresponding row in case of NA in corresponding_row
 # if(sum(is.na(corresponding_row))>0){
@@ -155,8 +189,8 @@ if(sum(is.na(fieldsheet_Licor$corresponding_row))>0){
 }
 
 
-fieldsheet_Licor$error_time_start <- fieldsheet_Licor$unix_start_corr - fieldsheet_Licor$unix_start
-fieldsheet_Licor$error_time_stop <- fieldsheet_Licor$unix_stop_corr - fieldsheet_Licor$unix_stop
+
+
 
 
 p_start<- ggplot(fieldsheet_Licor, aes(error_time_start))+geom_density(fill="grey", alpha=0.2)+theme_article()+

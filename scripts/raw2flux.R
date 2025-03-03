@@ -162,7 +162,7 @@ map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$st
 fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
 corresponding_row <- unix_start_corr <- unix_stop_corr <- NA*fieldsheet_Licor$unix_start
 
-
+#Assign remark for start time less than 3 minutes appart. 
 for (i in seq_along(fieldsheet_Licor$plot_id)){
   ind <- which.min(abs(fieldsheet_Licor$unix_start[i] - map_incubations$start))
   if(length(ind)>0){
@@ -173,9 +173,11 @@ for (i in seq_along(fieldsheet_Licor$plot_id)){
     }
   }
 }
+#Adjust start time based on found remark starts
 ind_noNAs <- which(!is.na(corresponding_row))
 duration_fieldsheet <- fieldsheet_Licor$unix_stop - fieldsheet_Licor$unix_start
 fieldsheet_Licor$unix_start[ind_noNAs] <- unix_start_corr[ind_noNAs]
+#Adjust stop times based on fieldsheet duration and corrected start times (when available)
 fieldsheet_Licor$unix_stop <- fieldsheet_Licor$unix_start + duration_fieldsheet
 
 

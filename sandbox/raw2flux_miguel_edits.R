@@ -202,7 +202,7 @@ if(sum(dim(duplicated_starts_picarro)[1],dim(duplicated_stops_picarro)[1])>0){
 ## ---- Correct LiCOR fieldsheets ----
 
 #Correct Licor start-stop times whenever remarks are available
-# load incubation map (run get_exact_incubation_times_Licor.R to update it)
+# load incubation map: udated with last incubations and corrected to get all non-duplicated remarks
 map_incubations <- read.csv( file = paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810/map_incubations.csv"))
 # only select realistic start/stop
 map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$start < 15*60),]
@@ -210,7 +210,7 @@ map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$st
 fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
 corresponding_row <- unix_start_corr <- unix_stop_corr <- NA*fieldsheet_Licor$unix_start
 
-
+#Lookup for corrected start-time correspondence (3 minute window) 
 for (i in seq_along(fieldsheet_Licor$plot_id)){
   ind <- which.min(abs(fieldsheet_Licor$unix_start[i] - map_incubations$start))
   if(length(ind)>0){
@@ -222,10 +222,10 @@ for (i in seq_along(fieldsheet_Licor$plot_id)){
   }
 }
 ind_noNAs <- which(!is.na(corresponding_row))
+#Correct start-stop times based on start remark (if found) + duration fieldsheets
 duration_fieldsheet <- fieldsheet_Licor$unix_stop - fieldsheet_Licor$unix_start
 fieldsheet_Licor$unix_start[ind_noNAs] <- unix_start_corr[ind_noNAs]
 fieldsheet_Licor$unix_stop <- fieldsheet_Licor$unix_start + duration_fieldsheet
-
 
 
 ## ---- Merging fieldsheets----
@@ -238,11 +238,11 @@ fieldsheet_beforecrop <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet
 
 ## ----Cropping after inspection-----
  
-#Import table with decissions and cropping ammounts: all cropping is based on last run of 5-s margin script, so we have to re-add this 5 seconds to the cropping margins
+#Import table with decisions and cropping amounts: all cropping is based on last run of 5-s margin script, so we have to re-add this 5 seconds to the cropping margins
 croping<- read_xlsx(paste0(quality_path, "Inspection_table_allincubations_tocrop.xlsx"),na = "NA")
 
 
-#Simplify and add the additional 5s of cropping to all crop_start_s and crop_end_s: Inspection and cropping decissions were taken on fluxes calcualted based on 5-s margin. WE re-add this 5s of margin here for all incubations (custom-cropped or not) 
+#Simplify and add the additional 5s of cropping to all crop_start_s and crop_end_s: Inspection and cropping decisions were taken on fluxes calculated based on 5-s margin. WE re-add this 5s of margin here for all incubations (custom-cropped or not) 
 croping_simple<- croping %>%
   select(UniqueID, crop_start_s, crop_end_s) %>%
   mutate(crop_start_s=case_when(is.na(crop_start_s)~5,
