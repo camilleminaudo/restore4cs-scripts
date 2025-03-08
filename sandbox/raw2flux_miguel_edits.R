@@ -774,4 +774,23 @@ myfilename <- paste(sampling,"fluxes",min(as.Date(table_results_all$start.time))
                     max(as.Date(table_results_all$start.time)), sep = "_")
 write.csv(x = table_results_all, file = paste0(results_path, myfilename,".csv"), row.names = F)
 
+s1<-table_results_all %>% filter(grepl("S1", subsite))
+s2<-table_results_all %>% filter(grepl("S2", subsite))
+s3<-table_results_all %>% filter(grepl("S3", subsite))
+s4<-table_results_all %>% filter(grepl("S4", subsite))
 
+myfilename <- paste("S1","fluxes",min(as.Date(s1$start.time)),"to",
+                    max(as.Date(s1$start.time)), sep = "_")
+write.csv(x = s1, file = paste0(results_path, myfilename,".csv"), row.names = F)
+
+myfilename <- paste("S2","fluxes",min(as.Date(s2$start.time)),"to",
+                    max(as.Date(s2$start.time)), sep = "_")
+write.csv(x = s2, file = paste0(results_path, myfilename,".csv"), row.names = F)
+
+myfilename <- paste("S3","fluxes",min(as.Date(s3$start.time)),"to",
+                    max(as.Date(s3$start.time)), sep = "_")
+write.csv(x = s3, file = paste0(results_path, myfilename,".csv"), row.names = F)
+
+myfilename <- paste("S4","fluxes",min(as.Date(s4$start.time)),"to",
+                    max(as.Date(s4$start.time)), sep = "_")
+write.csv(x = s4, file = paste0(results_path, myfilename,".csv"), row.names = F)
