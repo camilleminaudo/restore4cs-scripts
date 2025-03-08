@@ -10,14 +10,18 @@
 # --- Description of this script
 # This script computes fluxes for all incubations present in the fieldsheet for a given sampling season
 # User has to specify which sampling has to be processed, and all the rest is done automatically.
-#EDITS Miguel: 
-  #Comments and formating sections
-  #Improvement Picarro starstop corrections
-  #Licor map_injections corrected
-  #Artefact detector (constant slope or negative GHG)
-  #Per-incubation cropping of start and stop after visual inspection of every incubation.
+#additional flag is added if constant or negative GHG data is within incubation
 
+#IMPORTANT: 
+#This script calculates all fluxes, with start-stop times incubations based on:
+#Picarro: start-stop from Picarro software files (for all Picarro fluxes)
+#Licor: start-stop from remarks (when available) or from fieldsheets (when no remark is matched)
+#Los gatos: start-stop from fieldsheets
 
+#AFTER all start-stop times have been identified and corrected, 5 seconds of margin is applied to the start and  the end of the incubation
+
+##TO DO------
+# : Check Licor map_incubations to fieldsheet correspondence
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -50,7 +54,11 @@ for (f in files.sources){source(f)}
 
 #---USER OPTIONS ----- 
 #sampling is the pattern to select in the fieldsheet filenames, every matching fieldsheet will have their incubations processed.
-sampling <- "S" 
+sampling <- "S" #All fluxes will be calculated 
+
+#Set the 5s margin:
+margin_s_after_start <- 5 
+margin_s_before_end <- 5
 
 #create/update RDATA?
 harmonize2RData <- F
@@ -74,11 +82,16 @@ fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 loggerspath <- paste0(datapath,"/RAW Data Logger")
 RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
 
+
 # results_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
-#Final run in local pc
-results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/Per_incubation_cropped_fluxes/"
+# plots_path <- paste0(results_path,"level_incubation/")
+# quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #quality assessment, crop decisions and flags after inspection.
+
+
+#Custom directories for this script: To save results to be used for cropping decissions
+results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/5smargin fluxes/"
 plots_path <- paste0(results_path,"level_incubation/")
-quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #quality assessment, crop decisions and flags after inspection.
+
 
 
 #_________________####
@@ -208,7 +221,6 @@ if(sum(dim(duplicated_starts_picarro)[1],dim(duplicated_stops_picarro)[1])>0){
 #Correct Licor start-stop times whenever remarks are available
 # load incubation map: updated with last incubations and corrected to get all non-duplicated remarks (removing also remarks that cause wrong-assignments)
 map_incubations <- read.csv( file = paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810/map_incubations_touse.csv"))
-
 # only select realistic start/stop
 map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$start < 15*60),]
 
@@ -226,8 +238,8 @@ for (i in seq_along(fieldsheet_Licor$plot_id)){
     }
   }
 }
-ind_noNAs <- which(!is.na(corresponding_row))
 
+ind_noNAs <- which(!is.na(corresponding_row))
 
 #Check how many were found:
 if(sum(!is.na(ind_noNAs))>0){
@@ -235,11 +247,11 @@ if(sum(!is.na(ind_noNAs))>0){
   fieldsheet_Licormapped$foundinmap<- FALSE
   fieldsheet_Licormapped$foundinmap[ind_noNAs]<- TRUE
   fieldsheet_Licormapped %>% 
-    mutate(sampling=substr(subsite,1,5)) %>% 
-    group_by(sampling) %>% 
-    summarise(foundinmap=sum(foundinmap), total_incubations= n(), percentfound=foundinmap/total_incubations*100)
+  mutate(sampling=substr(subsite,1,5)) %>% 
+  group_by(sampling) %>% 
+  summarise(foundinmap=sum(foundinmap), total_incubations= n(), percentfound=foundinmap/total_incubations*100)
   message(paste("Licor start-stop times corrected for",sum(!is.na(ind_noNAs)),"incubations" ))
-  
+
 }
 
 
@@ -256,57 +268,58 @@ fieldsheet_LosGatos <- fieldsheet[fieldsheet$gas_analyzer=="Los Gatos",]
 #Combine all fieldsheets with corrected times based on map_incubations when available
 fieldsheet_beforecrop <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
 
+# ## ----(DO NOT EXECUTE) Cropping after inspection-----
+#  
+# #Import table with decisions and cropping amounts: all cropping is based on last run of 5-s margin script, so we have to re-add this 5 seconds to the cropping margins
+# croping<- read_xlsx(paste0(quality_path, "Inspection_table_allincubations_tocrop.xlsx"),na = "NA")
+# 
+# 
+# #Simplify and add the additional 5s of cropping to all crop_start_s and crop_end_s: Inspection and cropping decisions were taken on fluxes calculated based on 5-s margin. WE re-add this 5s of margin here for all incubations (custom-cropped or not) 
+# croping_simple<- croping %>%
+#   select(UniqueID, crop_start_s, crop_end_s) %>%
+#   mutate(crop_start_s=case_when(is.na(crop_start_s)~5,
+#                                 TRUE~crop_start_s+5),
+#          crop_end_s=case_when(is.na(crop_end_s)~5,
+#                               TRUE~crop_end_s+5)) %>%
+#   rename(uniqID=UniqueID)
+# 
+# #ANY incubation to re-inspect?
+# if(sum(!is.na(croping$To_recheck))>0){
+#   message("CAUTION: these incubations need to be re-checked and re-cropped. Incomplete artefact removal. ")
+#   print(croping %>%
+#           filter(!is.na(To_recheck)) %>%
+#           select(UniqueID))
+# }
+# 
+# #ANY incubation without not inspected?
+# if(sum(!fieldsheet_beforecrop$uniqID%in%croping_simple$uniqID)>0){
+# message("The following incubations were never inspected or cropped, script did not produce a flux for them:")
+# print(fieldsheet_beforecrop[!fieldsheet_beforecrop$uniqID%in%croping_simple$uniqID,c("uniqID","gas_analyzer","comments")])
+# }
+# #No missing incubation from S1
+# #1 missing incubation from S2: 
+# # s2-cu-r1-8-o-d-09:38 Los Gatos    Battery 1 stopped mid sample, there is no data for this incubation
+# #2 missing incubation from S3:
+# # s3-cu-p2-9-o-d-11:58  LI-COR       Times not in raw-data (Was here when LICOR BROKE?
+# # s3-cu-p2-10-o-d-12:07 LI-COR       Times not in raw-data (Was here when LICOR BROKE?
+# #No missing incubation from S4
+# 
+# 
+# #Add the cropping decission to the fieldsheets:
+# fieldsheet<- fieldsheet_beforecrop %>%
+#   merge.data.frame(croping_simple, by="uniqID",all.x = T) %>%
+#   mutate(unix_start=case_when(!is.na(crop_start_s)~unix_start+crop_start_s,
+#                               TRUE~unix_start),
+#          unix_stop=case_when(!is.na(crop_end_s)~unix_stop-crop_end_s,
+#                               TRUE~unix_stop)) %>%
+#   select(-c(crop_end_s,crop_start_s ))
+# 
 
-## ----Cropping after inspection-----
- 
-#Import table with decisions and cropping amounts: all cropping is based on last run of 5-s margin script, so we have to re-add this 5 seconds to the cropping margins
-croping<- read_xlsx(paste0(quality_path, "Inspection_table_allincubations_tocrop.xlsx"),na = "NA")
 
-
-#Simplify and add the additional 5s of cropping to all crop_start_s and crop_end_s: Inspection and cropping decisions were taken on fluxes calculated based on 5-s margin. WE re-add this 5s of margin here for all incubations (custom-cropped or not) 
-croping_simple<- croping %>%
-  select(UniqueID, crop_start_s, crop_end_s) %>%
-  mutate(crop_start_s=case_when(is.na(crop_start_s)~5,
-                                TRUE~crop_start_s+5),
-         crop_end_s=case_when(is.na(crop_end_s)~5,
-                              TRUE~crop_end_s+5)) %>%
-  rename(uniqID=UniqueID)
-
-#ANY incubation to re-inspect?
-if(sum(!is.na(croping$To_recheck))>0){
-  message("CAUTION: these incubations need to be re-checked and re-cropped. Incomplete artefact removal. ")
-  print(croping %>%
-          filter(!is.na(To_recheck)) %>%
-          select(UniqueID))
-}
-
-#ANY incubation without not inspected?
-if(sum(!fieldsheet_beforecrop$uniqID%in%croping_simple$uniqID)>0){
-message("The following incubations were never inspected or cropped, script did not produce a flux for them:")
-print(fieldsheet_beforecrop[!fieldsheet_beforecrop$uniqID%in%croping_simple$uniqID,c("uniqID","gas_analyzer","comments")])
-}
-#No missing incubation from S1
-#1 missing incubation from S2: 
-# s2-cu-r1-8-o-d-09:38 Los Gatos    Battery 1 stopped mid sample, there is no data for this incubation
-#2 missing incubation from S3:
-# s3-cu-p2-9-o-d-11:58  LI-COR       Times not in raw-data (Was here when LICOR BROKE?
-# s3-cu-p2-10-o-d-12:07 LI-COR       Times not in raw-data (Was here when LICOR BROKE?
-#No missing incubation from S4
-
-
-#Add the cropping decission to the fieldsheets:
-fieldsheet<- fieldsheet_beforecrop %>%
-  merge.data.frame(croping_simple, by="uniqID",all.x = T) %>%
-  mutate(unix_start=case_when(!is.na(crop_start_s)~unix_start+crop_start_s,
-                              TRUE~unix_start),
-         unix_stop=case_when(!is.na(crop_end_s)~unix_stop-crop_end_s,
-                              TRUE~unix_stop)) %>%
-  select(-c(crop_end_s,crop_start_s ))
-
-
-#This is legacy, the custom-cropping above make this section redundant.
-# fieldsheet$unix_start <- fieldsheet$unix_start+margin_s_after_start
-# fieldsheet$unix_stop <- fieldsheet$unix_stop-margin_s_before_end
+##---Apply 5s margin-----
+fieldsheet<- fieldsheet_beforecrop
+fieldsheet$unix_start <- fieldsheet$unix_start+margin_s_after_start
+fieldsheet$unix_stop <- fieldsheet$unix_stop-margin_s_before_end
 
 
 # recalculating start and stop in proper formats
@@ -319,10 +332,8 @@ fieldsheet$end_time <- strftime(fieldsheet$timestamp_stop, format="%H:%M:%S", tz
 fieldsheet <- fieldsheet[order(fieldsheet$subsite),]
 
 
-
 #_________________####
 #RDATA SAVE (optional) ####
-#Licor import of S4-CU corrected (Instrument not in UTC time)
 #Import and store measurements to RData ---
 if(harmonize2RData){
   data_folders <- list.dirs(datapath, full.names = T, recursive = T)[-1]
@@ -384,23 +395,23 @@ if(harmonize2RData){
   fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
   list_subsites_Licor <- unique(fieldsheet_Licor$subsite)
   
-  
+
   
   r_licor <- grep(pattern = "Licor",x=data_folders)
   for (data_folder in data_folders[r_licor]){
     setwd(data_folder)
     message(paste0("processing folder ",basename(data_folder)))
     if (grepl("S4-CU",data_folder)){
-      import2RData(path = data_folder, instrument = "LI-7810",
-                   date.format = "ymd", timezone = 'Europe/Riga', keep_all = FALSE, 
-                   prec = c(3.5, 0.6, 45))
+    import2RData(path = data_folder, instrument = "LI-7810",
+                 date.format = "ymd", timezone = 'Europe/Riga', keep_all = FALSE, 
+                 prec = c(3.5, 0.6, 45))
     } else {
       import2RData(path = data_folder, instrument = "LI-7810",
                    date.format = "ymd", timezone = 'UTC', keep_all = FALSE, 
                    prec = c(3.5, 0.6, 45))
     }
     
-    
+
     # load all these R.Data into a single dataframe
     file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
     isF <- T
@@ -414,7 +425,7 @@ if(harmonize2RData){
       }
       rm(data.raw)
     }
-    
+
     #Correct lithuanian licor tz (licor in local time)
     if (grepl("S4-CU",data_folder)){
       message("S4-CU Licor not in UTC time!!")  
@@ -422,7 +433,7 @@ if(harmonize2RData){
       mydata_imp$DATE<- as.character(as_date(mydata_imp$POSIX.time))
       mydata_imp$TIME<- strftime(mydata_imp$POSIX.time, format="%H:%M:%S",tz = "utc")
     }
-    
+
     # get rid of possible duplicated data
     is_duplicate <- duplicated(mydata_imp$POSIX.time)
     mydata_imp <- mydata_imp[!is_duplicate,]
@@ -739,8 +750,8 @@ for (subsite in subsites){
     #---- 1. Save incubation-level ----
     
     #Save full results in incubation-level path
-    myfilenameCO2 <- paste(subsite,"co2_fluxes", as.character(as.Date(last(auxfile$start.time))),sep="_")
-    myfilenameCH4 <- paste(subsite,"ch4_fluxes", as.character(as.Date(last(auxfile$start.time))),sep="_")
+    myfilenameCO2 <- paste(subsite,"co2_fluxes_5smargin_", as.character(as.Date(last(auxfile$start.time))),sep="_")
+    myfilenameCH4 <- paste(subsite,"ch4_fluxes_5smargin_", as.character(as.Date(last(auxfile$start.time))),sep="_")
     write.csv(x = CO2_flux_res_auto, file = paste0(plots_path,myfilenameCO2,".csv"), row.names = F)
     write.csv(x = CH4_res_meth1, file = paste0(plots_path,myfilenameCH4,".csv"), row.names = F)
     
@@ -770,7 +781,7 @@ for (subsite in subsites){
 }
 
 # setwd(results_path)
-myfilename <- paste(sampling,"fluxes",min(as.Date(table_results_all$start.time)),"to",
+myfilename <- paste(sampling,"fluxes_5smargin_",min(as.Date(table_results_all$start.time)),"to",
                     max(as.Date(table_results_all$start.time)), sep = "_")
 write.csv(x = table_results_all, file = paste0(results_path, myfilename,".csv"), row.names = F)
 

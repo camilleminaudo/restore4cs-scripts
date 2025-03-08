@@ -99,11 +99,12 @@ map_incubations <- map_incubations_all %>% group_by(label,start) %>% mutate(mapi
 
 map_incubations <- map_incubations[order(map_incubations$start),]
 
-# Save incubation map to Dropbox
-write.csv(x = map_incubations, file = paste0(datapathRAW,"/map_incubations.csv"), row.names = F)
+# Save incubation map to Dropbox: all unique remarks (including cores, incubations, empty remarks, wrong remarks,...)
+write.csv(x = map_incubations, file = paste0(datapathRAW,"/map_incubations_all.csv"), row.names = F)
 
 
 
+#Check assignment with 3minute-window and filter map incubations to create map_incubations_touse.csv (with only remarks that we can trust for correcting Licor-fieldsheets)
 
 # ---- Load fieldsheets ----
 # list filenames
@@ -114,6 +115,119 @@ myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx"
 fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",] %>% 
   mutate(field_duration=unix_stop-unix_start)
+
+
+#Remove remarks from days ouside sampling and empty remarks
+maps_from_samplingdates<- map_incubations %>% 
+  filter(date%in%unique(fieldsheet_Licor$date)) %>% #keep only remarks from sampling dates
+  filter(label!="") %>%  #remove empty remarks
+  mutate(remark_duration=stop-start)
+
+
+#test correspondence (no limit of time discrepancy)
+test_fieldsheet<- fieldsheet_Licor
+
+# check the closest incubation in map_incubations for each row in fieldsheet.
+# if more than 3 minutes apart, we consider the row in map_incubations out of sampling
+test_fieldsheet$corresponding_row <- NA
+test_fieldsheet$label <- "none"
+test_fieldsheet$unix_start_corr <- test_fieldsheet$unix_stop_corr <- NA
+
+
+#Assign correspondence for minimum start-fieldsheet difference from start-map_incubation (no limit)
+for (i in seq_along(test_fieldsheet$plot_id)){
+  ind <- which.min(abs(test_fieldsheet$unix_start[i] - maps_from_samplingdates$start))
+  if(length(ind)>0){
+
+      test_fieldsheet$corresponding_row[i] <- ind
+      test_fieldsheet$label[i] <- maps_from_samplingdates$label[ind]
+      
+      # replacing unix_startand unix_stop with new values
+      test_fieldsheet$unix_start_corr[i] <- maps_from_samplingdates$start[ind]
+      test_fieldsheet$unix_stop_corr[i] <- maps_from_samplingdates$stop[ind]
+      test_fieldsheet$start_dif_minutes<- (test_fieldsheet$unix_start-test_fieldsheet$unix_start_corr)/60
+   
+  }
+}
+
+#get the days where minimum discrepancy of starts is less than 30 minutes (those with some remarks in the field)
+test<-test_fieldsheet %>% 
+  mutate(start_difference_minutes=(unix_start-unix_start_corr)/60) %>% 
+  arrange(desc(abs(start_difference_minutes))) %>% 
+  select(uniqID, label, date, start_difference_minutes, start_time) %>% 
+  group_by(date) %>% 
+  summarise(maxdif=max(abs(start_difference_minutes)),
+            mindif=min(abs(start_difference_minutes))) %>% 
+  arrange(desc(mindif))
+
+dates_fieldremarks<- test %>% filter(mindif<30) %>% pull(date)
+
+
+maps_onlycores<- maps_from_samplingdates %>% filter(!date%in%dates_fieldremarks)
+#check remarks onlycores to ensure tz issues didnt afect the filtering
+maps_onlycores %>% pull(label) %>% unique()
+#Only labels that correspond to core-injections, all good
+
+
+#Subset maps with fieldsamples
+maps_withfieldsample<- maps_from_samplingdates %>% filter(date%in%dates_fieldremarks)
+
+
+#re-test correspondence: 
+#test2 correspondence (30minute limit of time discrepancy)
+test2_fieldsheet<- fieldsheet_Licor
+
+# check the closest incubation in map_incubations for each row in fieldsheet.
+
+test2_fieldsheet$corresponding_row <- NA
+test2_fieldsheet$label <- "none"
+test2_fieldsheet$unix_start_corr <- test2_fieldsheet$unix_stop_corr <- NA
+
+
+#Assign correspondence for minimum start-fieldsheet difference from start-map_incubation (30 minute limit)
+for (i in seq_along(test2_fieldsheet$plot_id)){
+  ind <- which.min(abs(test2_fieldsheet$unix_start[i] - maps_withfieldsample$start))
+  if(length(ind)>0){
+    if(abs(fieldsheet_Licor$unix_start[i] - maps_withfieldsample$start[ind])<30*60){
+      
+    test2_fieldsheet$corresponding_row[i] <- ind
+    test2_fieldsheet$label[i] <- maps_withfieldsample$label[ind]
+    
+    # replacing unix_startand unix_stop with new values
+    test2_fieldsheet$unix_start_corr[i] <- maps_withfieldsample$start[ind]
+    test2_fieldsheet$unix_stop_corr[i] <- maps_withfieldsample$stop[ind]
+    test2_fieldsheet$start_dif_minutes<- (test2_fieldsheet$unix_start-test2_fieldsheet$unix_start_corr)/60
+    }
+  }
+}
+
+test2_fieldsheet_withremark<- test2_fieldsheet %>% 
+  filter(label!="none") %>% 
+  mutate(bigdiference=abs(start_dif_minutes)>3)
+
+#Check variability difference
+test2_fieldsheet_withremark %>% 
+  ggplot(aes(x=factor(date), y=start_dif_minutes, col=abs(start_dif_minutes)>3))+
+  geom_point()
+
+
+#Inspection of assignments: 
+#A lot of duplicate assignments (when there is no remark for incubation, closest is assigned), nothing to fix, limit of 3minutes will be ok
+
+#remove manually the remarks from map_injections_touse that are wrong (wrong assignment within 3 minutes)
+startofremarkstoremove<-c(1696410493) #only 1 remark to remove (wrong match within 3minutes )
+
+
+maps_incubations_touse<- maps_withfieldsample %>% 
+  filter(start!=startofremarkstoremove)
+
+#Save map_incubations_touse
+write.csv(x = maps_incubations_touse, file = paste0(datapathRAW,"/map_incubations_touse.csv"), row.names = F)
+
+
+
+
+##
 
 #Check fieldsheet durations: 
 ggplot(fieldsheet_Licor, aes(x=unix_start, y=field_duration))+
@@ -154,6 +268,7 @@ for (i in seq_along(fieldsheet_Licor$plot_id)){
     }
   }
 }
+
 
 fieldsheet_Licor$map_duration=fieldsheet_Licor$unix_stop_corr-fieldsheet_Licor$unix_start_corr
 fieldsheet_Licor$error_time_start <- fieldsheet_Licor$unix_start_corr - fieldsheet_Licor$unix_start

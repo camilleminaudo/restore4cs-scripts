@@ -7,8 +7,9 @@
 # ---
 
 # --- Description of this script
-# This script analyses the quality of fit of all fluxes. First by ranking and flagging incubations based on regression fit. Then by flagging incubations that include artefacts (examining deltaGHG and flagging incubations with more than 5% of deltaGHG==0)
 
+# This script analyses the quality of fit of all fluxes. First by ranking and flagging incubations based on regression fit. Then by flagging incubations that include artefacts (examining deltaGHG and flagging incubations with more than 5% of deltaGHG==0)
+#It saves all flags and quality issues based on the 5s margin incubation run to inspect every incubation and save cropping decissions for final flux calculation
 
 
 
@@ -41,7 +42,7 @@ dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have
 # results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
 # plots_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/plots")
-results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/"
+results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/5smargin fluxes/"
 
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
@@ -49,7 +50,7 @@ quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #to
 
 
 
-#Load csv files produced by raw2flux_miguelEdit.R. script
+#Load csv files produced by raw2flux_miguel_edits_5smargin.R. script
 #Last run with 5second crop of start-times and end-times (croped after all map_incubations corrections). 
 
 # setwd(results_path)
@@ -69,8 +70,6 @@ table_results_all$siteID <- str_sub(table_results_all$subsite, start = 4, 8)
 
 
 table_results_all <- table_results_all[!is.na(table_results_all$lightCondition),]
-
-# table_results_all <- table_results_all[table_results_all$CO2_best.flux<1000,]
 
 #Load subsites level_incubation CSV files with details of flux calulation for different models (produced by raw2flux.R script)
 get_full_detailed_table <- function(table_results_all, variable){
@@ -279,7 +278,7 @@ write.csv(table_quality_field, file=paste0(quality_path,"Inspection_table_allinc
 
 #All incubations inspected: crop and discard decissions noted in excel:
 # Inspection_table_allincubations_tocrop.xlsx
-#Inspection based on plots of fluxes produced by start-stop times of corrected fieldsheets (raw2flux) plus a 5 second margin to start_time and stop_time: all start-stop times for final calculations have to include the 5 second margins plus (if aplicable) the cropping decission logged in excell.
+#Inspection based on plots of fluxes produced by start-stop times of corrected fieldsheets plus a 5 second margin to start_time and stop_time: all start-stop times for final calculations have to include the 5 second margins plus (if aplicable) the cropping decission logged in excell.
 
 
 #Common patterns during inspection: 
@@ -288,7 +287,7 @@ write.csv(table_quality_field, file=paste0(quality_path,"Inspection_table_allinc
 
 #Inspection plots-----
 
-#Use the pdfs created by raw2flux_miguel_edits to inspect and note weird things in the inspection_table_TOFILL
+#Use the pdfs created by raw2flux_miguel_edits_5smargin to inspect and note weird things in the inspection_table_TOFILL
 
 #What time exactly is in plots?
 #Second 0 in plots is exactly start.time_gofluxfit (wich is 5s after the start-time from fieldsheet-corrections)
