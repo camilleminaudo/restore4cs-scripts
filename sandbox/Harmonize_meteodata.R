@@ -10,17 +10,28 @@
 # --- Description of this script
 #This script harmonizes the meteo data uploaded by the case-pilots to a format useful for GHG chamber temperature and pressure correction of fluxes. 
 
-# 1. Compile Subsites lat/long centroids.
+# 1. Compile Subsites lat/long centroids. Produce Map_meteo stations with assignment of each subsite to the closest meteo-station
 
 # 2. Harmonize various meteo-data files, retaining common variables, each station has its own unique station_id
 
-# 3. Produce Map_meteo stations with assignment of each subsite to the closest meteo-station
+# 3. Combine dataset, check and subset dates. Save the data for sampling days and for whole data-availability
+#All subsites hourly except for RI (10-minute resolution)
+
+# 4. Retrieve modelled historical data for each subsite individually from open-meteo.com
+
+
+#All data is saved in Meteo / Formated_data as csv files
+
+
+
 
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
 
 # install.packages("geosphere")
+# install.packages("openmeteo")
+
 # ---- packages ----
 library(tidyverse)
 library(readxl)
@@ -28,7 +39,7 @@ library(lubridate)
 library(ggplot2)
 library(sf)#for geographical calculations
 library(geosphere)
-
+library(openmeteo)
 repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
 files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
 for (f in files.sources){source(f)}
@@ -109,7 +120,7 @@ subsite_station <- subsites_sf %>%
 rm(meteo_sf, subsites_sf, centroids_subsites,meteo_metadata)
 
 #Save subsite-station correspondence
-write.csv(subsite_station, file = paste0(meteopath,"/Formated_data/correspondence_meteostation.csv"),row.names = F)
+write.csv(subsite_station, file = paste0(meteopath,"/Formated_data/correspondence_subsite-meteostation.csv"),row.names = F)
 
 
 
@@ -123,11 +134,10 @@ write.csv(subsite_station, file = paste0(meteopath,"/Formated_data/correspondenc
 # Patm_hPa,
 # precip_mm,
 # humidity_percent,
-# __________________________globalrad_UNITS_TBD 
+# globalrad_wperm2
 # windspeed_ms,
 # winddir_degrees
-
-#optional variables: cloudcover_percent (CU)
+#cloudcover_percent (CU)
 
 ##CA####
 #CAMARGUE
@@ -154,9 +164,11 @@ ca_Arles<- ca %>%
          Patm_hPa=as.numeric(Patm_hPa),
          globalrad_joulepersquarecm=as.numeric(globalrad_joulepersquarecm),
          windspeed_ms=as.numeric(windspeed_ms),
-         winddir_degrees=as.numeric(winddir_degrees)) %>% 
-  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm,humidity_percent, globalrad_joulepersquarecm, #STILL TO DETERMINE UNIFIED UNITS FOR IRRADIANCE
-         windspeed_ms,winddir_degrees)
+         winddir_degrees=as.numeric(winddir_degrees),
+         cloudcover_percent=NA_real_) %>% 
+  mutate(globalrad_Wperm2= globalrad_joulepersquarecm*(10000/3600)) %>%  #multiply 10^4 to transform to meters, divide by 3600 s in one hour. This assumes the joule per cm2 measure was integrated over 1h. 
+  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm,humidity_percent, globalrad_Wperm2,
+         windspeed_ms,winddir_degrees,cloudcover_percent)
 
 
 rm(ca)
@@ -189,11 +201,13 @@ rm(ca)
 
 
 cu_Nida<- read_tsv(file = paste0(meteopath,"/Meteo_CU/Nida_202309-202409.txt")) %>% 
-  mutate(station_id="CU_Nida") %>% 
+  mutate(station_id="CU_Nida",
+         globalrad_Wperm2=NA_real_) %>% 
   rename(datetime_utc=observationTimeUtc,temp_c=airTemperature,Patm_hPa=seaLevelPressure,
          precip_mm=precipitation, humidity_percent=relativeHumidity, 
          windspeed_ms=windSpeed, winddir_degrees=windDirection,cloudcover_percent=cloudCover) %>% 
-  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm,humidity_percent, #globalrad_joulepersquarecm, #NO DATA AVAILABLE YET
+  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm,humidity_percent,
+         globalrad_Wperm2, #NO DATA AVAILABLE YET
          windspeed_ms,winddir_degrees,
          cloudcover_percent)
   
@@ -206,15 +220,15 @@ cu_Nida<- read_tsv(file = paste0(meteopath,"/Meteo_CU/Nida_202309-202409.txt")) 
 #Stations: Two valid
 #Span: 2023-09-01 to 2024-09-30
 #Frequency: hourly
-#Timezone: UNKNOWN
-#Radiation units: "global_radiation" UNKNOWN
+#Timezone: UTC (Contantin email)
+#Radiation units: "global_radiation" W/m2 (constantin email)
 
 
 #3 stations supplied, 2 close to subsites: DA_Mahmudia, 	DA_Tulcea 
 #Hourly data
 
 # da_Mahmudia and da Tulcea, both with the same columns and names
-#time (YYYY-MM-DD HH:MM:SS), assumed utc CONFIRM
+#time (YYYY-MM-DD HH:MM:SS),
 #air_temp (ºC)
 #pressure: hPa
 #precipitation (units?), assumed mm/h
@@ -225,22 +239,22 @@ cu_Nida<- read_tsv(file = paste0(meteopath,"/Meteo_CU/Nida_202309-202409.txt")) 
 
 da_Mahmudia<- read.csv(paste0(meteopath, "/Meteo_DA/Mahmudia.csv")) %>% 
   rename(datetime_utc=time, temp_c=air_temp, Patm_hPa=pressure, precip_mm=precipitation,windspeed_ms=wind_speed,
-         winddir_degrees=wind_direction, humidity_percent=humidity, globalrad_units=global_radiation) %>% 
+         winddir_degrees=wind_direction, humidity_percent=humidity, globalrad_Wperm2=global_radiation) %>% 
   mutate(station_id="DA_Mahmudia", 
          datetime_utc=as.POSIXct(datetime_utc, tz="utc", format="%Y-%m-%d %H:%M:%S"),
-         winddir_degrees=ifelse(winddir_degrees==360,0,winddir_degrees)) %>% 
-  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees,
-         globalrad_units)
+         winddir_degrees=ifelse(winddir_degrees==360,0,winddir_degrees),
+         cloudcover_percent=NA_real_) %>% 
+  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent)
 
 
 da_Tulcea<- read.csv(paste0(meteopath, "/Meteo_DA/Tulcea.csv")) %>% 
   rename(datetime_utc=time, temp_c=air_temp, Patm_hPa=pressure, precip_mm=precipitation,windspeed_ms=wind_speed,
-         winddir_degrees=wind_direction, humidity_percent=humidity, globalrad_units=global_radiation) %>% 
+         winddir_degrees=wind_direction, humidity_percent=humidity, globalrad_Wperm2=global_radiation) %>% 
   mutate(station_id="DA_Tulcea", 
          datetime_utc=as.POSIXct(datetime_utc, tz="utc", format="%Y-%m-%d %H:%M:%S"),
-         winddir_degrees=ifelse(winddir_degrees==360,0,winddir_degrees)) %>% 
-  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees,
-         globalrad_units)
+         winddir_degrees=ifelse(winddir_degrees==360,0,winddir_degrees),
+         cloudcover_percent=NA_real_) %>% 
+  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent)
   
   
 
@@ -251,7 +265,7 @@ da_Tulcea<- read.csv(paste0(meteopath, "/Meteo_DA/Tulcea.csv")) %>%
 #Stations: Two valid, same file
 #Span: 2023-09-01 to 2024-10-01
 #Frequency: hourly
-#Timezone: UNKNOWN
+#Timezone: UTC checked in website
 #Radiation units: Global radiation (in J/cm2) 
 
 
@@ -322,14 +336,14 @@ du_format <- du[, du_selection] %>%
          Patm_hPa=P/10, #get P in hPa
          precip_mm=if_else(RH==-1, 0, RH/10),#substitute "<0.5mm" code (-1) with 0, and transform to mm units
          humidity_percent=U,
-         globalrad_joulepersquarecm=Q,
          windspeed_ms=FH/10, 
          winddir_degrees=case_when(DD%in%c(0,990)~NA_real_, #set 0=calm 990=variable to NA
                                    DD==360~0, #set North from 360 to 0
                                    TRUE~DD),
-         cloudcover_percent=ifelse(N==9, NA_real_, N/8*100)) %>% #Set 9 (sky not vissible fog/heavysnow) to NA, transform to % 
+         cloudcover_percent=ifelse(N==9, NA_real_, N/8*100),#Set 9 (sky not vissible fog/heavysnow) to NA, transform to % 
+         globalrad_Wperm2=Q*(10000/3600)) %>% #Transform to W/m2 (multiply to get m2 and divide by 3600s in an hour)
   select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees,
-         globalrad_joulepersquarecm, cloudcover_percent)
+         globalrad_Wperm2, cloudcover_percent)
   
 
 
@@ -351,8 +365,8 @@ rm(du, du_format, du_selection)
 #Stations: one
 #Span: 2023-09-01 to 2024-09-30
 #Frequency: 10 minutes
-#Timezone: UNKNOWN
-#Radiation units: "Rsolar"  UNKNOWN
+#Timezone: RI data is in local time (there were jumps consistent with summertime adjustments in sunrise/sunset data) convert to UTC at import
+#Radiation units: "Rsolar"  globalrad_Wperm2, infered from values magnitudes
 
 #RIA DE AVEIRO
 #Time resolution: 10minutes
@@ -362,7 +376,7 @@ rm(du, du_format, du_selection)
 
 #We will use the variables at 10m, 
 #Assumed units: 
-#TIME : assumed utc 
+#TIME : it is tz WET 
 #Prec_tot: mm accummulated in last 10 minutes, it will be integrated hourly (i.e. precipitation in the last hour) even when reporting it every 10 minutes. 
 #TA10: atmospheric temperature at 10m (ºC)
 #HR10: percent relative humidity at 10m (%)
@@ -372,13 +386,14 @@ rm(du, du_format, du_selection)
 #Press: atmospheric pressure (hPa)
 
 
+
 ri<- read_xlsx(path=paste0(meteopath,"/Meteo_RI/Dados_09_2023_a_09_2024.xlsx"))
 
 ri_selection<- c("TIME", "Prec_Tot", "TA10", "HR10", "V10m", "V10m_Dir", "Rsolar", "Press")
 
 ri_EMA<- ri[,ri_selection] %>% 
   mutate(station_id="RI_EMA",
-         datetime_utc=TIME,
+         datetime_utc=force_tzs(TIME, tzones="WET",tzone_out = "UTC"), #forze the timezone change to utc (read_xlsx always assumes UTC)
          temp_c=TA10,
          Patm_hPa=Press,
          precip_mm= Prec_Tot +  
@@ -389,15 +404,16 @@ ri_EMA<- ri[,ri_selection] %>%
            lag(Prec_Tot, 5, default = NA), #Integrate precip_mm to each hour (every 10 minutes, the sum of precipitation in last hour is reported)
          humidity_percent=HR10,
          windspeed_ms=V10m,
-         winddir_degrees=ifelse(V10m_Dir==360, 0, V10m_Dir),
-         globalrad_units=Rsolar) %>% # substitute 360 N for 0 N
-         select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees,
-                globalrad_units)
+         winddir_degrees=ifelse(V10m_Dir==360, 0, V10m_Dir),# substitute 360 N for 0 N
+         globalrad_Wperm2=Rsolar,#Global radiation is in W/m2
+         cloudcover_percent=NA_real_) %>% 
+         select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent)
 
-str(ri_EMA)
 
-####TO-DO------
+
+####hourly_RI: TO-DO------
 #Produce another dataset for RI with hourly resolution (to have an homogeneous dataset across case-pilots)
+
 # ri_EMAh<- ri %>% 
   #Generate truncated datetime_utc only hour resolution, group by truncated_datetime, summarise (mean, na.rm=T), EXCEPTIONS: precip_mm: subsitute NAs with 0 and sum per hour, winddir_degrees: special function to search trigonometric mean (rad transformation so that mean of 0.1 and 359.9 produces 0), Globalrad_units: Investigate first how the global radiation is reported, to see if it makes sense to do mean or sum (if is cumulative radiation E/area or energyflux/area). 
   
@@ -412,7 +428,7 @@ rm(ri,ri_selection)
 #Stations: one
 #Span: 2023-01-01 to 2024-07-31
 #Frequency: hourly
-#Timezone: UNKNOWN
+#Timezone: UTC (assumed)
 #Radiation units: Solar radiation" W/squaremeter
 
 #VALENCIA: 
@@ -447,99 +463,184 @@ va_CEAV<- va_CEAV[,va_selection] %>%
          humidity_percent=`Relative Hum`,
          windspeed_ms=`Wind velocity`,
          winddir_degrees=ifelse(`Wind direction`==360, 0, `Wind direction`),
-         globalrad_Wattpersquarmeter=`Solar radiation`
+         globalrad_Wperm2=`Solar radiation`,
+         cloudcover_percent=NA_real_,
+         precip_mm=NA_real_
          ) %>% 
   select(station_id, datetime_utc, temp_c,Patm_hPa,
          # precip_mm,  # MISSING PRECIPITATION
-         humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wattpersquarmeter)
+         humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,precip_mm,cloudcover_percent)
 
 
 rm(va_selection, units_va_CEAV)
   
 
-#---3. Check tz and radiation units -----
+#---3. Check, subset and save -----
 
-#CAMARGUE
-#Span: 2023-01-01 to 2024-10-28
-#Frequency: hourly
-#Timezone: "UTC" checked
-#Radiation units: Global rad (Joule /cm2) (mean71, max371)
+#Solar radiation can be reported in Joules per area or watt per area. The difference is that Joules is energy and watt is power (energy per s). 
 
-#CURONIAN
-#Span: 2023-09-01 to 2024-09-30
-#Frequency: hourly
-#Timezone: "UTC" checked
-#Radiation units: NA (data not available)
+#We will transform all units to global irradiance: SI: W per m^2 (instantaneous measure, radiative flux/area)
+#1W =1J per s
 
-#DANUBE
-#Stations: Two valid
-#Span: 2023-09-01 to 2024-09-30
-#Frequency: hourly
-#Timezone: UNKNOWN
-#Radiation units: "global_radiation" UNKNOWN (mean614, max3470) 
-#EMAIL SENT TO CONSTANTIN 20250320
+#IF irradiance is reported in jules / area, it is important to know how much time was the irradiance integrated for (usually this will be the frequency of measures). 
+
+#Watt/m^2: global irradiance ranges: Average annual solar radiation arriving at the top of the Earth's atmosphere is roughly 1361 W/m2.[34] The Sun's rays are attenuated as they pass through the atmosphere, leaving maximum normal surface irradiance at approximately 1000 W/m2 at sea level on a clear day. When 1361 W/m2 is arriving above the atmosphere (when the Sun is at the zenith in a cloudless sky), direct sun is about 1050 W/m2, and global radiation on a horizontal surface at ground level is about 1120 W/m2.[35] The latter figure includes radiation scattered or reemitted by the atmosphere and surroundings.
+
+#To transform joulespercm2 to wperm2 we have assumed that the frequency of measures is the integration time of solar energy (1h=3600s)
 
 
-#DUTCH Delta
-#Stations: Two valid, same file
-#Span: 2023-09-01 to 2024-10-01
-#Frequency: hourly
-#Timezone: UNKNOWN
-#Radiation units: "Global radiation" (in J/cm2)  (mean45, max333)
-
-#RIA DE AVEIRO
-#Stations: one
-#Span: 2023-09-01 to 2024-09-30
-#Frequency: 10 minutes
-#Timezone: UNKNOWN
-#Radiation units: "Rsolar"  UNKNOWN (mean171, max1152) infered: W/squaremeter
-
-#VALENCIA
-#Stations: one
-#Span: 2023-01-01 to 2024-07-31
-#Frequency: hourly
-#Timezone: UNKNOWN
-#Radiation units: Solar radiation" W/squaremeter (mean 210, max1070)
+#JOIN data from all subsites AND CHECK THAT all values are consistent with their reported units
+all<- rbind(ca_Arles,cu_Nida, da_Mahmudia, da_Tulcea, du_323, du_340, ri_EMA, va_CEAV)
 
 
-#We need to check timezone for valencia, aveiro, dutch delta, danube use radiation data for sunrise and sunset, it shoudl be mostly ok (differences should be apparent in a year of data)
+all %>% 
+  mutate(site_id=substr(station_id,1,2)) %>% 
+  mutate(variable="Global Radiation (W per m^2)") %>% 
+  group_by(site_id,variable) %>%
+  select(globalrad_Wperm2) %>% 
+  summarise(avg_=mean(globalrad_Wperm2,na.rm=T),
+            sd_=sd(globalrad_Wperm2,na.rm=T),
+            max_=max(globalrad_Wperm2,na.rm=T),
+            median_=median(globalrad_Wperm2,na.rm=T))
 
 
+all %>% 
+  filter(!is.na(globalrad_Wperm2))%>% 
+  mutate(site=substr(station_id,1,2)) %>% 
+  filter(globalrad_Wperm2>0) %>% 
+  ggplot(aes(x=site, y=globalrad_Wperm2))+
+  geom_boxplot()+
+  ggtitle("Overview, non-zero Global radiation (W per m^2)")
+
+#DANUBE DATA IS OBVIOUSLY NOT in the units that constantin reported by email. Response sent, he will contact back when he gets confirmation from people responsible for meteodata calculation for DA
+
+#We will set danube data on global radiation to NA for the moment
+
+all<- all %>% 
+  mutate(globalrad_Wperm2=if_else(grepl("DA", station_id),NA,globalrad_Wperm2))
 
 
+#Get combination of case_pilot& samplingday to subset full dataset to only dates of sampling:
+site_daystokeep <- fieldsheet %>%
+  mutate(season_site = substr(subsite, 1, 5)) %>%
+  group_by(season_site) %>%
+  mutate(start_date = min(date),
+         end_date = max(date)) %>%
+  select(season_site, start_date, end_date) %>%
+  distinct() %>%
+  mutate(sampling_days = purrr::map2(start_date, end_date, seq.Date, by = "day")) %>%
+  unnest(sampling_days) %>% 
+  ungroup() %>% 
+  mutate(site=substr(season_site,4,5)) %>% 
+  select(site, sampling_days) %>% 
+  distinct() %>% 
+  mutate(site_daystokeep=paste(site,sampling_days,sep = "_")) %>% 
+  pull(site_daystokeep)
+  
 
-summary(ca_Arles)
-summary(da_Tulcea)
-summary(du_323)
-summary(ri_EMA)
-summary(va_CEAV)
-names(ca_Arles)
+#Subset dataset for sampling dates at each case_pilot (keeping different station_id per case_pilot if present)
+meteo_sampling_days<- all %>% 
+  mutate(site_day=paste(substr(station_id, 1,2),as_date(datetime_utc), sep = "_")) %>% 
+  filter(site_day%in%site_daystokeep) %>% 
+  select(-site_day) %>% 
+  arrange(datetime_utc,station_id)
+         
 
+#Save meteo_sampling_days
+write.csv(meteo_sampling_days, paste0(meteopath, "/Formated_data/allmeteostations_onlysamplingdays.csv"),row.names = F)
 
-da_Tulcea %>% 
-  filter(globalrad_units >0) %>% 
-  pull(globalrad_units ) %>% 
-  hist(breaks = 30)
+#Save meteo_all
+write.csv(all, paste0(meteopath, "/Formated_data/allmeteostations_alldays.csv"), row.names = F)
 
-
-threshold<- 0.5
-
-sunrise_sunset <- da_Mahmudia %>%
-  mutate(
-    date = as.Date(datetime_utc),
-    hour = hour(datetime_utc),
-    solar_radiation=globalrad_units
-  ) %>% 
-  group_by(date) %>%
-  arrange(datetime_utc) %>%
-  mutate(
-    sunrise = if_else(lag(solar_radiation) <= threshold & solar_radiation > threshold, datetime_utc, NA),
-    sunset = if_else(lag(solar_radiation) > threshold & solar_radiation <= threshold, datetime_utc, NA)
-  ) %>%
-  summarise(
-    sunrise = min(sunrise, na.rm = TRUE),  # Find the first occurrence of sunrise for each day
-    sunset = max(sunset, na.rm = TRUE)     # Find the last occurrence of sunset for each day
-  )
+rm(ca_Arles, cu_Nida,da_Mahmudia,da_Tulcea,du_323,du_340, ri_EMA, va_CEAV)
 
 
 
+#4. API retrieve open-meteo-----
+
+#Open-meteo provides historical meteorological data from re-analysis and forecast at specific locations with 9km spatial resolution and hourly. 
+
+ 
+#Set start and end dates to retrieve: full year for all subsites sept23-sept24
+start<- "2023-09-01"
+end<- "2024-08-31"
+
+#Create a table for API-download from open-meteo.com with site_subsite and location(lat,lon):
+subsite_locations<- subsite_station %>% 
+  rowwise() %>% 
+  mutate(location=list(c(lat_subsite, lon_subsite))) %>% 
+  select(site_subsite, location) 
+
+#Create list of variables to retrieve
+hourly_variables<- c("temperature_2m",
+                     "relative_humidity_2m",
+                     "pressure_msl",
+                     "surface_pressure",
+                     "precipitation",
+                     "cloud_cover",
+                     "wind_speed_10m",
+                     "wind_direction_10m",
+                     "diffuse_radiation",
+                     "shortwave_radiation",
+                     "soil_temperature_0_to_7cm",
+                     "soil_moisture_0_to_7cm"
+                     )
+
+
+
+#This loop does not work (exceeded the Minutely API request limit)
+for(i in subsite_locations$site_subsite){
+print(i)
+  
+location=unlist(subsite_locations[which(subsite_locations$site_subsite==i),]$location)
+
+#Retrieve hourly variables
+openmeteo_subsite <- weather_history(location = location,
+                              start=start,end=end,
+                              response_units = list(temperature_unit = "celsius", 
+                                                    windspeed_unit = "ms", 
+                                                    precipitation_unit = "mm"),
+                              hourly = hourly_variables,
+                              timezone = "UTC")
+
+#Wait for a bit to avoid exceeding API request limit
+Sys.sleep(2.5)
+
+#Add site_subsite identifier (eg. CA-A1, DU-R2,...)
+openmeteo_subsite$site_subsite<- i
+
+#Combine openmeteo_substie with rest
+if(i==subsite_locations$site_subsite[1]){
+  openmeteo_all<- openmeteo_subsite }else{
+    openmeteo_all<- rbind(openmeteo_all, openmeteo_subsite)}
+
+rm(openmeteo_subsite)
+
+}
+
+#Data from different subsites is very similar for most cases (VA is the same for all variables except for surface pressure and relative humidity)
+openmeteo_all %>% 
+  filter(grepl("VA", site_subsite)) %>%
+  pivot_longer(cols = -c(datetime, site_subsite), names_to = "var",values_to = "value") %>% 
+  group_by(datetime, var) %>% 
+  summarise(sd_=sd(value)) %>% 
+  filter(sd_>0) %>% 
+  ungroup() %>% 
+  select(var) %>% 
+  distinct()
+
+
+
+#Save openmeteo_all
+write.csv(x = openmeteo_all, file = paste0(meteopath,"/Formated_data/openmeteo_retrieved_per_subsite.csv"),row.names = F)
+
+
+
+#OPENMETEO citation: 
+# Zippenfenig, P. (2023). Open-Meteo.com Weather API [Computer software]. Zenodo. https://doi.org/10.5281/ZENODO.7970649
+# 
+# Hersbach, H., Bell, B., Berrisford, P., Biavati, G., Horányi, A., Muñoz Sabater, J., Nicolas, J., Peubey, C., Radu, R., Rozum, I., Schepers, D., Simmons, A., Soci, C., Dee, D., Thépaut, J-N. (2023). ERA5 hourly data on single levels from 1940 to present [Data set]. ECMWF. https://doi.org/10.24381/cds.adbb2d47
+# 
+# Muñoz Sabater, J. (2019). ERA5-Land hourly data from 2001 to present [Data set]. ECMWF. https://doi.org/10.24381/CDS.E2161BAC
+# 
+# Schimanke S., Ridal M., Le Moigne P., Berggren L., Undén P., Randriamampianina R., Andrea U., Bazile E., Bertelsen A., Brousseau P., Dahlgren P., Edvinsson L., El Said A., Glinton M., Hopsch S., Isaksson L., Mladek R., Olsson E., Verrelle A., Wang Z.Q. (2021). CERRA sub-daily regional reanalysis data for Europe on single levels from 1984 to present [Data set]. ECMWF. https://doi.org/10.24381/CDS.622A565A
