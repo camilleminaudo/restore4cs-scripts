@@ -226,12 +226,7 @@ duplicate_incubations<-field2 %>%
                                            transparent_dark)) |>dplyr::filter(n > 1L) %>% 
   merge.data.frame(field2, by=c("pilot_site", "subsite", "date", "plot_id", "chamber_type", "strata", "longitude", "latitude", "water_depth","transparent_dark"), all = F) %>% pull(UniqueID)
 duplicate_incubations
-
-#Remove suspicious/erroneous incubations from duplicate_incubations: removed 2 incubations from fieldsheet
-#S1-VA-A1-12-v-d-15:06 wrong
-#S1-VA-A1-12-v-t-14:58 wrong
-#there are repetition with good-looking fluxes for these two incubations.
-
+#No duplicate incubations
 
 
 #Check for missing transparent_dark
@@ -319,7 +314,7 @@ veg[!veg$plotcode%in%vegetated_plots$plotcode,]
 
 
 #S2-RI, S1-CA, S2-CA, S2-CU, S3-VA, S4-CA: unmatched vegetation data was corrected based on sample distribution of chambers and vegetation samples. Modifications are commented in vegetation excel.  
-#S2-RI had some correction, but remaining unmatched vegetation data cannot be assigned to vegetated chambers (no obvious correspondence or typos)
+#S2-RI had some correction, but remaining unmatched vegetation data CANNOT be assigned to vegetated chambers (no obvious correspondence or typos)
 
 
 #Vegetated plotsGHG without vegetationDW 91 chambers without vegetation data
