@@ -221,7 +221,7 @@ cu_Nida<- read_tsv(file = paste0(meteopath,"/Meteo_CU/Nida_202309-202409.txt")) 
 #Span: 2023-09-01 to 2024-09-30
 #Frequency: hourly
 #Timezone: UTC (Contantin email)
-#Radiation units: "global_radiation" W/m2 (constantin email)
+#Radiation units: "global_radiation" KJ/m2 (constantin email)
 
 
 #3 stations supplied, 2 close to subsites: DA_Mahmudia, 	DA_Tulcea 
@@ -235,25 +235,31 @@ cu_Nida<- read_tsv(file = paste0(meteopath,"/Meteo_CU/Nida_202309-202409.txt")) 
 #wind_speed (units?), assumed m/s
 #wind_direction (degrees, 1-360) substitute 360 N with 0 N
 #humidity (percent humidity)
-#global_radiation (Units?) NO UNITS ASSUMED, will check values to infere
+#global_radiation (Units?):Kj/m2 (according to Constantin email) 
+
+#1J/s = 1 W
+
+#Apparently KJ /m2, reported every hour, most likely, KJ/(m2*h), multiply by 1000 and divide by 3600 s/h
 
 da_Mahmudia<- read.csv(paste0(meteopath, "/Meteo_DA/Mahmudia.csv")) %>% 
   rename(datetime_utc=time, temp_c=air_temp, Patm_hPa=pressure, precip_mm=precipitation,windspeed_ms=wind_speed,
-         winddir_degrees=wind_direction, humidity_percent=humidity, globalrad_Wperm2=global_radiation) %>% 
+         winddir_degrees=wind_direction, humidity_percent=humidity, globalrad_KJperm2=global_radiation) %>% 
   mutate(station_id="DA_Mahmudia", 
          datetime_utc=as.POSIXct(datetime_utc, tz="utc", format="%Y-%m-%d %H:%M:%S"),
          winddir_degrees=ifelse(winddir_degrees==360,0,winddir_degrees),
-         cloudcover_percent=NA_real_) %>% 
+         cloudcover_percent=NA_real_,
+         globalrad_Wperm2=globalrad_KJperm2*1000/3600) %>% 
   select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent)
 
 
 da_Tulcea<- read.csv(paste0(meteopath, "/Meteo_DA/Tulcea.csv")) %>% 
   rename(datetime_utc=time, temp_c=air_temp, Patm_hPa=pressure, precip_mm=precipitation,windspeed_ms=wind_speed,
-         winddir_degrees=wind_direction, humidity_percent=humidity, globalrad_Wperm2=global_radiation) %>% 
-  mutate(station_id="DA_Tulcea", 
+         winddir_degrees=wind_direction, humidity_percent=humidity, globalrad_KJperm2=global_radiation) %>% 
+  mutate(station_id="DA_Mahmudia", 
          datetime_utc=as.POSIXct(datetime_utc, tz="utc", format="%Y-%m-%d %H:%M:%S"),
          winddir_degrees=ifelse(winddir_degrees==360,0,winddir_degrees),
-         cloudcover_percent=NA_real_) %>% 
+         cloudcover_percent=NA_real_,
+         globalrad_Wperm2=globalrad_KJperm2*1000/3600) %>% 
   select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent)
   
   
@@ -512,12 +518,7 @@ all %>%
   geom_boxplot()+
   ggtitle("Overview, non-zero Global radiation (W per m^2)")
 
-#DANUBE DATA IS OBVIOUSLY NOT in the units that constantin reported by email. Response sent, he will contact back when he gets confirmation from people responsible for meteodata calculation for DA
-
-#We will set danube data on global radiation to NA for the moment
-
-all<- all %>% 
-  mutate(globalrad_Wperm2=if_else(grepl("DA", station_id),NA,globalrad_Wperm2))
+#DANUBE solar radiation DATA was reported in KJ/m2 (according to Constantin), we inferred that it was integrated over 1 hour and, after unit transformation to W (J/s) per squaremeter, the values match the expected results. 
 
 
 #Get combination of case_pilot& samplingday to subset full dataset to only dates of sampling:
