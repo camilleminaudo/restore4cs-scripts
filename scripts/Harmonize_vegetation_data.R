@@ -136,7 +136,7 @@ rm(veg, vegetated_plots,vegetated_plots_veg,vegetation_dw_final, gaiadata_veg)
 
 #4. Final Format-----
 #Import the harmonized dataset
-vegetation<- read_xlsx(path = paste0(vegetation_path,"RESTORE4Cs_ABGbiomass_vegetated_plots_picturedescription.xlsx"))
+vegetation<- read_xlsx(path = paste0(vegetation_path,"RESTORE4Cs_ABGbiomass_vegetated_plots_picturedescription.xlsx"),na = "NA")
 
 #Perform the final formatting (combine as text the 3 vegetation description columns)
 vegetation_final_format<- vegetation %>% 
@@ -146,10 +146,20 @@ vegetation_final_format<- vegetation %>%
          Vegetation_description_3) %>% 
   mutate(vegetation_description=paste0(Vegetation_description_1,"; ",Vegetation_description_2,"; ",Vegetation_description_3)) %>% 
   mutate(vegetation_description=gsub("; NA","", vegetation_description)) %>% 
-  mutate(vegetation_description=if_else(vegetation_description=="NA",NA,vegetation_description)) %>% 
+  mutate(vegetation_description=if_else(vegetation_description=="NA",NA,vegetation_description),
+         ABG_biomass_gpersquaremeter=as.numeric(ABG_biomass_gpersquaremeter)) %>% 
   select(plotcode, ABG_biomass_gpersquaremeter, originVegID, vegetation_description)
 
 
 
 #Save final formatted vegetation
 write.csv(vegetation_final_format, file = paste0(vegetation_path,"RESTORE4Cs_finalvegetation_ABG_biomass_description.csv"),row.names = F)
+
+
+
+#Check final dataset:
+vegetation_final_format %>% 
+  select(-originVegID) %>% 
+  summarise(total_samples=sum(!is.na(plotcode)),
+            n_biomasses=sum(!is.na(ABG_biomass_gpersquaremeter)),
+            n_vegetation_description=sum(!is.na(vegetation_description)))

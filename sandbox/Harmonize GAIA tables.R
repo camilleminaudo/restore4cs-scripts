@@ -131,4 +131,3 @@ pictures_only<- harmonized_all %>%
 
 write.csv(pictures_only, file = paste0(gaia_path,"Pictures_urls.csv"),row.names = F)
  
-
