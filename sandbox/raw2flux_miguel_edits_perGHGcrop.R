@@ -1,7 +1,7 @@
 
 
 # ---
-# Authors: Camille Minaudo edits by MIGUEL CABRERA (Feb 2025)
+# Authors: Camille Minaudo edits by MIGUEL CABRERA (April 2025)
 # Project: "RESTORE4Cs"
 # date: "Oct 2023"
 # https://github.com/camilleminaudo/restore4cs-scripts
@@ -10,12 +10,17 @@
 # --- Description of this script
 # This script computes fluxes for all incubations present in the fieldsheet for a given sampling season
 # User has to specify which sampling has to be processed, and all the rest is done automatically.
+
+#TO-DO------
 #EDITS Miguel: 
-  #Comments and formating sections
-  #Improvement Picarro starstop corrections
-  #Licor map_injections corrected
-  #Artefact detector (constant slope or negative GHG)
-  #Per-incubation cropping of start and stop after visual inspection of every incubation.
+  #DONE: Comments and formating sections
+  #DONE: Improvement Picarro starstop corrections
+  #DONE: Licor map_injections corrected
+  #DONE: Per-GHG cropping of start and stop after visual inspection of every incubation.
+  #DONE: Use meteo-stations instead of data-loggers for flux.term (section Auxtable prep)
+
+#TO-DO: Update ebullition method with camille's new function (Section Diffusion vs ebullition)
+#TO-DO: set criteria per-GHG for best.flux, & adjust k.mult in goflux (if needed)
 
 
 
@@ -50,7 +55,7 @@ for (f in files.sources){source(f)}
 
 #---USER OPTIONS ----- 
 #sampling is the pattern to select in the fieldsheet filenames, every matching fieldsheet will have their incubations processed.
-sampling <- "S" 
+sampling <- "S4-CA" 
 
 #create/update RDATA?
 harmonize2RData <- F
@@ -61,11 +66,7 @@ doPlot <- T
 #Minimum duration of incubation (seconds) to calculate flux for
 minimum_duration_for_flux<- 100
 
-#Shoulder goflux: number of seconds to look outside of incubation start-end supplied (leave as 0)
-shoulder_goflux<- 0 
 
-#Artefact definition: how many seconds (minimum) of constant slope constitute an incubation with artefact?
-artefact_duration_threshold<- 5
 
 # ---- Directories ----
 dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
@@ -73,12 +74,14 @@ datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 loggerspath <- paste0(datapath,"/RAW Data Logger")
 RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
+quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #quality assessment, crop decisions and flags after inspection.
+meteo_path<- paste0(dropbox_root, "/Meteo/Formated_data/")
 
 # results_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 #Final run in local pc
-results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/Per_incubation_cropped_fluxes/"
+results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/Per_GHG_cropped_fluxes/"
 plots_path <- paste0(results_path,"level_incubation/")
-quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #quality assessment, crop decisions and flags after inspection.
+
 
 
 #_________________####
@@ -254,57 +257,10 @@ fieldsheet_Licor$unix_stop <- fieldsheet_Licor$unix_start + duration_fieldsheet
 fieldsheet_LosGatos <- fieldsheet[fieldsheet$gas_analyzer=="Los Gatos",]
 
 #Combine all fieldsheets with corrected times based on map_incubations when available
-fieldsheet_beforecrop <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
+fieldsheet <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
 
 
-## ----Cropping after inspection-----
- 
-#Import table with decisions and cropping amounts: all cropping is based on last run of 5-s margin script, so we have to re-add this 5 seconds to the cropping margins
-croping<- read_xlsx(paste0(quality_path, "Inspection_table_allincubations_tocrop.xlsx"),na = "NA")
-
-
-#Simplify and add the additional 5s of cropping to all crop_start_s and crop_end_s: Inspection and cropping decisions were taken on fluxes calculated based on 5-s margin. WE re-add this 5s of margin here for all incubations (custom-cropped or not) 
-croping_simple<- croping %>%
-  select(UniqueID, crop_start_s, crop_end_s) %>%
-  mutate(crop_start_s=case_when(is.na(crop_start_s)~5,
-                                TRUE~crop_start_s+5),
-         crop_end_s=case_when(is.na(crop_end_s)~5,
-                              TRUE~crop_end_s+5)) %>%
-  rename(uniqID=UniqueID)
-
-#ANY incubation to re-inspect?
-if(sum(!is.na(croping$To_recheck))>0){
-  message("CAUTION: these incubations need to be re-checked and re-cropped. Incomplete artefact removal. ")
-  print(croping %>%
-          filter(!is.na(To_recheck)) %>%
-          select(UniqueID))
-}
-
-#ANY incubation without not inspected?
-if(sum(!fieldsheet_beforecrop$uniqID%in%croping_simple$uniqID)>0){
-message("The following incubations were never inspected or cropped, script did not produce a flux for them:")
-print(fieldsheet_beforecrop[!fieldsheet_beforecrop$uniqID%in%croping_simple$uniqID,c("uniqID","gas_analyzer","comments")])
-}
-#No missing incubation from S1
-#1 missing incubation from S2: 
-# s2-cu-r1-8-o-d-09:38 Los Gatos    Battery 1 stopped mid sample, there is no data for this incubation
-#2 missing incubation from S3:
-# s3-cu-p2-9-o-d-11:58  LI-COR       Times not in raw-data (Was here when LICOR BROKE?
-# s3-cu-p2-10-o-d-12:07 LI-COR       Times not in raw-data (Was here when LICOR BROKE?
-#No missing incubation from S4
-
-
-#Add the cropping decission to the fieldsheets:
-fieldsheet<- fieldsheet_beforecrop %>%
-  merge.data.frame(croping_simple, by="uniqID",all.x = T) %>%
-  mutate(unix_start=case_when(!is.na(crop_start_s)~unix_start+crop_start_s,
-                              TRUE~unix_start),
-         unix_stop=case_when(!is.na(crop_end_s)~unix_stop-crop_end_s,
-                              TRUE~unix_stop)) %>%
-  select(-c(crop_end_s,crop_start_s ))
-
-
-#This is legacy, the custom-cropping above make this section redundant.
+#This is legacy, the custom-cropping implemented in auxfile per-gas makes this section redundant.
 # fieldsheet$unix_start <- fieldsheet$unix_start+margin_s_after_start
 # fieldsheet$unix_stop <- fieldsheet$unix_stop-margin_s_before_end
 
@@ -451,6 +407,36 @@ if(harmonize2RData){
 #_________________####
 #FLUX CALCULATION####
 
+
+#----0. Load crop & Meteo-----
+
+#Import table with decisions and cropping amounts: all cropping is based on last run of 5-s margin script, so we have to re-add this 5 seconds to the cropping margins
+croping<- read_xlsx(paste0(quality_path, "Inspection_table_allincubations_tocrop_perGHG.xlsx"),na = "NA")
+
+#Simplify and add the additional 5s of cropping to all crop-start and crop-end: Inspection and cropping decisions were taken on fluxes calculated based on 5-s margin. WE re-add this 5s of margin here for all incubations (custom-cropped or not) 
+croping_simple<- croping %>%
+  select(UniqueID, 
+         co2_start_crop_s, co2_end_crop_s,
+         ch4_start_crop_s, ch4_end_crop_s) %>%
+  mutate(h2o_start_crop_s=5, h2o_end_crop_s=5) %>% #add 5s crop for all h2o
+  mutate(co2_start_crop_s=case_when(is.na(co2_start_crop_s)~5,
+                                    TRUE~co2_start_crop_s+5),
+         co2_end_crop_s=case_when(is.na(co2_end_crop_s)~5,
+                                  TRUE~co2_end_crop_s+5),
+         ch4_start_crop_s=case_when(is.na(ch4_start_crop_s)~5,
+                                    TRUE~ch4_start_crop_s+5),
+         ch4_end_crop_s=case_when(is.na(ch4_end_crop_s)~5,
+                                  TRUE~ch4_end_crop_s+5))# add 5s to all crop decissions for co2 and ch4
+
+#croping_simple is used to adapt the auxfile for each gas in the section Goflux calculation
+
+#Load data for all meteostations and correspondence of subsite-meteostation (used to subset the correct data)
+
+meteocorresp <- read_csv(paste0(meteo_path, "correspondence_subsite-meteostation.csv"),show_col_types = F)
+
+meteodata <- read_csv(paste0(meteo_path,"allmeteostations_onlysamplingdays.csv"),show_col_types = F)
+
+
 # ----- 1. Auxtable prep -----
 
 # This section loops over each subsite and performs the flux calculation for CO2 and CH4
@@ -464,77 +450,9 @@ for (subsite in subsites){
   corresp_fs <- fieldsheet[fieldsheet$subsite == subsite,]
   gs <- first(corresp_fs$gas_analyzer)
   
-  ## ----1.1. Import looger data----
-  # read corresponding temperature logger file and keep initial temperature
-  SN_logger_float <- first(corresp_fs$logger_floating_chamber)
-  SN_logger_tube <- first(corresp_fs$logger_transparent_chamber)
-  site_ID <- str_sub(subsite, start = 1, end = 5)
-  
-  # finding out if corresponding file exists, and its extension
-  dir_exists_loggdata <- dir.exists(paste0(loggerspath,"/",site_ID,"/"))
-  if(dir_exists_loggdata){
-    f <- list.files(paste0(loggerspath,"/",site_ID,"/"), full.names = T)
-    r <- grep(pattern = ".hobo", x = f)
-    if(length(r)>0){f <- f[-r]}
-    r <- grep(pattern = ".txt", x = f)
-    if(length(r)>0){f <- f[-r]}
-    f_ext <- file_ext(f)
-    i_f_float <- grep(pattern = SN_logger_float, x = f)[1]
-    i_f_tube <- grep(pattern = SN_logger_tube, x = f)[1]
-  }
-  
-  if(!is.na(SN_logger_float) & !is.na(i_f_float)){
-    is_data_logger_float = T
-    message("...reading corresponding temperature logger file for floating chamber")
-    if(f_ext[i_f_float]=="xlsx"){
-      data_logger_float <- readxl::read_xlsx(f[i_f_float],col_names = T)
-    } else if(f_ext[i_f_float]=="csv"){
-      data_logger_float <- read.csv(f[i_f_float], header = T)
-    }
-    data_logger_float <- data_logger_float[,seq(1,3)]
-    names(data_logger_float) <- c("sn","datetime","temperature")
-    data_logger_float$sn <- SN_logger_float
-    if(is.character(data_logger_float$datetime)){
-      data_logger_float$datetime <- as.POSIXct(data_logger_float$datetime, tz = 'utc', tryFormats = c("%m/%d/%y %r", "%d/%m/%Y %H:%M"))
-    }
-    data_logger_float$unixtime <- as.numeric(data_logger_float$datetime)
-  } else {
-    message("===> no data logger linked to the floating chamber!")
-    is_data_logger_float = F}
-  if(dim(data_logger_float)[1]<10){
-    message("===> not enough data could be linked to the floating chamber!")
-    is_data_logger_float = F
-  }
-  
-  if(!is.na(SN_logger_tube) & !is.na(i_f_tube)){
-    is_data_logger_tube = T
-    message("...reading corresponding temperature logger file for tube chamber")
-    if(f_ext[i_f_tube]=="xlsx"){
-      data_logger_tube <- readxl::read_xlsx(f[i_f_tube],col_names = T)
-    } else if(f_ext[i_f_tube]=="csv"){
-      data_logger_tube <- read.csv(f[i_f_tube], header = T, fill = T)
-    }
-    data_logger_tube <- data_logger_tube[,seq(1,4)]
-    names(data_logger_tube) <- c("sn","datetime","temperature","light")
-    data_logger_tube$sn <- SN_logger_tube
-    if(is.character(data_logger_tube$datetime)){
-      if(length(grep(pattern = "AM", x = first(data_logger_tube$datetime)))>0 | length(grep(pattern = "PM", x = first(data_logger_tube$datetime)))>0){
-        data_logger_tube$datetime <- as.POSIXct(data_logger_tube$datetime, tz = 'UTC', format = c("%m/%d/%y %r"))
-      } else {
-        data_logger_tube$datetime <- as.POSIXct(data_logger_tube$datetime, tz = 'UTC', format = "%m/%d/%Y %H:%M")
-      }
-    }
-    data_logger_tube$unixtime <- as.numeric(data_logger_tube$datetime)
-  } else {
-    is_data_logger_tube = F
-    message("===> no data logger linked to the tube chamber!")
-  }
-  if(dim(data_logger_tube)[1]<10){
-    message("===> not enough data could be linked to the tube chamber!")
-    is_data_logger_tube = F
-  }
-  
-  
+  #Load the appropriate meteo-data for this subsite:
+  meteostation<- meteocorresp[meteocorresp$site_subsite==substr(subsite,4,8),]$station_id
+  subsite_meteo<- meteodata %>% filter(station_id==meteostation)
   
   setwd(RData_path)
   if(gs== "LI-COR"){
@@ -543,8 +461,10 @@ for (subsite in subsites){
     gs_suffix <- gs
   }
   
-  #----1.2. Per-incubation aux variables----
+  
+  ##----1.1. Per-incubation aux variables----
   auxfile <- NULL
+  
   if(file.exists(paste0(subsite,"_",gs_suffix,".RData"))){
     load(file = paste0(subsite,"_",gs_suffix,".RData"))
     
@@ -556,32 +476,29 @@ for (subsite in subsites){
       
       if (dim(my_incub)[1]>0){
         
-        # Compute Temperature, Area and Volume from fieldsheet info
+        # Compute Temperature (ºC) and pressure (kPa) for the initial moment of incub using the meteo data (using approx to interpolate from hourly data):
         myTemp <- 15 # a default temperature to run the flux calculation...
+        myPcham <- 100.1 #kPa, a default atm pressure to run the flux calculation
+        
+        myTemp <- first(approx(as.numeric(subsite_meteo$datetime_utc), subsite_meteo$temp_c, xout=as.numeric(my_incub$POSIX.time))$y)
+        
+        myPcham<- first(approx(as.numeric(subsite_meteo$datetime_utc), subsite_meteo$Patm_hPa/10, xout=as.numeric(my_incub$POSIX.time))$y)
+        
+        #Get Area and Volume of chamber from fieldsheet data
         if (corresp_fs$chamber_type[incub] == "floating"){
-          if(is_data_logger_float){
-            myTemp <- median(approx(data_logger_float$unixtime, data_logger_float$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
-          }
           #Floating chamber used in Restore4Cs is half sphere of 38cm diameter. radius=19cm
           myArea<- pi*19^2 #cm2
           myVtot<- (((4/3)*pi*(19^3))/1000 )/2# L
           
-          #OLD VALUES, Unclear where they came from, wrong!          
-          # myArea = 14365.4439 # cm2
-          # myVtot = 115/2 # L
-          
         } else if (corresp_fs$chamber_type[incub] == "tube"){
-          if(is_data_logger_tube){
-            myTemp <- median(approx(data_logger_tube$unixtime, data_logger_tube$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
-          }
+          #Tube chamber area is multiplied by height to get the Volume
           myArea = pi*12.1**2 # cm2
           myVtot = myArea*as.numeric(corresp_fs$chamber_height_cm[incub])*1e-3 # L
         } else {
           warning("chamber type not correct!")
         }
-        myPcham <- 100.1 #kPa
         
-        # --- 1.3. Create auxfile table ----
+        # --- 1.2. Create auxfile table ----
         # An auxfile table, made of fieldsheet, adding important variables. The auxfile
         # requires start.time and UniqueID.
         # start.time must be in the format "%Y-%m-%d %H:%M:%S"
@@ -612,7 +529,7 @@ for (subsite in subsites){
     message("---> Could not find corresponding ",gs," data")
   }
   
-# ---- 4. Goflux calculation-------
+# ---- 2. Checks-------
 
   if (length(auxfile)>1){
     
@@ -624,47 +541,134 @@ for (subsite in subsites){
     # we only keep incubations where chamber dimensions are known
     auxfile <- auxfile[!is.na(auxfile$Vtot),] # in case chamber height is not specified in the fieldsheet...
     auxfile <- auxfile[!is.na(auxfile$Area),]
+  
     
-    # Define the measurements' window of observation
-    # auxfile <- auxfile
-    mydata_ow <- obs.win(inputfile = mydata, auxfile = auxfile,
-                         obs.length = auxfile$duration, shoulder = shoulder_goflux)
+#3. Per-GHG crop------    
     
-    # Join mydata_ow with info on start end incubation
-    mydata_auto <- lapply(seq_along(mydata_ow), join_auxfile_with_data.loop, flux.unique = mydata_ow) %>%
-      map_df(., ~as.data.frame(.x))
+    #Create 3 separate auxfiles, one per GHG, with modified start.time and duration based on cropping decissions per GHG (h2o is only cropped by 5s start and end: inspection runned with these margings)
     
-    # Additional auxiliary data required for flux calculation.
-    mydata_auto <- mydata_auto %>%
-      left_join(auxfile %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
+    auxfile_co2<- auxfile %>% 
+      left_join(croping_simple %>% select(UniqueID,co2_start_crop_s,co2_end_crop_s), by="UniqueID") %>% 
+      mutate(start.time=start.time+co2_start_crop_s,
+             duration=duration-(co2_start_crop_s+co2_end_crop_s)) %>% 
+      select(-c(co2_start_crop_s, co2_end_crop_s))
     
-    # Add instrument precision for each gas
-    mydata_auto <- mydata_auto %>%
+    auxfile_ch4<- auxfile %>% 
+      left_join(croping_simple %>% select(UniqueID,ch4_start_crop_s,ch4_end_crop_s), by="UniqueID") %>% 
+      mutate(start.time=start.time+ch4_start_crop_s,
+             duration=duration-(ch4_start_crop_s+ch4_end_crop_s)) %>% 
+      select(-c(ch4_start_crop_s, ch4_end_crop_s))
+    
+    auxfile_h2o<- auxfile %>% 
+      left_join(croping_simple %>% select(UniqueID,h2o_start_crop_s,h2o_end_crop_s), by="UniqueID") %>% 
+      mutate(start.time=start.time+h2o_start_crop_s,
+             duration=duration-(h2o_start_crop_s+h2o_end_crop_s)) %>% 
+      select(-c(h2o_start_crop_s, h2o_end_crop_s))
+    
+    
+    #Define the measurements window of observation (one per GHG)
+    #suppressMessagesto avoid the "Do not loop through more than 20 measurements...." message
+    suppressMessages({
+      mydata_ow_co2 <- obs.win(inputfile = mydata, auxfile = auxfile_co2,
+                         obs.length = auxfile_co2$duration, shoulder = 0)
+    
+      mydata_ow_ch4 <- obs.win(inputfile = mydata, auxfile = auxfile_ch4,
+                             obs.length = auxfile_ch4$duration, shoulder = 0)
+    
+      mydata_ow_h2o <- obs.win(inputfile = mydata, auxfile = auxfile_h2o,
+                             obs.length = auxfile_h2o$duration, shoulder = 0)
+    })
+    # Join mydata_ow with info on start end incubation  (one per GHG)
+    mydata_auto_co2 <- lapply(seq_along(mydata_ow_co2), join_auxfile_with_data.loop, flux.unique = mydata_ow_co2) %>%
+      map_df(., ~as.data.frame(.x)) %>%
+      # Add instrument precision for each gas
       mutate(CO2_prec = first(mydata$CO2_prec), CH4_prec = first(mydata$CH4_prec), 
              N2O_prec = first(mydata$N2O_prec), H2O_prec = first(mydata$H2O_prec))
     
+    mydata_auto_ch4 <- lapply(seq_along(mydata_ow_ch4), join_auxfile_with_data.loop, flux.unique = mydata_ow_ch4) %>%
+      map_df(., ~as.data.frame(.x)) %>%
+      # Add instrument precision for each gas
+      mutate(CO2_prec = first(mydata$CO2_prec), CH4_prec = first(mydata$CH4_prec), 
+             N2O_prec = first(mydata$N2O_prec), H2O_prec = first(mydata$H2O_prec))
+    
+    mydata_auto_h2o <- lapply(seq_along(mydata_ow_h2o), join_auxfile_with_data.loop, flux.unique = mydata_ow_h2o) %>%
+      map_df(., ~as.data.frame(.x)) %>%
+      # Add instrument precision for each gas
+      mutate(CO2_prec = first(mydata$CO2_prec), CH4_prec = first(mydata$CH4_prec), 
+             N2O_prec = first(mydata$N2O_prec), H2O_prec = first(mydata$H2O_prec))
+
+    #This chunk does not do anything (all info from auxfile is already in mydata_auto_co2)    
+    # # Additional auxiliary data required for flux calculation. (one per GHG) 
+    # mydata_auto_co2 <- mydata_auto_co2 %>%
+    #   left_join(auxfile_co2 %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
+    # 
+    # mydata_auto_ch4 <- mydata_auto_ch4 %>%
+    #   left_join(auxfile_ch4 %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
+    # 
+    # # mydata_auto_h2o <- mydata_auto_h2o %>%
+    # #   left_join(auxfile_h2o %>% select(UniqueID, Area, Vtot, Tcham, Pcham))
+    # 
+    # # Add instrument precision for each gas  (one per GHG)
+    # mydata_auto_co2 <- mydata_auto_co2 %>%
+    #   mutate(CO2_prec = first(mydata$CO2_prec), CH4_prec = first(mydata$CH4_prec), 
+    #          N2O_prec = first(mydata$N2O_prec), H2O_prec = first(mydata$H2O_prec))
+    # 
+    # mydata_auto_ch4 <- mydata_auto_ch4 %>%
+    #   mutate(CO2_prec = first(mydata$CO2_prec), CH4_prec = first(mydata$CH4_prec), 
+    #          N2O_prec = first(mydata$N2O_prec), H2O_prec = first(mydata$H2O_prec))
+    # 
+    # mydata_auto_h2o <- mydata_auto_h2o %>%
+    #   mutate(CO2_prec = first(mydata$CO2_prec), CH4_prec = first(mydata$CH4_prec), 
+    #          N2O_prec = first(mydata$N2O_prec), H2O_prec = first(mydata$H2O_prec))
+    # 
+    
+#4. GOflux call -----
+    
+    
     # Calculate fluxes
-    CO2_results_auto <- goFlux(dataframe = mydata_auto, gastype = "CO2dry_ppm")
-    H2O_results_auto <- goFlux(dataframe = mydata_auto, "H2O_ppm")
-    CH4_results_auto <- goFlux(dataframe = mydata_auto, "CH4dry_ppb")
+    #K.mult sets the multiplier for maximum Kappa (curvature parameter of H.M. model), defaults to 1 (no multiplier)
+    
+    CO2_results_auto <- goFlux(dataframe = mydata_auto_co2, gastype = "CO2dry_ppm")
+    CH4_results_auto <- goFlux(dataframe = mydata_auto_ch4, gastype = "CH4dry_ppb")
+    H2O_results_auto <- goFlux(dataframe = mydata_auto_h2o, gastype = "H2O_ppm")
+    
+    
     
     # Use best.flux to select the best flux estimates (LM or HM)
     # based on a list of criteria
-    #Possibility to set different criteria for each gas, but same criteria for all incubation types (veg, water, bare,...)
-    criteria <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
+
+    ##BEST FLUX criteria-----
+    #Possibility to set different criteria for each gas
     
-    CO2_flux_res_auto <- best.flux(CO2_results_auto, criteria)
-    H2O_flux_res_auto <- best.flux(H2O_results_auto, criteria)
-    CH4_flux_res_auto <- best.flux(CH4_results_auto, criteria)
+    #Possible selection criteria: 
+    
+      #g.factor: arbitrary limit for HM/LM, defaults to 2 (if non-linearity is expected, this is not a good selection criteria). If threshold is exceeded, LM is chosen. Decission: DO NOT USE
+    
+      #kappa: compares the ratio k.HM/k.max to a threshold (default=1), is a measure of how extreme is the curvature fitted by HM against the theoretical maximum curvature (determined by LM.flux, MDF  and duration). IF the threshold is exceeded, LM is chosen.  Decision: USE (check first)
+    
+      #modelfit: equally weighted comparison for all of c("MAE", "RMSE", "AICc", "SE") included in criteria. Selection of model that performs best across most of the criteria included, in case of tie, HM is chosen.  
+    
+    #Warnings: "MDF", "nb.obs", "p-value", "intercept". Each of these included is issued as a warning, MDF (flux below detection), nb.obs (warn if less than 60s incubation), p-value (only for LM, return ~the sigificance of slope), intercept (allows to warn for starting concentrations outside thresholds)
+    
+    #With current parameters, kappa is never used as selection criteria (threshold is default kratio=1 and in goflux, the curvature is limited to the max kmult=1)
+    
+    
+    criteria_co2 <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")#SE.rel is not included in the function (but partial match makes function use "SE" as criteria)
+    criteria_ch4 <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
+    criteria_h2o <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
+    
+    CO2_flux_res_auto <- best.flux(CO2_results_auto, criteria_co2)
+    CH4_flux_res_auto <- best.flux(CH4_results_auto, criteria_ch4)
+    H2O_flux_res_auto <- best.flux(H2O_results_auto, criteria_h2o)
     
     
     #----5. Plot Goflux (optional)----
     if(doPlot){
       # Plots results
       # Make a list of plots of all measurements, for each gastype
-      CO2_flux_plots <- flux.plot(CO2_flux_res_auto, mydata_auto, "CO2dry_ppm")
-      H2O_flux_plots <- flux.plot(H2O_flux_res_auto, mydata_auto, "H2O_ppm")
-      CH4_flux_plots <- flux.plot(CH4_flux_res_auto, mydata_auto, "CH4dry_ppb")
+      CO2_flux_plots <- flux.plot(CO2_flux_res_auto, mydata_auto_co2, "CO2dry_ppm")
+      CH4_flux_plots <- flux.plot(CH4_flux_res_auto, mydata_auto_ch4, "CH4dry_ppb")
+      H2O_flux_plots <- flux.plot(H2O_flux_res_auto, mydata_auto_h2o, "H2O_ppm")
       
       # Combine plot lists into one list
       flux_plot.ls <- c(CO2_flux_plots, CH4_flux_plots, H2O_flux_plots)
@@ -683,57 +687,33 @@ for (subsite in subsites){
     CH4_res_meth1$diffusion <- NA
     
     #Only for plots with water, apply estimate of ebullition and diffusion
-    for (i in which(auxfile$water_depth>0)){
-      if(auxfile$water_depth[i]>0){
-        my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile$start.time[i] &
-                             as.numeric(mydata$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
+    for (i in which(auxfile_ch4$water_depth>0)){
+      if(auxfile_ch4$water_depth[i]>0){
+        my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile_ch4$start.time[i] &
+                             as.numeric(mydata$POSIX.time)< auxfile_ch4$start.time[i]+auxfile_ch4$duration[i],]
         my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
         # calling dedicated function
-        df_ebull <- separate_ebullition_from_diffusion(my_incub, UniqueID = auxfile$UniqueID[i], doPlot=F)
+        df_ebull <- separate_ebullition_from_diffusion(my_incub, UniqueID = auxfile_ch4$UniqueID[i], doPlot=F)
         # computing fluxes
         H2O_mol = my_incub$H2O_ppm / (1000*1000)
-        myfluxterm <- flux.term(auxfile$Vtot[i], auxfile$Pcham[i], auxfile$Area[i],
-                                auxfile$Tcham[i], first(H2O_mol))
+        myfluxterm <- flux.term(auxfile_ch4$Vtot[i], auxfile_ch4$Pcham[i], auxfile_ch4$Area[i],
+                                auxfile_ch4$Tcham[i], first(H2O_mol))
         CH4_flux_total <- df_ebull$delta_ch4/df_ebull$duration*myfluxterm # nmol/m2/s
         CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
         CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
       } else {
         #For plots without water, set ebullition to 0 
-        CH4_flux_total <- CH4_flux_ebull <- CH4_res_meth1$best.flux[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])]
+        CH4_flux_total <- CH4_flux_ebull <- CH4_res_meth1$best.flux[which(CH4_res_meth1$UniqueID==auxfile_ch4$UniqueID[i])]
         CH4_flux_ebull <- 0
       }
-      CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_total
-      CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_ebull
-      CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- CH4_flux_diff
+      CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==auxfile_ch4$UniqueID[i])] <- CH4_flux_total
+      CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==auxfile_ch4$UniqueID[i])] <- CH4_flux_ebull
+      CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==auxfile_ch4$UniqueID[i])] <- CH4_flux_diff
     }
     
     CH4_res_meth1$ebullition[which(CH4_res_meth1$ebullition<0)] <- 0
     
-    #---- 7. Artefact detection ----
-    
-    #Initialize artefact columns in CO2 and CH4 fluxes datasets
-    CO2_flux_res_auto$contains.artefact <- F
-    CH4_res_meth1$contains.artefact <- F
-    
-    for(i in which(!is.na(auxfile$UniqueID))){
-      
-      #Select GHG data from UniqueID
-      my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile$start.time[i] &
-                           as.numeric(mydata$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
-      # my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
-      
-      #Function looks for constant slope using second order derivative (also flags negative GHG)
-      #Check for artefact in CO2 series and flag if found
-      CO2_flux_res_auto$contains.artefact[which(CO2_flux_res_auto$UniqueID==auxfile$UniqueID[i])] <- is_constant_slope_or_neg_any_ghg(my_incub=my_incub, POSIX.time = "POSIX.time", check_cols = c("CO2dry_ppm"), duration = artefact_duration_threshold)
-      
-      #Check for artefact in CH4 series and flag if found
-      CH4_res_meth1$contains.artefact[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- is_constant_slope_or_neg_any_ghg(my_incub=my_incub, POSIX.time = "POSIX.time", check_cols = c("CO2dry_ppm"), duration = artefact_duration_threshold)
-      
-      
-    }
-    
-    
-    
+  
     
     #__________________####
     #SAVE RESULTS####
@@ -750,13 +730,13 @@ for (subsite in subsites){
     
     #Join simplified results for both gases in results_path
     table_results <- auxfile %>%
-      left_join(CO2_flux_res_auto %>% select(UniqueID, LM.flux, HM.flux, best.flux, model, quality.check, contains.artefact)) %>%
+      left_join(CO2_flux_res_auto %>% select(UniqueID, LM.flux, HM.flux, best.flux, model, quality.check),by = "UniqueID") %>%
       rename(CO2_LM.flux = LM.flux, CO2_HM.flux = HM.flux, CO2_best.flux = best.flux, CO2_best.model = model,
-             CO2_quality.check = quality.check, CO2_contains.artefact=contains.artefact) %>%
+             CO2_quality.check = quality.check) %>%
       left_join(CH4_res_meth1 %>% select(UniqueID, LM.flux, HM.flux, best.flux, best.flux, model, quality.check, 
-                                         diffusion, ebullition, contains.artefact)) %>%
+                                         diffusion, ebullition),by = "UniqueID") %>%
       rename(CH4_LM.flux = LM.flux, CH4_HM.flux = HM.flux, CH4_best.flux = best.flux, CH4_best.model = model, 
-             CH4_quality.check = quality.check, CH4_diffusive_flux = diffusion, CH4_ebullitive_flux = ebullition,  CH4_contains.artefact= contains.artefact)
+             CH4_quality.check = quality.check, CH4_diffusive_flux = diffusion, CH4_ebullitive_flux = ebullition)
     
     if (isFsubsite){
       isFsubsite <- F
