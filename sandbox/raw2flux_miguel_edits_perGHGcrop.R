@@ -55,13 +55,13 @@ for (f in files.sources){source(f)}
 
 #---USER OPTIONS ----- 
 #sampling is the pattern to select in the fieldsheet filenames, every matching fieldsheet will have their incubations processed.
-sampling <- "S4-CA" 
+sampling <- "S" 
 
 #create/update RDATA?
 harmonize2RData <- F
 
 #Save plots from goflux?
-doPlot <- T
+doPlot <- F
 
 #Minimum duration of incubation (seconds) to calculate flux for
 minimum_duration_for_flux<- 100
@@ -640,22 +640,21 @@ for (subsite in subsites){
     ##BEST FLUX criteria-----
     #Possibility to set different criteria for each gas
     
-    #Possible selection criteria: 
+    #Possible selection criteria: c("g.factor", "kappa", "MAE", "RMSE", "AICc", "SE" )
     
       #g.factor: arbitrary limit for HM/LM, defaults to 2 (if non-linearity is expected, this is not a good selection criteria). If threshold is exceeded, LM is chosen. Decission: DO NOT USE
     
-      #kappa: compares the ratio k.HM/k.max to a threshold (default=1), is a measure of how extreme is the curvature fitted by HM against the theoretical maximum curvature (determined by LM.flux, MDF  and duration). IF the threshold is exceeded, LM is chosen.  Decision: USE (check first)
+      #kappa: compares the ratio k.HM/k.max to a threshold (default=1), is a measure of how extreme is the curvature fitted by HM against the theoretical maximum curvature (determined by LM.flux, MDF  and duration). IF the threshold is exceeded, LM is chosen.  Decision: USE, check distribution of kappa and, if needed set a thrsehold lower than 1 so that kappa is used for selection.
     
-      #modelfit: equally weighted comparison for all of c("MAE", "RMSE", "AICc", "SE") included in criteria. Selection of model that performs best across most of the criteria included, in case of tie, HM is chosen.  
+      #modelfit: equally weighted comparison for all of c("MAE", "RMSE", "AICc", "SE") included in criteria. Selection of model that performs best across most of the criteria included, in case of tie, HM is chosen.
     
     #Warnings: "MDF", "nb.obs", "p-value", "intercept". Each of these included is issued as a warning, MDF (flux below detection), nb.obs (warn if less than 60s incubation), p-value (only for LM, return ~the sigificance of slope), intercept (allows to warn for starting concentrations outside thresholds)
     
-    #With current parameters, kappa is never used as selection criteria (threshold is default kratio=1 and in goflux, the curvature is limited to the max kmult=1)
     
     
-    criteria_co2 <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")#SE.rel is not included in the function (but partial match makes function use "SE" as criteria)
-    criteria_ch4 <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
-    criteria_h2o <- c("g.factor", "kappa", "MDF", "R2", "SE.rel")
+    #Common for all 3 gasses: only RMSE as measure of residuals (MAE conveys the same info)
+    
+    criteria_co2 <- criteria_ch4 <- criteria_h2o<- c("RMSE", "AICc","SE","kappa", "MDF")
     
     CO2_flux_res_auto <- best.flux(CO2_results_auto, criteria_co2)
     CH4_flux_res_auto <- best.flux(CH4_results_auto, criteria_ch4)

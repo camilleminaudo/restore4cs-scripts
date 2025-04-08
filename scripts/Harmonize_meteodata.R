@@ -255,7 +255,7 @@ da_Mahmudia<- read.csv(paste0(meteopath, "/Meteo_DA/Mahmudia.csv")) %>%
 da_Tulcea<- read.csv(paste0(meteopath, "/Meteo_DA/Tulcea.csv")) %>% 
   rename(datetime_utc=time, temp_c=air_temp, Patm_hPa=pressure, precip_mm=precipitation,windspeed_ms=wind_speed,
          winddir_degrees=wind_direction, humidity_percent=humidity, globalrad_KJperm2=global_radiation) %>% 
-  mutate(station_id="DA_Mahmudia", 
+  mutate(station_id="DA_Tulcea", 
          datetime_utc=as.POSIXct(datetime_utc, tz="utc", format="%Y-%m-%d %H:%M:%S"),
          winddir_degrees=ifelse(winddir_degrees==360,0,winddir_degrees),
          cloudcover_percent=NA_real_,
@@ -502,6 +502,7 @@ all<- rbind(ca_Arles,cu_Nida, da_Mahmudia, da_Tulcea, du_323, du_340, ri_EMA, va
 all %>% 
   mutate(site_id=substr(station_id,1,2)) %>% 
   mutate(variable="Global Radiation (W per m^2)") %>% 
+  filter(!is.na(globalrad_Wperm2))%>% 
   group_by(site_id,variable) %>%
   select(globalrad_Wperm2) %>% 
   summarise(avg_=mean(globalrad_Wperm2,na.rm=T),

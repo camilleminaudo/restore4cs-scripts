@@ -95,27 +95,85 @@ table_ch4 <- get_full_detailed_table(table_results_all, variable = "ch4")
 # ---- quality of model fits ----
 # c("MAE", "RMSE", "AICc", "SE") allowed in best.flux
 
-#In current run, criteria are "SE", "g.factor" ("kappa" included but non-working, due to k.HM already being limited to the max allowed in criteria)
+#In current run, criteria are "SE", "RMSE", "AICc", "kappa" ("kappa" included but non-working, due to k.HM already being limited to the max allowed in criteria)
 
 
 
-#
+#1. For fluxes below detection (MDF), the choice of model is not relevant (we can leave the best.flux result). 
 table_co2 %>% 
-  filter(!is.na(g.fact)) %>%
-  mutate(gfact_excess=g.fact>=2,
-         kappa_excess=HM.k>k.max,
-         se_excess=HM.SE>LM.SE&HM.SE>SE.lim) %>% 
-  select(model, gfact_excess,kappa_excess,se_excess) %>% 
-  mutate(any_breach=se_excess|gfact_excess|kappa_excess)
+  mutate(below_detection=abs(best.flux)<MDF.lim) %>%  
+  ggplot(aes(x=LM.r2, fill=below_detection))+
+  geom_histogram()+
+  facet_wrap(~below_detection, scales="free")
 
 
-      mutate(best.flux_se_gfact=case_when(g.fact>=2~"LM",
-                                      LM.SE<HM.SE~"LM",
-                                      HM.k>=k.max~"LM",
-                                      TRUE~"HM")) %>% 
-  mutate(agree=best.flux_se_gfact==model) %>% 
-  select(agree, g.fact, model, best.flux_se_gfact,HM.SE, LM.SE, SE.lim) %>% 
-  summarise(prop_agree=sum(agree)/sum(!is.na(best.flux_se_gfact)))
+
+#2. For fluxes with poor fit (R2< threshold), LM should be assumed to avoid noise creating artificially high fluxes.
+
+table_co2 %>% 
+  mutate(below_detection=abs(best.flux)<MDF.lim) %>%  
+  filter(!below_detection) %>% 
+  filter(LM.r2<0.5) %>% 
+  ggplot(aes(x=HM.r2/LM.r2, y=LM.r2, col=model))+
+  geom_point()
+
+
+#There are negative r2!! 
+table_co2 %>% 
+  filter(LM.r2<0|HM.r2<0) %>% 
+  select(UniqueID, quality.check, model, LM.r2, HM.r2, MDF.lim, best.flux) %>% 
+  mutate(below_detection=abs(best.flux)<MDF.lim) %>%  
+  arrange(below_detection)
+
+
+#General considerations: HM has the risk of overestimating fluxes, there should be a stricter criteria for chosing HM over LM when the difference (g.fact) is very large. Additionally, when fluxes are very low, the fit of the models is going to be worse, and the risk of overestimation is larger. 
+
+
+
+
+
+
+
+
+#SElect the "worst-HM" and inspect visually, 
+#inspect highest difference (g-fact) to see the adequacy. We should only go with HM when it fits really-really well. When the fit is not very good, it will be more prudent to trust the LM. 
+
+table_co2 %>% 
+  filter(!grepl("MDF",quality.check)) %>% 
+  filter(!is.na(g.fact)) %>% 
+  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>%
+  ggplot(aes(y=g.fact, fill=model))+
+  geom_histogram(bins = 100)+
+  geom_boxplot()+
+  facet_wrap(~model)
+
+
+
+
+table_co2 %>% 
+  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% 
+  ggplot(aes(x=g.fact, y=HM.r2, col=model))+
+  geom_point()+
+  scale_x_log10()
+
+
+table_co2 %>% 
+  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% 
+  ggplot(aes(x=LM.r2, y=HM.r2, col=model))+
+  geom_point()
+
+table_co2 %>% 
+  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% 
+  ggplot(aes(x=abs(LM.se.rel), y=abs(HM.se.rel), col=model))+
+  geom_point()
+
+
+table_co2 %>% 
+  filter(HM.r2>0.2&LM.r2>0.2) %>% 
+  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% 
+  ggplot(aes(x=(HM.r2/LM.r2), y=HM.k, col=model))+
+  geom_point()
+
 
 
 
@@ -132,6 +190,21 @@ table_co2 %>%
 table_co2 %>% 
   filter(g.fact==min(g.fact,na.rm = T)) %>% pull(UniqueID)
 
+table_ch4 %>% 
+  group_by(model) %>% 
+  filter(!is.na(g.fact)) %>% 
+  # filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% #this sample has HM= 0 unclear why, but method fails
+  summarise(maxg=max(g.fact),
+            ming=min(g.fact),
+            avg.g=mean(g.fact))
+
+table_co2 %>% 
+  filter(g.fact==min(g.fact,na.rm = T)) %>% pull(UniqueID)
+
+
+
+
+
 table_co2 %>% 
   filter(!is.na(g.fact)) %>% 
   filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>%
@@ -146,23 +219,26 @@ table_co2 %>%
 
 #Check the K.ratio between model fit and theoretical maximum:
 table_co2 %>% 
-  ggplot(aes(x=HM.k/k.max))+
-  geom_histogram()
+  ggplot(aes(x=HM.k/k.max, fill=model))+
+  geom_histogram(position = "identity")+
+  facet_wrap(~model)
 
 #k-ratio of 1 can represent: noisy measurements in which HM is not adequate or true "exagerated curvatures" when g-factor is very high (i.e. when the HM flux is very very high and the curvature has been limited to its maximum)
 table_co2 %>% 
   mutate(kratio=HM.k/k.max) %>% 
   filter(kratio==max(kratio, na.rm=T)) %>% 
-  select(UniqueID, HM.k, g.fact) %>% 
+  select(UniqueID, HM.RMSE, LM.RMSE, HM.k, g.fact) %>% 
   filter(g.fact>4) %>% 
   arrange(g.fact)
   
 # the samples with kratio==1, 
 
+#incubations with exagerated curvature (kappa==max.kappa)
 table_co2 %>% 
-  ggplot(aes(x=HM.k/k.max, y=HM.AICc/LM.AICc))+
+  mutate(kratio=HM.k/k.max) %>% 
+  filter(kratio==1) %>% 
+  ggplot(aes(x=g.fact, y=HM.AICc/LM.AICc, col=model))+
   geom_point()
-
 
 
 
@@ -246,7 +322,9 @@ ggplot(table_co2)+
   geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40,alpha = 0.5)+
   geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40,alpha=0.5)+
   labs(fill="R2")+
-  geom_vline(xintercept = 0.9)
+  geom_vline(xintercept = 0.9)+
+  facet_wrap(~model)
+
 
 #Examine R2 for CH4
 ggplot(table_ch4)+
