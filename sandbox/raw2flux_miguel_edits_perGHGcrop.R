@@ -61,7 +61,7 @@ sampling <- "S"
 harmonize2RData <- F
 
 #Save plots from goflux?
-doPlot <- F
+doPlot <- T
 
 #Minimum duration of incubation (seconds) to calculate flux for
 minimum_duration_for_flux<- 100

@@ -11,6 +11,20 @@
 # This script analyses the quality of fit of all fluxes to check the aproppriateness of selection criteria of best.flux function. This is based on the per-GHG cropped fluxes calculated.
 
 
+#Biggest risk is overestimating fluxes by chosing HM over LM when is the HM curvature is exagerated due to artefacts. The Exageration of curvature can be assessed based on the K.ratio and based on g-factor. 
+
+#g-factor should not be used to decide model when HM fit is "reasonably good"
+
+#General rules: for incubations with bad fit (R2 or SE rel), default to LM 
+
+#When there is a very strong curvature, the LM will progresively fit worse
+
+
+#FLuxes below detection for LM (LM.flux<MDF.lim), should be considered as such for both models (i.e. the choice of model should not make an insignificant flux become significant)
+
+#In practice, remove bdl fluxes before checking for best model
+
+
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -29,6 +43,8 @@ require(purrr)
 require(data.table)
 require(tools)
 library(ggpubr)
+library(ggExtra)
+
 
 repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
 files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
@@ -38,7 +54,7 @@ for (f in files.sources){source(f)}
 # ---- Directories and data loading ----
 dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
-
+quality_path<- paste0(dropbox_root,"/GHG/Working data/Incubation_quality/")
 # plots_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/plots")
 results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/Per_GHG_cropped_fluxes/"
 
@@ -89,6 +105,437 @@ table_ch4 <- get_full_detailed_table(table_results_all, variable = "ch4")
 
 
 
+#CO2 table filter------
+
+#Remove wrong incubations: those with too much influence of artefacts or wrong manipulations.
+inspectiontable<- read_xlsx(path = paste0(quality_path, "Inspection_table_allincubations_tocrop_perGHG.xlsx")) %>% 
+  select(UniqueID,co2_decission,co2_obs_inspection, ch4_decission,ch4_obs_inspection)
+
+unique(inspectiontable$co2_decission)
+co2_discard<- inspectiontable %>% filter(co2_decission=="discard") %>% pull(UniqueID)
+ch4_discard<- inspectiontable %>% filter(ch4_decission=="discard") %>% pull(UniqueID)
+
+table_co2<- table_co2 %>%  filter(!UniqueID%in%co2_discard)
+table_ch4<- table_ch4 %>%  filter(!UniqueID%in%ch4_discard)
+
+
+
+
+#1. For fluxes below detection (MDF), the choice of model is not relevant (we can leave the best.flux result). 
+table_co2 %>% 
+  mutate(below_detection=abs(LM.flux)<MDF.lim) %>%  
+  ggplot(aes(x=LM.r2, fill=below_detection))+
+  geom_histogram()+
+  facet_wrap(~below_detection, scales="free")
+
+
+co2_sig<- table_co2 %>% 
+  filter(abs(LM.flux)>MDF.lim)
+
+
+
+
+
+#Akaike weights------
+
+#Calculated from the AICc, it provides the probability of being the best model (0-1) 
+# Akaike weights give you a probabilistic interpretation of how much better one model is than the other
+
+
+# ---- Define your weights ----
+weights <- c(RMSE = 0.1, MAE = 0.1, CV = 0.1, AICc_weight = 0.7)  # Adjust as needed
+epsilon <- 1e-6  # Small constant to avoid division by zero
+
+# ---- Compute Akaike weights ----
+# Calculate the delta AICc for each model
+#It provides the probability of being the best model (0-1) 
+# Akaike weights give you a probabilistic interpretation of how much better one model is than the other
+
+co2_sig <- co2_sig %>%
+  mutate(
+    delta_AICc_LM = LM.AICc - pmin(LM.AICc, HM.AICc),  # Compare to the best AICc (min AICc)
+    delta_AICc_HM = HM.AICc - pmin(LM.AICc, HM.AICc),
+    
+    # Calculate the Akaike weights
+    AICc_weight_LM = exp(-0.5 * delta_AICc_LM) / (exp(-0.5 * delta_AICc_LM) + exp(-0.5 * delta_AICc_HM)),
+    AICc_weight_HM = exp(-0.5 * delta_AICc_HM) / (exp(-0.5 * delta_AICc_LM) + exp(-0.5 * delta_AICc_HM))
+  )
+
+# ---- Now we can calculate relative improvements and composite scores ----
+co2_sig <- co2_sig %>%
+  mutate(
+    # Compute CVs
+    LM.CV = LM.SE / (abs(LM.slope) + epsilon),
+    HM.CV = HM.SE / (abs(HM.slope) + epsilon),
+    
+    # Compute relative improvements (positive = HM is better, relative reduction in error)
+    Improvement.RMSE = (LM.RMSE - HM.RMSE) / LM.RMSE, 
+    Improvement.MAE  = (LM.MAE  - HM.MAE)  / LM.MAE,  
+    Improvement.CV   = (LM.CV   - HM.CV)   / LM.CV,   
+    
+    # Rescale AICc weights to [-1 LM is 100% likely to 1 HM is 100% likely]
+    Rescaled_AICc_weight_HM = 2 * AICc_weight_HM - 1,   # Rescale to [-1, 1]
+    
+    # Composite score using Akaike weights for AICc
+    Composite.Score = Rescaled_AICc_weight_HM * weights["AICc_weight"] +
+      Improvement.RMSE * weights["RMSE"] +
+      Improvement.MAE  * weights["MAE"] +
+      Improvement.CV   * weights["CV"],
+    
+    # Model decision
+    Preferred.Model = if_else(Composite.Score > 0, "HM", "LM")
+  )
+
+
+co2_sig %>%
+  ggplot(aes(x = Composite.Score, fill = Preferred.Model)) +
+  geom_histogram(bins = 60, alpha = 0.3) +
+  theme_minimal() +
+  labs(title = "Composite Model Preference by Timeseries",
+       x = "Composite Score (Positive = HM Better)",
+       y = "Count")
+
+
+co2_sig %>% 
+  ggplot(aes(x=AICc_weight_LM, fill=Preferred.Model))+
+  geom_histogram()+
+  scale_x_continuous(name="AICc weight for LM, probability of LM being best")
+
+
+#DIrect comparison of model quality LM vs HM
+#In current run, criteria are "SE", "RMSE", "AICc", 
+
+
+co2_sig %>% 
+  ggplot(aes(x=LM.AICc, y=HM.AICc, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+co2_sig %>% 
+  ggplot(aes(x=LM.RMSE, y=HM.RMSE, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+co2_sig %>% 
+  ggplot(aes(x=LM.SE, y=HM.SE, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+#Our best.flux criteria result in almost always choosing HM due to RMSE and AICc despite SE (HM wins 2:1)
+
+
+#RMSE and MAE give the exact same info (rmse should be a bit more sensitive to extreme residuals)
+co2_sig %>% 
+  ggplot(aes(x=LM.MAE, y=HM.MAE, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+co2_sig %>% 
+  ggplot(aes(x=LM.RMSE, y=HM.RMSE, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+
+co2_sig %>% 
+  ggplot(aes(x=LM.CV, y=HM.CV, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+
+
+#Check Relative improvement of fit vs risk of oversestimation (g.fact)
+
+co2_sig %>% 
+  ggplot(aes(x=(LM.RMSE-HM.RMSE)/LM.RMSE, y=g.fact, col=Preferred.Model))+
+  geom_point()+
+  scale_x_continuous(name="Relative improvement of RMSE with HM")+
+  scale_y_log10()
+
+co2_sig %>% 
+  ggplot(aes(x=(LM.MAE-HM.MAE)/LM.MAE, y=g.fact, col=Preferred.Model))+
+  geom_point()+
+  scale_x_continuous(name="Relative improvement of MAE with HM")
+
+co2_sig %>% 
+  ggplot(aes(x=(LM.CV-HM.CV)/LM.CV, y=g.fact, col=Preferred.Model))+
+  geom_point()+
+  scale_x_continuous(name="Relative improvement of CV with HM")
+
+co2_sig %>% 
+  ggplot(aes(x=AICc_weight_HM, y=g.fact, col=Preferred.Model))+
+  geom_point()+
+  scale_x_continuous(name="AICc weight for HM, probability of HM being best")+
+  scale_y_log10()
+
+
+
+
+co2_sig %>% 
+  filter(LM.r2>0.15) %>% 
+  filter(g.fact<=7.9695) %>% 
+  ggplot(aes(x=(HM.r2-LM.r2)/LM.r2, y=g.fact,col=Preferred.Model))+
+  geom_point()+
+  geom_label(data=. %>% filter(g.fact>4.3)
+               ,aes(label=UniqueID))+
+  scale_x_continuous(name="Relative Improvement of R2 with HM")
+
+
+
+
+
+co2_sig %>% 
+  filter(LM.r2>0.15) %>% 
+  filter(g.fact<=7.9695) %>% 
+  arrange(desc(g.fact)) %>% select(UniqueID, g.fact) %>% slice(seq(1:20)) %>% pull(UniqueID)
+
+
+#s4-du-r2-11-v-t-10:49 BAD FIT, weird artefact smooth DOUBT
+#s1-ca-p1-14-v-d-14:49 BAD fit, super noisy, should be linear (arbitrary HM)
+# s1-da-r2-12-v-t-11:31  cropped 2nd half, take linear estimate
+#S4-cu-r1-9-v-t Noisy, maybe advance start to get better results### DOUBT, test
+#"s2-cu-p1-13-o-d-10:11" Should be linear, smooth artefact creates bump for HM to win
+
+
+
+
+#comparison between RMSE and MAE to dectect extreme outliers
+co2_sig %>% 
+  ggplot(aes(x=LM.RMSE, y=LM.MAE, col=((LM.RMSE-1)>1.2*LM.MAE)))+
+  geom_point()+
+  geom_abline(intercept=-0,slope = 0.85)
+  
+#Samples with high-leverage outliers: 
+co2_sig  %>% filter((LM.RMSE-1)>1.2*LM.MAE) %>% arrange(desc(LM.RMSE/LM.MAE)) %>% pull(UniqueID)
+
+#"s2-cu-a1-6-o-d-09:23": spikes and point-artefacts, keep like this
+# "s2-cu-a1-7-o-d-09:37": keep like this
+#"s2-cu-p1-5-o-d-08:30": point artefacts, keep like this
+#"s2-va-a2-2-o-d-09:29": co2 spike mid-incubation, cannot crop
+
+
+#Same exercise with HM:
+co2_sig %>% 
+  ggplot(aes(x=HM.RMSE, y=HM.MAE, col=(HM.RMSE-1)>1.2*HM.MAE))+
+  geom_point()+
+  geom_abline(intercept=-0,slope = 0.85)
+
+co2_sig %>% 
+  filter(!(LM.RMSE>1.5*LM.MAE+1.5|LM.RMSE>2*LM.MAE)) %>% 
+  ggplot(aes(x=HM.RMSE,y=HM.RMSE/HM.MAE))+
+  geom_point()+
+  geom_label(data = . %>% filter(HM.RMSE>2*HM.MAE), aes(label=UniqueID))
+
+#Fixed what could be fixed for cropping decissions based on HM mae vs rmse
+
+
+
+
+
+
+co2_sig %>% 
+  ggplot(aes(x=LM.SE, y=HM.SE, col=HM.SE>LM.SE))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+ggMarginal(p = co2_sig %>% 
+             ggplot()+
+  geom_point(aes(x=abs(LM.se.rel), y=abs(HM.se.rel), col=abs(HM.se.rel)>abs(LM.se.rel)))+
+  geom_abline(slope = 1, intercept=0.6)+
+    scale_x_log10()+
+    scale_y_log10()
+)
+
+ggMarginal(p = co2_sig %>% 
+  ggplot(aes(x=LM.r2, y=HM.r2, col=abs(LM.se.rel)>1))+
+  geom_point()+
+  geom_abline(slope = 1)+
+  geom_hline(yintercept = 0.9)
+
+)
+
+
+
+ggMarginal(p = co2_sig %>% 
+             ggplot(aes(x=LM.r2, y=abs(LM.se.rel), col=abs(LM.se.rel)>1))+
+             geom_point()+
+             scale_y_log10()
+
+)
+
+
+
+co2_sig %>% 
+  ggplot(aes(x=abs(LM.flux), y=abs(HM.flux), col=LM.r2>HM.r2))+
+  geom_point()+
+  geom_abline(slope = 1)+
+  scale_x_log10()+
+  scale_y_log10()
+
+co2_sig %>% 
+  ggplot(aes(x=HM.RMSE/LM.RMSE, y=HM.RMSE, col=HM.r2>0.95))+
+  geom_point()+
+  facet_wrap(~model)
+
+
+co2_sig %>% 
+  filter(g.fact<20) %>% 
+  ggplot()+
+  geom_point(aes(x=HM.r2,y=g.fact, col=model))+
+  geom_density(aes(x=HM.r2))+
+  geom_label(data=. %>% filter(g.fact>5),aes(x=HM.r2,y=g.fact,label=UniqueID))
+
+
+co2_sig %>% 
+  ggplot(aes(y=g.fact, x=HM.RMSE/LM.RMSE))+
+  geom_point()+
+  geom_label(data=. %>% filter(g.fact>20),aes(label=UniqueID))
+
+
+co2_sig %>% 
+  filter(g.fact>1.40) %>% 
+  ggplot(aes(x=HM.r2, y=LM.r2, col=g.fact))+
+  geom_point()
+
+
+#What is the maximum HM.k for very good models?
+
+co2_sig %>% 
+  filter(HM.r2>0.95) %>% 
+  ggplot(aes(x=g.fact, y=HM.k/k.max))+
+  geom_point()+
+  geom_label(data=. %>% filter(HM.k/k.max>0.35), aes(label=UniqueID))
+
+
+
+table_co2 %>% table_co2 %>% table_co2 %>% 
+  ggplot(aes(x=LM.r2, y=HM.r2))+
+  geom_point()+
+  geom_label(data=. %>% g.factaes())
+
+
+table_co2 %>% 
+  mutate(below_detectionLM=abs(LM.flux)<MDF.lim,
+         below_detectionHM=abs(HM.flux)<MDF.lim) %>% 
+  ggplot(aes(x=(HM.flux-LM.flux)/HM.flux, y=LM.r2, col=below_detectionLM))+
+  geom_point()
+
+table_co2 %>% 
+  mutate(below_detectionLM=abs(LM.flux)<MDF.lim,
+         below_detectionHM=abs(HM.flux)<MDF.lim) %>% 
+  summarise(prop_BDL_LM=sum(below_detectionLM)/n(),
+            prop_BDL_HM=sum(below_detectionHM, na.rm = T)/sum(!is.na(HM.flux)))
+
+
+
+table_co2 %>% 
+  ggplot(aes(x=(HM.flux-LM.flux)/HM.flux, y=(HM.r2-LM.r2)))+
+  geom_point()
+
+
+# ---- quality of model fits ----
+
+n <- dim(table_co2)[1]
+ind_lm <- which(table_co2$model=="LM")
+in_hm <- which(table_co2$model=="HM")
+
+message("Fluxes calculated for ",n, " different incubations.")
+message(" --- ",dim(table_results_all[table_results_all$strata=="bare",])[1] ," in bare ")
+message(" --- ",dim(table_results_all[table_results_all$strata=="open water",])[1] ," in open water ")
+message(" --- ",dim(table_results_all[table_results_all$strata=="vegetated",])[1] ," in vegetated")
+
+
+message("Best model is non-linear for ",round(length(in_hm)/n*100*100)/100,"% of the measurements")
+
+
+ind_flagged <- which(table_co2$quality.check!="")
+# table_co2$quality.check[ind_flagged]
+message(round(length(ind_flagged)/n*100*100)/100,"% of the measurements are flagged")
+
+
+in_hm_notflagged <- which(table_co2$model=="HM" & table_co2$quality.check=="")
+message("Best model is non-linear for ",round(length(in_hm_notflagged)/(n-length(ind_flagged))*100*100)/100,"% of the measurements not flagged")
+
+table.flags <- NULL
+for(flag in unique(table_co2$quality.check[ind_flagged])){
+  ind_mdf <- which(table_co2$quality.check==flag)
+  message(round(length(ind_mdf)/n*100*100)/100,"% of the measurements are flagged because of ",flag)
+  
+  table.flags <- rbind(table.flags,
+                       data.frame(flag = flag,
+                                  n = length(ind_mdf)))
+}
+table.flags$perc <- round(table.flags$n/n*100*100)/100
+table.flags <- table.flags[order(table.flags$n, decreasing = T),]
+table.flags
+
+
+
+table_co2[which(is.na(table_co2$quality.check)),]
+
+ggplot(co2_sig[which(!is.na(co2_sig$quality.check)),], 
+       aes(quality.check, (HM.flux-LM.flux)/HM.flux, fill = model))+
+  geom_hline(yintercept = c(-1,0,1), color = "grey70")+
+  geom_jitter(alpha=0.1, size=2, width = 0.1)+
+  geom_violin(alpha=0.2, scale = "width", draw_quantiles = c(0.5), aes(colour = model, fill = model))+
+  theme_article()+
+  # scale_x_log10()+
+  # scale_y_log10()+
+  ylim(c(-1,2))+
+  scale_fill_viridis_d(option = "A", end = 0.8, direction = -1)+
+  scale_colour_viridis_d(option = "A", end = 0.8, direction = -1)+
+  coord_flip()
+
+table_co2$diff_model <- (table_co2$HM.flux-table_co2$LM.flux)/table_co2$HM.flux
+
+n_less_10perc <- length(which(abs(table_co2$diff_model)<0.1))
+
+message("Linear and non-linear models have less than 10% difference for ",round(n_less_10perc/n*100*100)/100,"% of the measurements")
+
+ggplot(table_co2[order((table_co2$diff_model)),], aes(seq(1,n)/n*100, (diff_model)*100))+
+  geom_vline(xintercept = seq(0,100,50), color = "grey70")+
+  geom_hline(yintercept = c(-100,-10,0,10,100), color = "grey70")+
+  geom_point()+
+  # scale_y_log10()+
+  ylim(c(-50,120))+
+  xlab("Proportion of timeseries")+
+  ylab("Relative difference [% of HM flux]")+
+  theme_article()+ggtitle(paste0("HM-LM models difference is below 10% for ",round(n_less_10perc/n*100*10)/10,"% of the measurements"))
+
+
+ggplot(table_co2, aes(abs(best.flux), abs(diff_model)*100))+
+  # geom_vline(xintercept = seq(0,100,50), color = "grey70")+
+  geom_hline(yintercept = c(1,10,100), color = "grey70")+
+  geom_point(aes(colour = quality.check))+
+  scale_x_log10()+
+  # xlim(c(-50,50))+
+  # ylim(c(-50,120))+
+  # xlab("Proportion of timeseries")+
+  ylab("Relative difference [% of HM flux]")+
+  theme_article()+ggtitle(paste0("HM-LM models difference is below 10% for ",round(n_less_1perc/n*100*10)/10,"% of the measurements"))
+
+
+
+
+ggplot(co2_sig)+
+  geom_point(aes(abs(best.flux), HM.MAE, colour = "HM"), alpha=0.2, size=3)+
+  geom_point(aes(abs(best.flux), LM.MAE, colour = "LM"), alpha=0.2, size=3)+
+  theme_article()+
+  # xlim(c(0,50))+
+  scale_x_log10()+
+  scale_y_log10()+
+  ylab("MAE")+
+  scale_colour_viridis_d("model", option = "A", end = 0.8, direction = -1)
+
+
+ggplot(co2_sig, aes(LM.MAE, HM.MAE, shape=model,colour = model))+
+  geom_point(alpha=0.4, size=3)+
+  theme_article()+
+  scale_x_log10()+
+  scale_y_log10()+
+  scale_colour_viridis_d("best model", option = "A", end = 0.8, direction = -1)
+
+
+
 #Check which criteria is the "limiting factor" in the selection for each incubation. 
 
 
@@ -114,7 +561,7 @@ table_co2 %>%
   mutate(below_detection=abs(best.flux)<MDF.lim) %>%  
   filter(!below_detection) %>% 
   filter(LM.r2<0.5) %>% 
-  ggplot(aes(x=HM.r2/LM.r2, y=LM.r2, col=model))+
+  ggplot(aes(x=HM.r2, y=LM.r2, col=model))+
   geom_point()
 
 
@@ -140,8 +587,7 @@ table_co2 %>%
 
 table_co2 %>% 
   filter(!grepl("MDF",quality.check)) %>% 
-  filter(!is.na(g.fact)) %>% 
-  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>%
+  filter(!is.na(g.fact)) %>%
   ggplot(aes(y=g.fact, fill=model))+
   geom_histogram(bins = 100)+
   geom_boxplot()+
@@ -151,10 +597,26 @@ table_co2 %>%
 
 
 table_co2 %>% 
-  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% 
-  ggplot(aes(x=g.fact, y=HM.r2, col=model))+
+  ggplot(aes(x=g.fact, y=abs(HM.se.rel), col=model))+
   geom_point()+
   scale_x_log10()
+
+table_co2 %>% 
+  ggplot(aes(x=abs(g.fact), y=HM.r2, col=model))+
+  geom_point()+
+  scale_x_log10()
+
+table_co2 %>% 
+  select(UniqueID,g.fact, HM.se.rel, HM.SE,HM.r2, LM.se.rel,LM.SE,LM.r2, model) %>% 
+  arrange(desc(g.fact))
+
+
+
+
+
+
+
+
 
 
 table_co2 %>% 
@@ -182,7 +644,7 @@ table_co2 %>%
 table_co2 %>% 
   group_by(model) %>% 
   filter(!is.na(g.fact)) %>% 
-  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% #this sample has HM= 0 unclear why, but method fails
+  # filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% #this sample has HM= 0 unclear why, but method fails
   summarise(maxg=max(g.fact),
             ming=min(g.fact),
             avg.g=mean(g.fact))
@@ -222,6 +684,11 @@ table_co2 %>%
   ggplot(aes(x=HM.k/k.max, fill=model))+
   geom_histogram(position = "identity")+
   facet_wrap(~model)
+
+table_co2 %>% 
+  ggplot(aes(x=HM.k/k.max, y=g.fact, col=model))+
+geom_point()
+
 
 #k-ratio of 1 can represent: noisy measurements in which HM is not adequate or true "exagerated curvatures" when g-factor is very high (i.e. when the HM flux is very very high and the curvature has been limited to its maximum)
 table_co2 %>% 
