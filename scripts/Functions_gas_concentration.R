@@ -76,7 +76,7 @@ Kh_CO2 <- function(T_Celsius) {
 }
 
 Kh_N2O <- function(T_Celsius) {
-  (0.00024 * exp(1600 * (1 / (T_Celsius + 273.15) - 1 / 298.15))) * 101325 / 1000
+  (0.00024 * exp(2600 * (1 / (T_Celsius + 273.15) - 1 / 298.15))) * 101325 / 1000
 }
 
 #' Arguments

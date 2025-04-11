@@ -40,8 +40,8 @@ source(paste0(dirname(dirname(rstudioapi::getSourceEditorContext()$path)),"/func
 
 # set directories
 
-# dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" #Miguel's dropbox dir
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" #Camille's dropbox dir
+dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" #Miguel's dropbox dir
+# dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data" #Camille's dropbox dir
 
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
@@ -93,8 +93,9 @@ if(length(ind_erronous_times)>0){
 ind_duration_neg <- which(fieldsheet$unix_stop-fieldsheet$unix_start < 0)
 ind_duration_tooshort <- which(fieldsheet$unix_stop-fieldsheet$unix_start < 3*60)
 ind_duration_toolong <- which(fieldsheet$unix_stop-fieldsheet$unix_start > 15*60)
+ind_duration_na<- which(is.na(fieldsheet$unix_stop*fieldsheet$unixstart))
 
-ind_duration <- c(ind_duration_neg, ind_duration_tooshort, ind_duration_toolong)
+ind_duration <- c(ind_duration_neg, ind_duration_tooshort, ind_duration_toolong,ind_duration_na)
 
 fieldsheet$duration <- fieldsheet$unix_stop-fieldsheet$unix_start
 
@@ -221,6 +222,14 @@ if(length(ind_suspicious_chamb_type)>0){
   message("floating chamber used outside open water")
   as.data.frame(fieldsheet[ind_suspicious_chamb_type,c("pilot_site","subsite","person_sampling","plot_id","chamber_type","strata","chamber_height_cm")])
   fieldsheet_flagged <- append2table(fieldsheet, fieldsheet_flagged, ind_suspicious_chamb_type, "floating chamber used outside open water")
+}
+  
+
+ind_suspicious_chamb_type <- which(is.na(fieldsheet$transparent_dark)| (fieldsheet$strata!="vegetated"&fieldsheet$transparent_dark=="transparent"))
+if(length(ind_suspicious_chamb_type)>0){
+  message("light condition is NA or is transparent outside vegetated")
+  as.data.frame(fieldsheet[ind_suspicious_chamb_type,c("pilot_site","subsite","person_sampling","plot_id","chamber_type","strata","chamber_height_cm")])
+  fieldsheet_flagged <- append2table(fieldsheet, fieldsheet_flagged, ind_suspicious_chamb_type, "light condition is NA or is transparent outside vegetated")  
 }
 ```
 

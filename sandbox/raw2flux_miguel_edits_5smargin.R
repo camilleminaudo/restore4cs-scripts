@@ -1,6 +1,7 @@
 
+
 # ---
-# Authors: Camille Minaudo
+# Authors: Camille Minaudo edits by MIGUEL CABRERA (Feb 2025)
 # Project: "RESTORE4Cs"
 # date: "Oct 2023"
 # https://github.com/camilleminaudo/restore4cs-scripts
@@ -8,7 +9,19 @@
 
 # --- Description of this script
 # This script computes fluxes for all incubations present in the fieldsheet for a given sampling season
-# Use has to sepcify which sampling has to be processed, and all the rest is done automatically.
+# User has to specify which sampling has to be processed, and all the rest is done automatically.
+#additional flag is added if constant or negative GHG data is within incubation
+
+#IMPORTANT: 
+#This script calculates all fluxes, with start-stop times incubations based on:
+#Picarro: start-stop from Picarro software files (for all Picarro fluxes)
+#Licor: start-stop from remarks (when available) or from fieldsheets (when no remark is matched)
+#Los gatos: start-stop from fieldsheets
+
+#AFTER all start-stop times have been identified and corrected, 5 seconds of margin is applied to the start and  the end of the incubation
+
+##TO DO------
+# : Check Licor map_incubations to fieldsheet correspondence
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -32,7 +45,6 @@ require(purrr)
 require(msm)
 require(data.table)
 require(tools)
-
 require(pbapply)
 
 repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
@@ -40,25 +52,55 @@ files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T
 for (f in files.sources){source(f)}
 
 
-#################################
-sampling <- "S3"
-# USER, please specify if you want plots to be saved
-harmonize2RData <- T
+#---USER OPTIONS ----- 
+#sampling is the pattern to select in the fieldsheet filenames, every matching fieldsheet will have their incubations processed.
+sampling <- "S" #All fluxes will be calculated 
+
+#Set the 5s margin:
+margin_s_after_start <- 5 
+margin_s_before_end <- 5
+
+#create/update RDATA?
+harmonize2RData <- F
+
+#Save plots from goflux?
 doPlot <- T
-#################################
+
+#Minimum duration of incubation (seconds) to calculate flux for
+minimum_duration_for_flux<- 100
+
+#Shoulder goflux: number of seconds to look outside of incubation start-end supplied (leave as 0)
+shoulder_goflux<- 0 
+
+#Artefact definition: how many seconds (minimum) of constant slope constitute an incubation with artefact?
+artefact_duration_threshold<- 5
 
 # ---- Directories ----
 dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 loggerspath <- paste0(datapath,"/RAW Data Logger")
-plots_path <- paste0(dropbox_root,"/GHG/Processed data/plots_all_incubations/")
-RData_path <- paste0("C:/Users/Camille Minaudo/OneDrive - Universitat de Barcelona/Documentos/PROJECTS/RESTORE4Cs/data/Harmonized_GHG")
-results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
+RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
 
 
-# ----- Data pre-processing and harmonization -----
+# results_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
+# plots_path <- paste0(results_path,"level_incubation/")
+# quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #quality assessment, crop decisions and flags after inspection.
 
+
+#Custom directories for this script: To save results to be used for cropping decissions
+results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/5smargin fluxes/"
+plots_path <- paste0(results_path,"level_incubation/")
+
+
+
+#_________________####
+
+
+#FIELDSHEET PREP --------
+
+
+#Data pre-processing and harmonization: 
 # ---- List GHG chamber fieldsheets in Dropbox and read them ---
 # list filenames
 myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx", all.files = T, full.names = T, recursive = T)
@@ -69,8 +111,9 @@ fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
 
 
 
-# ---- Correct fieldsheets in the case of Picarro data ---
-#MIGUEL: i.e. substitute start-stoptimes of fieldsheets with those recorded in picarro flux aplication
+## ---- Correct Picarro fieldsheets ----
+
+#MIGUEL: i.e. substitute start-stoptimes of fieldsheets with those recorded in picarro flux aplication, if available
 read_map_incubations <- function(path2folder, sampling){
   
   my_maps_filenames <- list.files(path2folder, pattern = ".csv", all.files = T, full.names = T, recursive = T)
@@ -120,10 +163,18 @@ corresponding_row <- NA*fieldsheet_Picarro$plot_id
 for (i in seq_along(fieldsheet_Picarro$plot_id)){
   ind <- which.min(abs(fieldsheet_Picarro$unix_start[i] - map_incubations$start))
   if(length(ind)>0){
-    if(abs(fieldsheet_Picarro$unix_start[i] - map_incubations$start[ind])<5*60){
+    if(abs(fieldsheet_Picarro$unix_start[i] - map_incubations$start[ind])<4*60){
       corresponding_row[i] <- ind
     }
   }
+}
+
+#Check if the 5minute lookup worked for all
+if(sum(is.na(corresponding_row))==0){
+  message("All fielsheet incubations could be assigned to corrected start-stop times from picarro software")
+}else if (sum(is.na(corresponding_row))>0){
+message(paste("looking in a plus or minus 5-minute window did not work for", sum(is.na(corresponding_row)), "incubations:"))
+print(fieldsheet_Picarro[which(is.na(corresponding_row)),]$uniqID)
 }
 
 # finding corresponding row in case of NA in corresponding_row
@@ -134,10 +185,12 @@ if(sum(is.na(corresponding_row))>0){
   is_integer <- (interp - floor(interp)) == 0
   corresponding_row[ind_NAs][is_integer] <- interp[is_integer]
 }
+
 if(sum(is.na(corresponding_row))>0){
   ind_NAs <- which(is.na(corresponding_row))
   message("Could not find a corresponding incubation map for the following incubations:")
-  fieldsheet_Picarro$uniqID[ind_NAs]
+  print(fieldsheet_Picarro$uniqID[ind_NAs])
+  
   # removing rows from fieldsheet_Picarro with missing correspondance
   fieldsheet_Picarro <- fieldsheet_Picarro[-ind_NAs,]
   corresponding_row <- corresponding_row[-ind_NAs]
@@ -148,13 +201,25 @@ fieldsheet_Picarro$unix_start <- map_incubations$start[corresponding_row]
 fieldsheet_Picarro$unix_stop <- map_incubations$stop[corresponding_row]
 
 
+#Check that unix_start and Unix_stop are not duplicated after picarro time-matching: 
+{duplicated_starts_picarro<- fieldsheet_Picarro %>% 
+  filter(unix_start %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_start,incomparables = F),]$unix_start)
+duplicated_stops_picarro<-fieldsheet_Picarro %>% 
+  filter(unix_stop %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_stop,incomparables = F),]$unix_stop)
 
+#Check potential duplicate incubations created by the approach, code below.
+if(sum(dim(duplicated_starts_picarro)[1],dim(duplicated_stops_picarro)[1])>0){
+  message(paste("CAUTION: picarro correction duplicates incubations, check duplicates and correct fieldsheet times"))
+  print(duplicated_starts_picarro$uniqID)
+}else{
+  message(paste("All Picarro fieldsheet start-stop times are now corrected"))
+  rm(duplicated_starts_picarro, duplicated_stops_picarro)}
+}
 
+## ---- Correct LiCOR fieldsheets ----
 
-
-# ---- Correct fieldsheets in the case of LiCOR data, whenever available ---
-
-# load incubation map (run get_exact_incubation_times_Licor.R to update it)
+#Correct Licor start-stop times whenever remarks are available
+# load incubation map: updated with last incubations and corrected to get all non-duplicated remarks (removing also remarks that cause wrong-assignments)
 map_incubations <- read.csv( file = paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810/map_incubations_touse.csv"))
 # only select realistic start/stop
 map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$start < 15*60),]
@@ -162,7 +227,7 @@ map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$st
 fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
 corresponding_row <- unix_start_corr <- unix_stop_corr <- NA*fieldsheet_Licor$unix_start
 
-#Assign remark for start time less than 3 minutes appart. 
+#Lookup for corrected start-time correspondence (3 minute window) 
 for (i in seq_along(fieldsheet_Licor$plot_id)){
   ind <- which.min(abs(fieldsheet_Licor$unix_start[i] - map_incubations$start))
   if(length(ind)>0){
@@ -173,23 +238,89 @@ for (i in seq_along(fieldsheet_Licor$plot_id)){
     }
   }
 }
-#Adjust start time based on found remark starts
+
 ind_noNAs <- which(!is.na(corresponding_row))
+
+#Check how many were found:
+if(sum(!is.na(ind_noNAs))>0){
+  fieldsheet_Licormapped<- fieldsheet_Licor
+  fieldsheet_Licormapped$foundinmap<- FALSE
+  fieldsheet_Licormapped$foundinmap[ind_noNAs]<- TRUE
+  fieldsheet_Licormapped %>% 
+  mutate(sampling=substr(subsite,1,5)) %>% 
+  group_by(sampling) %>% 
+  summarise(foundinmap=sum(foundinmap), total_incubations= n(), percentfound=foundinmap/total_incubations*100)
+  message(paste("Licor start-stop times corrected for",sum(!is.na(ind_noNAs)),"incubations" ))
+
+}
+
+
+#Correct start-stop times based on start remark (if found) + duration fieldsheets
 duration_fieldsheet <- fieldsheet_Licor$unix_stop - fieldsheet_Licor$unix_start
 fieldsheet_Licor$unix_start[ind_noNAs] <- unix_start_corr[ind_noNAs]
-#Adjust stop times based on fieldsheet duration and corrected start times (when available)
 fieldsheet_Licor$unix_stop <- fieldsheet_Licor$unix_start + duration_fieldsheet
 
 
-
-# ---- Merging fieldsheets into a single one ---
+## ---- Merging fieldsheets----
+#Import los GATOS fieldsheets: start and stop times directly from fieldsheets (no map_incubations)
 fieldsheet_LosGatos <- fieldsheet[fieldsheet$gas_analyzer=="Los Gatos",]
 
-fieldsheet <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
+#Combine all fieldsheets with corrected times based on map_incubations when available
+fieldsheet_beforecrop <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
 
-# taking a little margin to avoid critical moments of manipulation with the chamber and manual gas sampling
-fieldsheet$unix_start <- fieldsheet$unix_start+30
-fieldsheet$unix_stop <- fieldsheet$unix_stop-30
+# ## ----(DO NOT EXECUTE) Cropping after inspection-----
+#  
+# #Import table with decisions and cropping amounts: all cropping is based on last run of 5-s margin script, so we have to re-add this 5 seconds to the cropping margins
+# croping<- read_xlsx(paste0(quality_path, "Inspection_table_allincubations_tocrop.xlsx"),na = "NA")
+# 
+# 
+# #Simplify and add the additional 5s of cropping to all crop_start_s and crop_end_s: Inspection and cropping decisions were taken on fluxes calculated based on 5-s margin. WE re-add this 5s of margin here for all incubations (custom-cropped or not) 
+# croping_simple<- croping %>%
+#   select(UniqueID, crop_start_s, crop_end_s) %>%
+#   mutate(crop_start_s=case_when(is.na(crop_start_s)~5,
+#                                 TRUE~crop_start_s+5),
+#          crop_end_s=case_when(is.na(crop_end_s)~5,
+#                               TRUE~crop_end_s+5)) %>%
+#   rename(uniqID=UniqueID)
+# 
+# #ANY incubation to re-inspect?
+# if(sum(!is.na(croping$To_recheck))>0){
+#   message("CAUTION: these incubations need to be re-checked and re-cropped. Incomplete artefact removal. ")
+#   print(croping %>%
+#           filter(!is.na(To_recheck)) %>%
+#           select(UniqueID))
+# }
+# 
+# #ANY incubation without not inspected?
+# if(sum(!fieldsheet_beforecrop$uniqID%in%croping_simple$uniqID)>0){
+# message("The following incubations were never inspected or cropped, script did not produce a flux for them:")
+# print(fieldsheet_beforecrop[!fieldsheet_beforecrop$uniqID%in%croping_simple$uniqID,c("uniqID","gas_analyzer","comments")])
+# }
+# #No missing incubation from S1
+# #1 missing incubation from S2: 
+# # s2-cu-r1-8-o-d-09:38 Los Gatos    Battery 1 stopped mid sample, there is no data for this incubation
+# #2 missing incubation from S3:
+# # s3-cu-p2-9-o-d-11:58  LI-COR       Times not in raw-data (Was here when LICOR BROKE?
+# # s3-cu-p2-10-o-d-12:07 LI-COR       Times not in raw-data (Was here when LICOR BROKE?
+# #No missing incubation from S4
+# 
+# 
+# #Add the cropping decission to the fieldsheets:
+# fieldsheet<- fieldsheet_beforecrop %>%
+#   merge.data.frame(croping_simple, by="uniqID",all.x = T) %>%
+#   mutate(unix_start=case_when(!is.na(crop_start_s)~unix_start+crop_start_s,
+#                               TRUE~unix_start),
+#          unix_stop=case_when(!is.na(crop_end_s)~unix_stop-crop_end_s,
+#                               TRUE~unix_stop)) %>%
+#   select(-c(crop_end_s,crop_start_s ))
+# 
+
+
+##---Apply 5s margin-----
+fieldsheet<- fieldsheet_beforecrop
+fieldsheet$unix_start <- fieldsheet$unix_start+margin_s_after_start
+fieldsheet$unix_stop <- fieldsheet$unix_stop-margin_s_before_end
+
 
 # recalculating start and stop in proper formats
 fieldsheet$timestamp_start <- as.POSIXct(fieldsheet$unix_start, tz = "UTC", origin = "1970-01-01")
@@ -201,8 +332,9 @@ fieldsheet$end_time <- strftime(fieldsheet$timestamp_stop, format="%H:%M:%S", tz
 fieldsheet <- fieldsheet[order(fieldsheet$subsite),]
 
 
-
-# ---- Import and store measurements to RData ----
+#_________________####
+#RDATA SAVE (optional) ####
+#Import and store measurements to RData ---
 if(harmonize2RData){
   data_folders <- list.dirs(datapath, full.names = T, recursive = T)[-1]
   i <- grep(pattern = sampling, x = data_folders) # selecting the files corresponding to the selected sampling campaign
@@ -215,7 +347,7 @@ if(harmonize2RData){
   print(data_folders)
   
   
-  # Import and store data for Picarro and LosGatos data
+  # Import and store data for for Picarro and LosGatos data
   
   raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format, prec){
     r <- grep(pattern = instrument, x=data_folders)
@@ -263,15 +395,23 @@ if(harmonize2RData){
   fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
   list_subsites_Licor <- unique(fieldsheet_Licor$subsite)
   
+
+  
   r_licor <- grep(pattern = "Licor",x=data_folders)
   for (data_folder in data_folders[r_licor]){
     setwd(data_folder)
     message(paste0("processing folder ",basename(data_folder)))
-    
+    if (grepl("S4-CU",data_folder)){
     import2RData(path = data_folder, instrument = "LI-7810",
-                 date.format = "ymd", timezone = 'UTC', keep_all = FALSE, 
+                 date.format = "ymd", timezone = 'Europe/Riga', keep_all = FALSE, 
                  prec = c(3.5, 0.6, 45))
+    } else {
+      import2RData(path = data_folder, instrument = "LI-7810",
+                   date.format = "ymd", timezone = 'UTC', keep_all = FALSE, 
+                   prec = c(3.5, 0.6, 45))
+    }
     
+
     # load all these R.Data into a single dataframe
     file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
     isF <- T
@@ -285,8 +425,16 @@ if(harmonize2RData){
       }
       rm(data.raw)
     }
-    
-    # get read of possible duplicated data
+
+    #Correct lithuanian licor tz (licor in local time)
+    if (grepl("S4-CU",data_folder)){
+      message("S4-CU Licor not in UTC time!!")  
+      mydata_imp$POSIX.time<- with_tz(mydata_imp$POSIX.time,tzone = "UTC")
+      mydata_imp$DATE<- as.character(as_date(mydata_imp$POSIX.time))
+      mydata_imp$TIME<- strftime(mydata_imp$POSIX.time, format="%H:%M:%S",tz = "utc")
+    }
+
+    # get rid of possible duplicated data
     is_duplicate <- duplicated(mydata_imp$POSIX.time)
     mydata_imp <- mydata_imp[!is_duplicate,]
     
@@ -311,12 +459,12 @@ if(harmonize2RData){
   }
 }
 
+#_________________####
+#FLUX CALCULATION####
 
+# ----- 1. Auxtable prep -----
 
-
-# ----- Flux calculation -----
-
-# For each subsite in fieldsheet, go through each incubation and compute co2 and ch4 fluxes
+# This section loops over each subsite and performs the flux calculation for CO2 and CH4
 subsites <- unique(fieldsheet$subsite)
 
 isF_incub <- T
@@ -327,7 +475,7 @@ for (subsite in subsites){
   corresp_fs <- fieldsheet[fieldsheet$subsite == subsite,]
   gs <- first(corresp_fs$gas_analyzer)
   
-  
+  ## ----1.1. Import looger data----
   # read corresponding temperature logger file and keep initial temperature
   SN_logger_float <- first(corresp_fs$logger_floating_chamber)
   SN_logger_tube <- first(corresp_fs$logger_transparent_chamber)
@@ -367,7 +515,7 @@ for (subsite in subsites){
   if(dim(data_logger_float)[1]<10){
     message("===> not enough data could be linked to the floating chamber!")
     is_data_logger_float = F
-    }
+  }
   
   if(!is.na(SN_logger_tube) & !is.na(i_f_tube)){
     is_data_logger_tube = T
@@ -406,7 +554,7 @@ for (subsite in subsites){
     gs_suffix <- gs
   }
   
-  
+  #----1.2. Per-incubation aux variables----
   auxfile <- NULL
   if(file.exists(paste0(subsite,"_",gs_suffix,".RData"))){
     load(file = paste0(subsite,"_",gs_suffix,".RData"))
@@ -425,7 +573,6 @@ for (subsite in subsites){
           if(is_data_logger_float){
             myTemp <- median(approx(data_logger_float$unixtime, data_logger_float$temperature, xout = as.numeric(my_incub$POSIX.time))$y )
           }
-          #Miguel:
           #Floating chamber used in Restore4Cs is half sphere of 38cm diameter. radius=19cm
           myArea<- pi*19^2 #cm2
           myVtot<- (((4/3)*pi*(19^3))/1000 )/2# L
@@ -445,7 +592,7 @@ for (subsite in subsites){
         }
         myPcham <- 100.1 #kPa
         
-        # --- Create auxfile table ----
+        # --- 1.3. Create auxfile table ----
         # An auxfile table, made of fieldsheet, adding important variables. The auxfile
         # requires start.time and UniqueID.
         # start.time must be in the format "%Y-%m-%d %H:%M:%S"
@@ -476,14 +623,15 @@ for (subsite in subsites){
     message("---> Could not find corresponding ",gs," data")
   }
   
-  
-  
+# ---- 4. Goflux calculation-------
+
   if (length(auxfile)>1){
     
     auxfile$Tcham[is.na(auxfile$Tcham)] <- mean(auxfile$Tcham, na.rm = T)
     
-    # we only keep incubations longer than 100 secs (after cropping 30s start and 30s end)
-    auxfile <- auxfile[auxfile$duration>100,]
+    # we only keep incubations longer than X secs (after cropping Xs start and Xs end): see USER OPTIONS
+    auxfile <- auxfile[auxfile$duration>minimum_duration_for_flux,]
+    
     # we only keep incubations where chamber dimensions are known
     auxfile <- auxfile[!is.na(auxfile$Vtot),] # in case chamber height is not specified in the fieldsheet...
     auxfile <- auxfile[!is.na(auxfile$Area),]
@@ -491,7 +639,7 @@ for (subsite in subsites){
     # Define the measurements' window of observation
     # auxfile <- auxfile
     mydata_ow <- obs.win(inputfile = mydata, auxfile = auxfile,
-                         obs.length = auxfile$duration, shoulder = 2)
+                         obs.length = auxfile$duration, shoulder = shoulder_goflux)
     
     # Join mydata_ow with info on start end incubation
     mydata_auto <- lapply(seq_along(mydata_ow), join_auxfile_with_data.loop, flux.unique = mydata_ow) %>%
@@ -508,8 +656,8 @@ for (subsite in subsites){
     
     # Calculate fluxes
     CO2_results_auto <- goFlux(dataframe = mydata_auto, gastype = "CO2dry_ppm")
-    H2O_results_auto <- goFlux(mydata_auto, "H2O_ppm")
-    CH4_results_auto <- goFlux(mydata_auto, "CH4dry_ppb")
+    H2O_results_auto <- goFlux(dataframe = mydata_auto, "H2O_ppm")
+    CH4_results_auto <- goFlux(dataframe = mydata_auto, "CH4dry_ppb")
     
     # Use best.flux to select the best flux estimates (LM or HM)
     # based on a list of criteria
@@ -519,6 +667,8 @@ for (subsite in subsites){
     H2O_flux_res_auto <- best.flux(H2O_results_auto, criteria)
     CH4_flux_res_auto <- best.flux(CH4_results_auto, criteria)
     
+    
+    #----5. Plot Goflux (optional)----
     if(doPlot){
       # Plots results
       # Make a list of plots of all measurements, for each gastype
@@ -529,20 +679,20 @@ for (subsite in subsites){
       # Combine plot lists into one list
       flux_plot.ls <- c(CO2_flux_plots, CH4_flux_plots, H2O_flux_plots)
       
-      # Save plots to pdf
-      myfilename <- paste(subsite, as.character(as.Date(first(auxfile$start.time))),sep="_")
-      flux2pdf(flux_plot.ls, outfile = paste0(results_path,"/level_incubation/",myfilename,".pdf"))
+      # Save plots to pdf in result_subfolder
+      myfilename <- paste(subsite, as.character(as.Date(last(auxfile$start.time))),sep="_")
+      flux2pdf(flux_plot.ls, outfile = paste0(plots_path,myfilename,".pdf"))
       
     }
     
-    
-    # estimate ch4 diffusion and ebullition components---------| METHOD 1 |-----------
-    CH4_res_meth1 <- CH4_flux_res_auto
+    #6. Diffusion vs ebullition----
+    # estimate ch4 diffusion and ebullition components
+    CH4_res_meth1 <- CH4_flux_res_auto  #keep best flux from goflux
     CH4_res_meth1$total_estimated <- NA
     CH4_res_meth1$ebullition <- NA
     CH4_res_meth1$diffusion <- NA
     
-    
+    #Only for plots with water, apply estimate of ebullition and diffusion
     for (i in which(auxfile$water_depth>0)){
       if(auxfile$water_depth[i]>0){
         my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile$start.time[i] &
@@ -558,6 +708,7 @@ for (subsite in subsites){
         CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
         CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
       } else {
+        #For plots without water, set ebullition to 0 
         CH4_flux_total <- CH4_flux_ebull <- CH4_res_meth1$best.flux[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])]
         CH4_flux_ebull <- 0
       }
@@ -568,22 +719,54 @@ for (subsite in subsites){
     
     CH4_res_meth1$ebullition[which(CH4_res_meth1$ebullition<0)] <- 0
     
+    #---- 7. Artefact detection ----
     
-    setwd(paste0(results_path,"/level_incubation"))
-    myfilenameCO2 <- paste(subsite,"co2_fluxes", as.character(as.Date(first(auxfile$start.time))),sep="_")
-    myfilenameCH4 <- paste(subsite,"ch4_fluxes", as.character(as.Date(first(auxfile$start.time))),sep="_")
-    write.csv(x = CO2_flux_res_auto, file = paste0(myfilenameCO2,".csv"), row.names = F)
-    write.csv(x = CH4_res_meth1, file = paste0(myfilenameCH4,".csv"), row.names = F)
+    #Initialize artefact columns in CO2 and CH4 fluxes datasets
+    CO2_flux_res_auto$contains.artefact <- F
+    CH4_res_meth1$contains.artefact <- F
+    
+    for(i in which(!is.na(auxfile$UniqueID))){
+      
+      #Select GHG data from UniqueID
+      my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile$start.time[i] &
+                           as.numeric(mydata$POSIX.time)< auxfile$start.time[i]+auxfile$duration[i],]
+      # my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
+      
+      #Function looks for constant slope using second order derivative (also flags negative GHG)
+      #Check for artefact in CO2 series and flag if found
+      CO2_flux_res_auto$contains.artefact[which(CO2_flux_res_auto$UniqueID==auxfile$UniqueID[i])] <- is_constant_slope_or_neg_any_ghg(my_incub=my_incub, POSIX.time = "POSIX.time", check_cols = c("CO2dry_ppm"), duration = artefact_duration_threshold)
+      
+      #Check for artefact in CH4 series and flag if found
+      CH4_res_meth1$contains.artefact[which(CH4_res_meth1$UniqueID==auxfile$UniqueID[i])] <- is_constant_slope_or_neg_any_ghg(my_incub=my_incub, POSIX.time = "POSIX.time", check_cols = c("CO2dry_ppm"), duration = artefact_duration_threshold)
+      
+      
+    }
     
     
+    
+    
+    #__________________####
+    #SAVE RESULTS####
+    #---- 1. Save incubation-level ----
+    
+    #Save full results in incubation-level path
+    myfilenameCO2 <- paste(subsite,"co2_fluxes_5smargin_", as.character(as.Date(last(auxfile$start.time))),sep="_")
+    myfilenameCH4 <- paste(subsite,"ch4_fluxes_5smargin_", as.character(as.Date(last(auxfile$start.time))),sep="_")
+    write.csv(x = CO2_flux_res_auto, file = paste0(plots_path,myfilenameCO2,".csv"), row.names = F)
+    write.csv(x = CH4_res_meth1, file = paste0(plots_path,myfilenameCH4,".csv"), row.names = F)
+    
+    
+    #---- 2. Save Season simple ----
+    
+    #Join simplified results for both gases in results_path
     table_results <- auxfile %>%
-      left_join(CO2_flux_res_auto %>% select(UniqueID, LM.flux, HM.flux, best.flux, model, quality.check)) %>%
+      left_join(CO2_flux_res_auto %>% select(UniqueID, LM.flux, HM.flux, best.flux, model, quality.check, contains.artefact)) %>%
       rename(CO2_LM.flux = LM.flux, CO2_HM.flux = HM.flux, CO2_best.flux = best.flux, CO2_best.model = model,
-             CO2_quality.check = quality.check) %>%
+             CO2_quality.check = quality.check, CO2_contains.artefact=contains.artefact) %>%
       left_join(CH4_res_meth1 %>% select(UniqueID, LM.flux, HM.flux, best.flux, best.flux, model, quality.check, 
-                                         diffusion, ebullition)) %>%
+                                         diffusion, ebullition, contains.artefact)) %>%
       rename(CH4_LM.flux = LM.flux, CH4_HM.flux = HM.flux, CH4_best.flux = best.flux, CH4_best.model = model, 
-             CH4_quality.check = quality.check, CH4_diffusive_flux = diffusion, CH4_ebullitive_flux = ebullition)
+             CH4_quality.check = quality.check, CH4_diffusive_flux = diffusion, CH4_ebullitive_flux = ebullition,  CH4_contains.artefact= contains.artefact)
     
     if (isFsubsite){
       isFsubsite <- F
@@ -597,9 +780,9 @@ for (subsite in subsites){
   
 }
 
-setwd(results_path)
-myfilename <- paste(sampling,"fluxes",min(as.Date(table_results_all$start.time)),"to",
+# setwd(results_path)
+myfilename <- paste(sampling,"fluxes_5smargin_",min(as.Date(table_results_all$start.time)),"to",
                     max(as.Date(table_results_all$start.time)), sep = "_")
-write.csv(x = table_results_all, file = paste0(myfilename,".csv"), row.names = F)
+write.csv(x = table_results_all, file = paste0(results_path, myfilename,".csv"), row.names = F)
 
 

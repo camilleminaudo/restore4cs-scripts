@@ -10,6 +10,7 @@
 # This script loads all the fieldsheets contained in the Dropbox folder, and
 # make a shapefile out of it.
 
+#Last run on 20250127 by MIGUEL to update shapefiles for S1-S4 after fieldsheets corrections. 
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -31,11 +32,13 @@ source(paste0(dirname(dirname(rstudioapi::getSourceEditorContext()$path)),"/func
 
 
 # ---- Settings ----
-dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/" #Camille Minaudo
+# dropbox_root <- "C:/Users/Camille Minaudo/Dropbox/RESTORE4Cs - Fieldwork/Data/" #Camille Minaudo
 # dropbox_root <- "C:/Users/misteli/Dropbox/RESTORE4Cs - Fieldwork/Data/" #Benjamin Misteli
+dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data/" #Miguel Cabrera
+
 
 #################################
-sampling <- "S3"
+sampling <- "S4"
 #################################
 
 # ---- Read fieldsheets ----
@@ -117,9 +120,9 @@ filename_w <- paste0(dropbox_root,"Water/Water sampling and filtration_all data.
 
 # load file
 fieldsheet_water <- readxl::read_xlsx(filename_w, 
-                                      col_names = T, n_max = 3*6*6*4,
-                                      sheet = "Water_sampling_master_ONLINE", skip = 8,
-                                      col_types = c(rep("text",9),rep("numeric",21),rep("text",4)))
+                                      col_names = T, n_max = 6*6*6*4,
+                                      sheet = "Water_sampling_master_ONLINE", skip = 0,
+                                      col_types = c(rep("text",10),rep("numeric",19),rep("text",4)))
 
 fieldsheet_water <- fieldsheet_water[fieldsheet_water$Survey==sampling,]
 

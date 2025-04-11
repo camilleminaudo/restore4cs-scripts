@@ -1,0 +1,1172 @@
+
+# ---
+# Authors: Miguel Cabrera
+# Project: "RESTORE4Cs"
+# date: "April 2025"
+# https://github.com/camilleminaudo/restore4cs-scripts
+# ---
+
+# --- Description of this script
+
+# This script analyses the quality of fit of all fluxes to check the aproppriateness of selection criteria of best.flux function. This is based on the per-GHG cropped fluxes calculated.
+
+
+#Biggest risk is overestimating fluxes by chosing HM over LM when is the HM curvature is exagerated due to artefacts. The Exageration of curvature can be assessed based on the K.ratio and based on g-factor. 
+
+#g-factor should not be used to decide model when HM fit is "reasonably good"
+
+#General rules: for incubations with bad fit (R2 or SE rel), default to LM 
+
+#When there is a very strong curvature, the LM will progresively fit worse
+
+
+#FLuxes below detection for LM (LM.flux<MDF.lim), should be considered as such for both models (i.e. the choice of model should not make an insignificant flux become significant)
+
+#In practice, remove bdl fluxes before checking for best model
+
+
+
+rm(list = ls()) # clear workspace
+cat("/014") # clear console
+
+
+# ---- packages ----
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(zoo)
+library(ggplot2)
+library(grid)
+library(egg)
+require(dplyr)
+require(purrr)
+require(data.table)
+require(tools)
+library(ggpubr)
+library(ggExtra)
+
+
+repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
+files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
+for (f in files.sources){source(f)}
+
+
+# ---- Directories and data loading ----
+dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
+fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
+quality_path<- paste0(dropbox_root,"/GHG/Working data/Incubation_quality/")
+# plots_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/plots")
+results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/Per_GHG_cropped_fluxes/"
+
+
+#Load per-GHG cropped fluxes
+listf <- list.files(path = results_path, pattern = "^S_fluxes", all.files = T, full.names = T, recursive = F)
+table_results_all <- NULL
+
+for (f in listf){
+  table_results_all <- rbind(table_results_all, 
+                             read.csv(file = f, header = T))}
+
+#Add
+table_results_all$sampling <- str_sub(table_results_all$subsite, start = 1, 2)
+table_results_all$pilotsite <- str_sub(table_results_all$subsite, start = 4, 5)
+table_results_all$subsite <- str_sub(table_results_all$subsite, start = 7, 8)
+table_results_all$siteID <- str_sub(table_results_all$subsite, start = 4, 8)
+
+
+table_results_all <- table_results_all[!is.na(table_results_all$lightCondition),]
+
+#Load subsites level_incubation CSV files with details of flux calulation for different models (produced by raw2flux.R script)
+get_full_detailed_table <- function(table_results_all, variable){
+  
+  listf <- list.files(path = paste0(results_path,"level_incubation"), pattern = ".csv", all.files = T, full.names = T, recursive = F)
+  mytable <- NULL
+  for (f in listf[grep(pattern = variable, x = listf)]){
+    mytable.tmp <- read.csv(file = f, header = T)
+    mytable <- rbind(mytable, mytable.tmp)
+  }
+  mytable$sampling <- str_sub(mytable$UniqueID, start = 1, 2)
+  mytable$pilotsite <- str_sub(mytable$UniqueID, start = 4, 5)
+  mytable$subsite <- str_sub(mytable$UniqueID, start = 7, 8)
+  mytable$siteID <- str_sub(mytable$UniqueID, start = 4, 8)
+  
+  ind_match <- match(mytable$UniqueID, table_results_all$UniqueID)
+  
+  
+  mytable <- cbind(mytable, table_results_all[ind_match,c("gas_analiser","start.time","duration","water_depth","strata","chamberType","lightCondition")])
+  mytable <- mytable[!is.na(ind_match),]
+  return(mytable)
+}
+
+
+#Get detailed table for each gas
+table_co2 <- get_full_detailed_table(table_results_all, variable = "co2")
+table_ch4 <- get_full_detailed_table(table_results_all, variable = "ch4")
+
+
+
+#CO2 table filter------
+
+#Remove wrong incubations: those with too much influence of artefacts or wrong manipulations.
+inspectiontable<- read_xlsx(path = paste0(quality_path, "Inspection_table_allincubations_tocrop_perGHG.xlsx")) %>% 
+  select(UniqueID,co2_decission,co2_obs_inspection, ch4_decission,ch4_obs_inspection)
+
+unique(inspectiontable$co2_decission)
+co2_discard<- inspectiontable %>% filter(co2_decission=="discard") %>% pull(UniqueID)
+ch4_discard<- inspectiontable %>% filter(ch4_decission=="discard") %>% pull(UniqueID)
+
+table_co2<- table_co2 %>%  filter(!UniqueID%in%co2_discard)
+table_ch4<- table_ch4 %>%  filter(!UniqueID%in%ch4_discard)
+
+
+
+
+#1. For fluxes below detection (MDF), the choice of model is not relevant (we can leave the best.flux result). 
+table_co2 %>% 
+  mutate(below_detection=abs(LM.flux)<MDF.lim) %>%  
+  ggplot(aes(x=LM.r2, fill=below_detection))+
+  geom_histogram()+
+  facet_wrap(~below_detection, scales="free")
+
+
+co2_sig<- table_co2 %>% 
+  filter(abs(LM.flux)>MDF.lim)
+
+
+
+
+
+#Akaike weights------
+
+#Calculated from the AICc, it provides the probability of being the best model (0-1) 
+# Akaike weights give you a probabilistic interpretation of how much better one model is than the other
+
+
+# ---- Define your weights ----
+weights <- c(RMSE = 0.1, MAE = 0.1, CV = 0.1, AICc_weight = 0.7)  # Adjust as needed
+epsilon <- 1e-6  # Small constant to avoid division by zero
+
+# ---- Compute Akaike weights ----
+# Calculate the delta AICc for each model
+#It provides the probability of being the best model (0-1) 
+# Akaike weights give you a probabilistic interpretation of how much better one model is than the other
+
+co2_sig <- co2_sig %>%
+  mutate(
+    delta_AICc_LM = LM.AICc - pmin(LM.AICc, HM.AICc),  # Compare to the best AICc (min AICc)
+    delta_AICc_HM = HM.AICc - pmin(LM.AICc, HM.AICc),
+    
+    # Calculate the Akaike weights
+    AICc_weight_LM = exp(-0.5 * delta_AICc_LM) / (exp(-0.5 * delta_AICc_LM) + exp(-0.5 * delta_AICc_HM)),
+    AICc_weight_HM = exp(-0.5 * delta_AICc_HM) / (exp(-0.5 * delta_AICc_LM) + exp(-0.5 * delta_AICc_HM))
+  )
+
+# ---- Now we can calculate relative improvements and composite scores ----
+co2_sig <- co2_sig %>%
+  mutate(
+    # Compute CVs
+    LM.CV = LM.SE / (abs(LM.slope) + epsilon),
+    HM.CV = HM.SE / (abs(HM.slope) + epsilon),
+    
+    # Compute relative improvements (positive = HM is better, relative reduction in error)
+    Improvement.RMSE = (LM.RMSE - HM.RMSE) / LM.RMSE, 
+    Improvement.MAE  = (LM.MAE  - HM.MAE)  / LM.MAE,  
+    Improvement.CV   = (LM.CV   - HM.CV)   / LM.CV,   
+    
+    # Rescale AICc weights to [-1 LM is 100% likely to 1 HM is 100% likely]
+    Rescaled_AICc_weight_HM = 2 * AICc_weight_HM - 1,   # Rescale to [-1, 1]
+    
+    # Composite score using Akaike weights for AICc
+    Composite.Score = Rescaled_AICc_weight_HM * weights["AICc_weight"] +
+      Improvement.RMSE * weights["RMSE"] +
+      Improvement.MAE  * weights["MAE"] +
+      Improvement.CV   * weights["CV"],
+    
+    # Model decision
+    Preferred.Model = if_else(Composite.Score > 0, "HM", "LM")
+  )
+
+
+co2_sig %>%
+  ggplot(aes(x = Composite.Score, fill = Preferred.Model)) +
+  geom_histogram(bins = 60, alpha = 0.3) +
+  theme_minimal() +
+  labs(title = "Composite Model Preference by Timeseries",
+       x = "Composite Score (Positive = HM Better)",
+       y = "Count")
+
+
+co2_sig %>% 
+  ggplot(aes(x=AICc_weight_LM, fill=Preferred.Model))+
+  geom_histogram()+
+  scale_x_continuous(name="AICc weight for LM, probability of LM being best")
+
+
+#DIrect comparison of model quality LM vs HM
+#In current run, criteria are "SE", "RMSE", "AICc", 
+
+
+co2_sig %>% 
+  ggplot(aes(x=LM.AICc, y=HM.AICc, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+co2_sig %>% 
+  ggplot(aes(x=LM.RMSE, y=HM.RMSE, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+co2_sig %>% 
+  ggplot(aes(x=LM.SE, y=HM.SE, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+#Our best.flux criteria result in almost always choosing HM due to RMSE and AICc despite SE (HM wins 2:1)
+
+
+#RMSE and MAE give the exact same info (rmse should be a bit more sensitive to extreme residuals)
+co2_sig %>% 
+  ggplot(aes(x=LM.MAE, y=HM.MAE, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+co2_sig %>% 
+  ggplot(aes(x=LM.RMSE, y=HM.RMSE, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+
+co2_sig %>% 
+  ggplot(aes(x=LM.CV, y=HM.CV, col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+
+
+#Check Relative improvement of fit vs risk of oversestimation (g.fact)
+
+co2_sig %>% 
+  ggplot(aes(x=(LM.RMSE-HM.RMSE)/LM.RMSE, y=g.fact, col=Preferred.Model))+
+  geom_point()+
+  scale_x_continuous(name="Relative improvement of RMSE with HM")+
+  scale_y_log10()
+
+co2_sig %>% 
+  ggplot(aes(x=(LM.MAE-HM.MAE)/LM.MAE, y=g.fact, col=Preferred.Model))+
+  geom_point()+
+  scale_x_continuous(name="Relative improvement of MAE with HM")
+
+co2_sig %>% 
+  ggplot(aes(x=(LM.CV-HM.CV)/LM.CV, y=g.fact, col=Preferred.Model))+
+  geom_point()+
+  scale_x_continuous(name="Relative improvement of CV with HM")
+
+co2_sig %>% 
+  ggplot(aes(x=AICc_weight_HM, y=g.fact, col=Preferred.Model))+
+  geom_point()+
+  scale_x_continuous(name="AICc weight for HM, probability of HM being best")+
+  scale_y_log10()
+
+
+
+
+co2_sig %>% 
+  filter(LM.r2>0.15) %>% 
+  filter(g.fact<=7.9695) %>% 
+  ggplot(aes(x=(HM.r2-LM.r2)/LM.r2, y=g.fact,col=Preferred.Model))+
+  geom_point()+
+  geom_label(data=. %>% filter(g.fact>4.3)
+               ,aes(label=UniqueID))+
+  scale_x_continuous(name="Relative Improvement of R2 with HM")
+
+
+
+
+
+co2_sig %>% 
+  filter(LM.r2>0.15) %>% 
+  filter(g.fact<=7.9695) %>% 
+  arrange(desc(g.fact)) %>% select(UniqueID, g.fact) %>% slice(seq(1:20)) %>% pull(UniqueID)
+
+
+#s4-du-r2-11-v-t-10:49 BAD FIT, weird artefact smooth DOUBT
+#s1-ca-p1-14-v-d-14:49 BAD fit, super noisy, should be linear (arbitrary HM)
+# s1-da-r2-12-v-t-11:31  cropped 2nd half, take linear estimate
+#S4-cu-r1-9-v-t Noisy, maybe advance start to get better results### DOUBT, test
+#"s2-cu-p1-13-o-d-10:11" Should be linear, smooth artefact creates bump for HM to win
+
+
+
+
+#comparison between RMSE and MAE to dectect extreme outliers
+co2_sig %>% 
+  ggplot(aes(x=LM.RMSE, y=LM.MAE, col=((LM.RMSE-1)>1.2*LM.MAE)))+
+  geom_point()+
+  geom_abline(intercept=-0,slope = 0.85)
+  
+#Samples with high-leverage outliers: 
+co2_sig  %>% filter((LM.RMSE-1)>1.2*LM.MAE) %>% arrange(desc(LM.RMSE/LM.MAE)) %>% pull(UniqueID)
+
+#"s2-cu-a1-6-o-d-09:23": spikes and point-artefacts, keep like this
+# "s2-cu-a1-7-o-d-09:37": keep like this
+#"s2-cu-p1-5-o-d-08:30": point artefacts, keep like this
+#"s2-va-a2-2-o-d-09:29": co2 spike mid-incubation, cannot crop
+
+
+#Same exercise with HM:
+co2_sig %>% 
+  ggplot(aes(x=HM.RMSE, y=HM.MAE, col=(HM.RMSE-1)>1.2*HM.MAE))+
+  geom_point()+
+  geom_abline(intercept=-0,slope = 0.85)
+
+co2_sig %>% 
+  filter(!(LM.RMSE>1.5*LM.MAE+1.5|LM.RMSE>2*LM.MAE)) %>% 
+  ggplot(aes(x=HM.RMSE,y=HM.RMSE/HM.MAE))+
+  geom_point()+
+  geom_label(data = . %>% filter(HM.RMSE>2*HM.MAE), aes(label=UniqueID))
+
+#Fixed what could be fixed for cropping decissions based on HM mae vs rmse
+
+
+
+
+
+
+co2_sig %>% 
+  ggplot(aes(x=LM.SE, y=HM.SE, col=HM.SE>LM.SE))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+ggMarginal(p = co2_sig %>% 
+             ggplot()+
+  geom_point(aes(x=abs(LM.se.rel), y=abs(HM.se.rel), col=abs(HM.se.rel)>abs(LM.se.rel)))+
+  geom_abline(slope = 1, intercept=0.6)+
+    scale_x_log10()+
+    scale_y_log10()
+)
+
+ggMarginal(p = co2_sig %>% 
+  ggplot(aes(x=LM.r2, y=HM.r2, col=abs(LM.se.rel)>1))+
+  geom_point()+
+  geom_abline(slope = 1)+
+  geom_hline(yintercept = 0.9)
+
+)
+
+
+
+ggMarginal(p = co2_sig %>% 
+             ggplot(aes(x=LM.r2, y=abs(LM.se.rel), col=abs(LM.se.rel)>1))+
+             geom_point()+
+             scale_y_log10()
+
+)
+
+
+
+co2_sig %>% 
+  ggplot(aes(x=abs(LM.flux), y=abs(HM.flux), col=LM.r2>HM.r2))+
+  geom_point()+
+  geom_abline(slope = 1)+
+  scale_x_log10()+
+  scale_y_log10()
+
+co2_sig %>% 
+  ggplot(aes(x=HM.RMSE/LM.RMSE, y=HM.RMSE, col=HM.r2>0.95))+
+  geom_point()+
+  facet_wrap(~model)
+
+
+co2_sig %>% 
+  filter(g.fact<20) %>% 
+  ggplot()+
+  geom_point(aes(x=HM.r2,y=g.fact, col=model))+
+  geom_density(aes(x=HM.r2))+
+  geom_label(data=. %>% filter(g.fact>5),aes(x=HM.r2,y=g.fact,label=UniqueID))
+
+
+co2_sig %>% 
+  ggplot(aes(y=g.fact, x=HM.RMSE/LM.RMSE))+
+  geom_point()+
+  geom_label(data=. %>% filter(g.fact>20),aes(label=UniqueID))
+
+
+co2_sig %>% 
+  filter(g.fact>1.40) %>% 
+  ggplot(aes(x=HM.r2, y=LM.r2, col=g.fact))+
+  geom_point()
+
+
+#What is the maximum HM.k for very good models?
+
+co2_sig %>% 
+  filter(HM.r2>0.95) %>% 
+  ggplot(aes(x=g.fact, y=HM.k/k.max))+
+  geom_point()+
+  geom_label(data=. %>% filter(HM.k/k.max>0.35), aes(label=UniqueID))
+
+
+
+table_co2 %>% table_co2 %>% table_co2 %>% 
+  ggplot(aes(x=LM.r2, y=HM.r2))+
+  geom_point()+
+  geom_label(data=. %>% g.factaes())
+
+
+table_co2 %>% 
+  mutate(below_detectionLM=abs(LM.flux)<MDF.lim,
+         below_detectionHM=abs(HM.flux)<MDF.lim) %>% 
+  ggplot(aes(x=(HM.flux-LM.flux)/HM.flux, y=LM.r2, col=below_detectionLM))+
+  geom_point()
+
+table_co2 %>% 
+  mutate(below_detectionLM=abs(LM.flux)<MDF.lim,
+         below_detectionHM=abs(HM.flux)<MDF.lim) %>% 
+  summarise(prop_BDL_LM=sum(below_detectionLM)/n(),
+            prop_BDL_HM=sum(below_detectionHM, na.rm = T)/sum(!is.na(HM.flux)))
+
+
+
+table_co2 %>% 
+  ggplot(aes(x=(HM.flux-LM.flux)/HM.flux, y=(HM.r2-LM.r2)))+
+  geom_point()
+
+
+# ---- quality of model fits ----
+
+n <- dim(table_co2)[1]
+ind_lm <- which(table_co2$model=="LM")
+in_hm <- which(table_co2$model=="HM")
+
+message("Fluxes calculated for ",n, " different incubations.")
+message(" --- ",dim(table_results_all[table_results_all$strata=="bare",])[1] ," in bare ")
+message(" --- ",dim(table_results_all[table_results_all$strata=="open water",])[1] ," in open water ")
+message(" --- ",dim(table_results_all[table_results_all$strata=="vegetated",])[1] ," in vegetated")
+
+
+message("Best model is non-linear for ",round(length(in_hm)/n*100*100)/100,"% of the measurements")
+
+
+ind_flagged <- which(table_co2$quality.check!="")
+# table_co2$quality.check[ind_flagged]
+message(round(length(ind_flagged)/n*100*100)/100,"% of the measurements are flagged")
+
+
+in_hm_notflagged <- which(table_co2$model=="HM" & table_co2$quality.check=="")
+message("Best model is non-linear for ",round(length(in_hm_notflagged)/(n-length(ind_flagged))*100*100)/100,"% of the measurements not flagged")
+
+table.flags <- NULL
+for(flag in unique(table_co2$quality.check[ind_flagged])){
+  ind_mdf <- which(table_co2$quality.check==flag)
+  message(round(length(ind_mdf)/n*100*100)/100,"% of the measurements are flagged because of ",flag)
+  
+  table.flags <- rbind(table.flags,
+                       data.frame(flag = flag,
+                                  n = length(ind_mdf)))
+}
+table.flags$perc <- round(table.flags$n/n*100*100)/100
+table.flags <- table.flags[order(table.flags$n, decreasing = T),]
+table.flags
+
+
+
+table_co2[which(is.na(table_co2$quality.check)),]
+
+ggplot(co2_sig[which(!is.na(co2_sig$quality.check)),], 
+       aes(quality.check, (HM.flux-LM.flux)/HM.flux, fill = model))+
+  geom_hline(yintercept = c(-1,0,1), color = "grey70")+
+  geom_jitter(alpha=0.1, size=2, width = 0.1)+
+  geom_violin(alpha=0.2, scale = "width", draw_quantiles = c(0.5), aes(colour = model, fill = model))+
+  theme_article()+
+  # scale_x_log10()+
+  # scale_y_log10()+
+  ylim(c(-1,2))+
+  scale_fill_viridis_d(option = "A", end = 0.8, direction = -1)+
+  scale_colour_viridis_d(option = "A", end = 0.8, direction = -1)+
+  coord_flip()
+
+table_co2$diff_model <- (table_co2$HM.flux-table_co2$LM.flux)/table_co2$HM.flux
+
+n_less_10perc <- length(which(abs(table_co2$diff_model)<0.1))
+
+message("Linear and non-linear models have less than 10% difference for ",round(n_less_10perc/n*100*100)/100,"% of the measurements")
+
+ggplot(table_co2[order((table_co2$diff_model)),], aes(seq(1,n)/n*100, (diff_model)*100))+
+  geom_vline(xintercept = seq(0,100,50), color = "grey70")+
+  geom_hline(yintercept = c(-100,-10,0,10,100), color = "grey70")+
+  geom_point()+
+  # scale_y_log10()+
+  ylim(c(-50,120))+
+  xlab("Proportion of timeseries")+
+  ylab("Relative difference [% of HM flux]")+
+  theme_article()+ggtitle(paste0("HM-LM models difference is below 10% for ",round(n_less_10perc/n*100*10)/10,"% of the measurements"))
+
+
+ggplot(table_co2, aes(abs(best.flux), abs(diff_model)*100))+
+  # geom_vline(xintercept = seq(0,100,50), color = "grey70")+
+  geom_hline(yintercept = c(1,10,100), color = "grey70")+
+  geom_point(aes(colour = quality.check))+
+  scale_x_log10()+
+  # xlim(c(-50,50))+
+  # ylim(c(-50,120))+
+  # xlab("Proportion of timeseries")+
+  ylab("Relative difference [% of HM flux]")+
+  theme_article()+ggtitle(paste0("HM-LM models difference is below 10% for ",round(n_less_1perc/n*100*10)/10,"% of the measurements"))
+
+
+
+
+ggplot(co2_sig)+
+  geom_point(aes(abs(best.flux), HM.MAE, colour = "HM"), alpha=0.2, size=3)+
+  geom_point(aes(abs(best.flux), LM.MAE, colour = "LM"), alpha=0.2, size=3)+
+  theme_article()+
+  # xlim(c(0,50))+
+  scale_x_log10()+
+  scale_y_log10()+
+  ylab("MAE")+
+  scale_colour_viridis_d("model", option = "A", end = 0.8, direction = -1)
+
+
+ggplot(co2_sig, aes(LM.MAE, HM.MAE, shape=model,colour = model))+
+  geom_point(alpha=0.4, size=3)+
+  theme_article()+
+  scale_x_log10()+
+  scale_y_log10()+
+  scale_colour_viridis_d("best model", option = "A", end = 0.8, direction = -1)
+
+
+
+#Check which criteria is the "limiting factor" in the selection for each incubation. 
+
+
+# ---- quality of model fits ----
+# c("MAE", "RMSE", "AICc", "SE") allowed in best.flux
+
+#In current run, criteria are "SE", "RMSE", "AICc", "kappa" ("kappa" included but non-working, due to k.HM already being limited to the max allowed in criteria)
+
+
+
+#1. For fluxes below detection (MDF), the choice of model is not relevant (we can leave the best.flux result). 
+table_co2 %>% 
+  mutate(below_detection=abs(best.flux)<MDF.lim) %>%  
+  ggplot(aes(x=LM.r2, fill=below_detection))+
+  geom_histogram()+
+  facet_wrap(~below_detection, scales="free")
+
+
+
+#2. For fluxes with poor fit (R2< threshold), LM should be assumed to avoid noise creating artificially high fluxes.
+
+table_co2 %>% 
+  mutate(below_detection=abs(best.flux)<MDF.lim) %>%  
+  filter(!below_detection) %>% 
+  filter(LM.r2<0.5) %>% 
+  ggplot(aes(x=HM.r2, y=LM.r2, col=model))+
+  geom_point()
+
+
+#There are negative r2!! 
+table_co2 %>% 
+  filter(LM.r2<0|HM.r2<0) %>% 
+  select(UniqueID, quality.check, model, LM.r2, HM.r2, MDF.lim, best.flux) %>% 
+  mutate(below_detection=abs(best.flux)<MDF.lim) %>%  
+  arrange(below_detection)
+
+
+#General considerations: HM has the risk of overestimating fluxes, there should be a stricter criteria for chosing HM over LM when the difference (g.fact) is very large. Additionally, when fluxes are very low, the fit of the models is going to be worse, and the risk of overestimation is larger. 
+
+
+
+
+
+
+
+
+#SElect the "worst-HM" and inspect visually, 
+#inspect highest difference (g-fact) to see the adequacy. We should only go with HM when it fits really-really well. When the fit is not very good, it will be more prudent to trust the LM. 
+
+table_co2 %>% 
+  filter(!grepl("MDF",quality.check)) %>% 
+  filter(!is.na(g.fact)) %>%
+  ggplot(aes(y=g.fact, fill=model))+
+  geom_histogram(bins = 100)+
+  geom_boxplot()+
+  facet_wrap(~model)
+
+
+
+
+table_co2 %>% 
+  ggplot(aes(x=g.fact, y=abs(HM.se.rel), col=model))+
+  geom_point()+
+  scale_x_log10()
+
+table_co2 %>% 
+  ggplot(aes(x=abs(g.fact), y=HM.r2, col=model))+
+  geom_point()+
+  scale_x_log10()
+
+table_co2 %>% 
+  select(UniqueID,g.fact, HM.se.rel, HM.SE,HM.r2, LM.se.rel,LM.SE,LM.r2, model) %>% 
+  arrange(desc(g.fact))
+
+
+
+
+
+
+
+
+
+
+table_co2 %>% 
+  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% 
+  ggplot(aes(x=LM.r2, y=HM.r2, col=model))+
+  geom_point()
+
+table_co2 %>% 
+  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% 
+  ggplot(aes(x=abs(LM.se.rel), y=abs(HM.se.rel), col=model))+
+  geom_point()
+
+
+table_co2 %>% 
+  filter(HM.r2>0.2&LM.r2>0.2) %>% 
+  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% 
+  ggplot(aes(x=(HM.r2/LM.r2), y=HM.k, col=model))+
+  geom_point()
+
+
+
+
+# ---- g.factor ------
+
+table_co2 %>% 
+  group_by(model) %>% 
+  filter(!is.na(g.fact)) %>% 
+  # filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% #this sample has HM= 0 unclear why, but method fails
+  summarise(maxg=max(g.fact),
+            ming=min(g.fact),
+            avg.g=mean(g.fact))
+
+table_co2 %>% 
+  filter(g.fact==min(g.fact,na.rm = T)) %>% pull(UniqueID)
+
+table_ch4 %>% 
+  group_by(model) %>% 
+  filter(!is.na(g.fact)) %>% 
+  # filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>% #this sample has HM= 0 unclear why, but method fails
+  summarise(maxg=max(g.fact),
+            ming=min(g.fact),
+            avg.g=mean(g.fact))
+
+table_co2 %>% 
+  filter(g.fact==min(g.fact,na.rm = T)) %>% pull(UniqueID)
+
+
+
+
+
+table_co2 %>% 
+  filter(!is.na(g.fact)) %>% 
+  filter(UniqueID!="s1-ri-a2-8-v-t-11:24") %>%
+  ggplot(aes(y=g.fact, col=model))+
+  geom_boxplot()+
+  scale_y_log10()
+
+
+# ---- Kappa ------
+#K ratio is limited to 1 by our goflux call, and in best.flux we set the limit to 1 so, the kappa criteria is never used to select the LM over the HM 
+
+
+#Check the K.ratio between model fit and theoretical maximum:
+table_co2 %>% 
+  ggplot(aes(x=HM.k/k.max, fill=model))+
+  geom_histogram(position = "identity")+
+  facet_wrap(~model)
+
+table_co2 %>% 
+  ggplot(aes(x=HM.k/k.max, y=g.fact, col=model))+
+geom_point()
+
+
+#k-ratio of 1 can represent: noisy measurements in which HM is not adequate or true "exagerated curvatures" when g-factor is very high (i.e. when the HM flux is very very high and the curvature has been limited to its maximum)
+table_co2 %>% 
+  mutate(kratio=HM.k/k.max) %>% 
+  filter(kratio==max(kratio, na.rm=T)) %>% 
+  select(UniqueID, HM.RMSE, LM.RMSE, HM.k, g.fact) %>% 
+  filter(g.fact>4) %>% 
+  arrange(g.fact)
+  
+# the samples with kratio==1, 
+
+#incubations with exagerated curvature (kappa==max.kappa)
+table_co2 %>% 
+  mutate(kratio=HM.k/k.max) %>% 
+  filter(kratio==1) %>% 
+  ggplot(aes(x=g.fact, y=HM.AICc/LM.AICc, col=model))+
+  geom_point()
+
+
+
+# ---- quality of model fits ----
+
+
+
+
+n <- dim(table_co2)[1]
+ind_lm <- which(table_co2$model=="LM")
+in_hm <- which(table_co2$model=="HM")
+
+message("Fluxes calculated for ",n, " different incubations.")
+message(" --- ",dim(table_results_all[table_results_all$strata=="bare",])[1] ," in bare ")
+message(" --- ",dim(table_results_all[table_results_all$strata=="open water",])[1] ," in open water ")
+message(" --- ",dim(table_results_all[table_results_all$strata=="vegetated",])[1] ," in vegetated")
+
+
+message("Best model is non-linear for ",round(length(in_hm)/n*100*100)/100,"% of the measurements")
+
+
+ind_flagged <- which(table_co2$quality.check!="")
+# table_co2$quality.check[ind_flagged]
+message(round(length(ind_flagged)/n*100*100)/100,"% of the measurements are flagged")
+
+
+in_hm_notflagged <- which(table_co2$model=="HM" & table_co2$quality.check=="")
+message("Best model is non-linear for ",round(length(in_hm_notflagged)/(n-length(ind_flagged))*100*100)/100,"% of the measurements not flagged")
+
+table.flags_co2 <- NULL
+for(flag in unique(table_co2$quality.check[ind_flagged])){
+  ind_mdf <- which(table_co2$quality.check==flag)
+  message(round(length(ind_mdf)/n*100*100)/100,"% of the measurements are flagged because of ",flag)
+  
+  table.flags_co2 <- rbind(table.flags_co2,
+                           data.frame(flag = flag,
+                                      n = length(ind_mdf)))
+}
+table.flags_co2$perc <- round(table.flags_co2$n/n*100*100)/100
+table.flags_co2 <- table.flags_co2[order(table.flags_co2$n, decreasing = T),]
+table.flags_co2
+
+
+#co2 fluxes without any flag:
+table_co2[which(is.na(table_co2$quality.check)|table_co2$quality.check==""),]
+
+#Goflux meaning of different flags: 
+#SE: "Standard Error" it tells us that the noise in our incubation is larger than the instrument accuracy (i.e. we have more noise than we would expect just from "instrumental noise").
+#MDF: "minimum detectable flux". I.e. flux is Below detection limit. 
+#gfact > 2: the ratio bettewwn the non-linear(HM) flux  estimate and the linear flux estimate is larger than 2: i.e. HM.flux > 2*LM.flux . IF this happens, we assume that the HM.flux is overestimated, so we take the LM.flux instead (more or less arbitrary decission, different thresholds can be selected (relaxed gfact>4, medium gfact>2, strict gfact>1.25))
+#gfact < 0.5: same as above but for the case when LM.flux is higher than HM.flux
+#HM.flux is NA: non-linear model failed to return a flux.
+
+
+
+ind_flagged <- which(table_ch4$quality.check!="")
+# table_co2$quality.check[ind_flagged]
+message(round(length(ind_flagged)/n*100*100)/100,"% of the measurements are flagged")
+
+table.flags_ch4 <- NULL
+for(flag in unique(table_ch4$quality.check[ind_flagged])){
+  ind_mdf <- which(table_ch4$quality.check==flag)
+  message(round(length(ind_mdf)/n*100*100)/100,"% of the measurements are flagged because of ",flag)
+  
+  table.flags_ch4 <- rbind(table.flags_ch4,
+                           data.frame(flag = flag,
+                                      n = length(ind_mdf)))
+}
+table.flags_ch4$perc <- round(table.flags_ch4$n/n*100*100)/100
+table.flags_ch4 <- table.flags_ch4[order(table.flags_ch4$n, decreasing = T),]
+table.flags_ch4
+
+
+#ch4 fluxes without any goflux-flag:
+table_ch4[which(is.na(table_ch4$quality.check)|table_ch4$quality.check==""),]
+
+
+
+#Examine R2 for CO2
+ggplot(table_co2)+
+  geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40,alpha = 0.5)+
+  geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40,alpha=0.5)+
+  labs(fill="R2")+
+  geom_vline(xintercept = 0.9)+
+  facet_wrap(~model)
+
+
+#Examine R2 for CH4
+ggplot(table_ch4)+
+  geom_histogram(aes(x=LM.r2, fill="linear"),bins = 40,alpha = 0.5)+
+  geom_histogram(aes(x=HM.r2, fill="non-linear"),bins = 40,alpha=0.5)+
+  labs(fill="R2")+
+  geom_vline(xintercept = 0.9)
+
+
+
+#Many different cases, most likely "manual" cropping for incubations with less than R2=0.8 is recomended (this represents ~1000 inspections, doable semi-automatically). 
+table_co2 %>% filter(HM.r2<0.8|LM.r2<0.8) %>% summarise(n=n()) %>% pull(n)
+table_ch4 %>% filter(HM.r2<0.8|LM.r2<0.8) %>% summarise(n=n()) %>% pull(n)
+
+
+
+#List of fit-Flagged####
+
+#Get full table with fit qualities: 
+#UniqueID, start.time_gofluxfit, duration, 
+#CO2_best.model, CO2_quality.check, CO2_contains.artefact, CO2_best.model.R2,
+#CH4_best.model, CH4_quality.check, CH4_contains.artefact, CH4_best.model.R2,
+
+co2_quality<- table_co2 %>% 
+  select(UniqueID, start.time,duration, 
+         model, quality.check, contains.artefact, LM.r2, HM.r2) %>% 
+  mutate(best.model.r2=case_when(model=="LM"~LM.r2,
+                                 model=="HM"~HM.r2)) %>% 
+  rename(start.time_gofluxfit=start.time, co2_best.model=model, co2_contains.artefact=contains.artefact, co2_best.model.r2=best.model.r2, co2_quality.check=quality.check) %>% select(-c(LM.r2,HM.r2))
+
+ch4_quality<- table_ch4 %>% 
+  select(UniqueID, start.time,duration, 
+         model, quality.check, contains.artefact, LM.r2, HM.r2) %>% 
+  mutate(best.model.r2=case_when(model=="LM"~LM.r2,
+                                 model=="HM"~HM.r2)) %>% 
+  rename(start.time_gofluxfit=start.time, ch4_best.model=model, ch4_contains.artefact=contains.artefact, ch4_best.model.r2=best.model.r2,ch4_quality.check=quality.check) %>% select(-c(LM.r2,HM.r2))
+
+
+table_quality<- co2_quality %>% 
+  merge.data.frame(ch4_quality, by=c("UniqueID", "start.time_gofluxfit","duration")) %>% 
+  mutate(co2_to_inspect= (co2_contains.artefact!="no artefact") | (co2_best.model.r2<0.8),
+         ch4_to_inspect= (ch4_contains.artefact!="no artefact") | (ch4_best.model.r2<0.8),
+         any_to_inspect= co2_to_inspect|ch4_to_inspect)
+
+
+#save table of incubations to inspect.
+write.csv(table_quality, file = paste0(quality_path,"fit_models_flags_5smargin.csv"),row.names = F)
+
+
+table_quality %>% 
+  summarise(co2_flags=sum(co2_to_inspect),
+            ch4_flags=sum(ch4_to_inspect),
+            all_flags=sum(any_to_inspect))
+
+# Fieldsheet notes####
+
+#Compile all fieldsheets with comments
+fieldsheets<- list.files(path= fieldsheetpath, recursive = T, pattern = "GHG.xlsx",full.names = T)
+field<- read_GHG_fieldsheets(fieldsheets)
+
+fnotes<- field %>% 
+  filter(!is.na(comments))
+
+write.csv(fnotes, file=paste0(quality_path,"fieldsheets_with_comments.csv"),row.names = F)
+
+notes_unique <-fnotes %>% group_by(comments) %>% summarise(n=n())
+
+#Manual step: inspect comments and add decissions
+#DONE. 
+
+#Import and Join inspectionlist-----
+
+field_withcoments<- read.csv(paste0(quality_path,"decisions_from_fieldsheets_with_comments.csv"))
+
+field_decissions<- field_withcoments %>% 
+  filter(decission_for_incubation!="") %>%
+  select(uniqID, start_time, end_time, decission_for_incubation, crop_start_s, crop_end_s, comments) %>% rename(UniqueID=uniqID, start_timefield=start_time, end_timefield=end_time, decissionfield=decission_for_incubation, commentfield=comments)
+
+
+#Join and re-arrange order to check (we will do 1 pdf per season)
+table_quality_field<- table_quality %>% 
+  merge.data.frame(field_decissions, by="UniqueID",all = T) %>% 
+  mutate(season=substr(UniqueID,1,2)) %>% 
+  select(season,UniqueID,start.time_gofluxfit,duration,
+         co2_best.model,co2_quality.check,co2_contains.artefact,co2_best.model.r2,
+         ch4_best.model,ch4_quality.check,ch4_contains.artefact,ch4_best.model.r2,
+         co2_to_inspect,ch4_to_inspect,any_to_inspect,
+         start_timefield, end_timefield, decissionfield, crop_start_s, crop_end_s, commentfield) %>% 
+  arrange(UniqueID, decissionfield, !any_to_inspect)
+
+write.csv(table_quality_field, file=paste0(quality_path,"Inspection_table_allincubations_withfielddecissions_toFILL.csv"),row.names = F)
+
+
+
+#MANUAL STEP: 
+
+#Inspect all suspect incubations and decide cropping or discarding fluxes.
+
+#All incubations inspected: crop and discard decissions noted in excel:
+# Inspection_table_allincubations_tocrop.xlsx
+#Inspection based on plots of fluxes produced by start-stop times of corrected fieldsheets plus a 5 second margin to start_time and stop_time: all start-stop times for final calculations have to include the 5 second margins plus (if aplicable) the cropping decission logged in excell.
+
+
+#Common patterns during inspection: 
+#LM CO2 underestimating photosynthetic flux, curving of HM too limited (Kappa). Inpect examples and set new criteria for best.flux g-factor limit (the maximum disparity allowed for HMflux/LMflux)
+
+
+#Inspection plots-----
+
+#Use the pdfs created by raw2flux_miguel_edits_5smargin to inspect and note weird things in the inspection_table_TOFILL
+
+#What time exactly is in plots?
+#Second 0 in plots is exactly start.time_gofluxfit (wich is 5s after the start-time from fieldsheet-corrections)
+
+#Common patterns: 
+#LM CO2 underestimating photosynthetic flux, curving of HM too limited (Kappa). Inpect examples and set new criteria for best.flux g-factor limit (the maximum disparity allowed for HMflux/LMflux)
+
+
+#Miscelaneous plots####
+
+#extract a few candidates for inspection based on R2:
+#CO2 good fits r2>0.95: all looks good
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.5, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.57, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2)%>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+#CO2 good fits r2>0.90: A bit more noise, dubious minor outliers
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.4, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.43, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2)%>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+#CO2 acceptable fits r2>0.85: A bit more noise, overall good
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.35, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.36, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2)%>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+#CO2 acceptable fits r2>0.80: A bit more noise, overall good (reliable fluxes)
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.30, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.32, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2)%>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+#CO2 dubious fits r2>0.75: noisy but flux discernible, manipulation artefacts seen.
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.25, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.26, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2) %>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+#CO2 fits: r2 0.65: noisy but clear
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.2, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.21, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2) %>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+#Co2 fits r2 ~0.5: noise & a few outliers but clear trend
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.12, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.18, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2) %>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+#CO2 fits r2 ~0.15-0.3, Artefact instrument, nonconsistent trends, 
+table_co2 %>% 
+  filter(between(x=HM.r2,
+                 lower= quantile(.$HM.r2,probs = 0.05, na.rm = T),
+                 upper =quantile(.$HM.r2,probs = 0.11, na.rm = T))) %>% 
+  filter(model=="HM") %>% 
+  select(UniqueID, best.flux, HM.r2) %>% 
+  filter(best.flux%in%c(max(best.flux),min(best.flux),quantile(best.flux, 0.5)))
+
+
+
+
+
+
+
+ggplot(table_co2[which(!is.na(table_co2$quality.check)),], 
+       aes(quality.check, (HM.flux-LM.flux)/HM.flux, fill = model))+
+  geom_hline(yintercept = c(-1,0,1), color = "grey70")+
+  geom_jitter(alpha=0.1, size=2, width = 0.1)+
+  geom_violin(alpha=0.2, scale = "width", draw_quantiles = c(0.5), aes(colour = model, fill = model))+
+  theme_article()+
+  # scale_x_log10()+
+  # scale_y_log10()+
+  ylim(c(-1,2))+
+  scale_fill_viridis_d(option = "A", end = 0.8, direction = -1)+
+  scale_colour_viridis_d(option = "A", end = 0.8, direction = -1)+
+  coord_flip()
+
+table_co2$diff_model <- (table_co2$HM.flux-table_co2$LM.flux)/table_co2$HM.flux
+
+n_less_1perc <- length(which(abs(table_co2$diff_model)<0.01))
+
+message("Linear and non-linear models have less than 1% difference for ",round(n_less_1perc/n*100*100)/100,"% of the measurements")
+
+ggplot(table_co2[order((table_co2$diff_model)),], aes(seq(1,n)/n*100, (diff_model)*100))+
+  geom_vline(xintercept = seq(0,100,50), color = "grey70")+
+  geom_hline(yintercept = c(-100,-10,0,10,100), color = "grey70")+
+  geom_point()+
+  # scale_y_log10()+
+  ylim(c(-50,120))+
+  xlab("Proportion of timeseries")+
+  ylab("Relative difference [% of HM flux]")+
+  theme_article()+ggtitle(paste0("HM-LM models difference is below 10% for ",round(n_less_1perc/n*100*10)/10,"% of the measurements"))
+
+
+ggplot(table_co2, aes(abs(best.flux), abs(diff_model)*100))+
+  # geom_vline(xintercept = seq(0,100,50), color = "grey70")+
+  geom_hline(yintercept = c(1,10,100), color = "grey70")+
+  geom_point(aes(colour = quality.check))+
+  scale_x_log10()+
+  scale_y_log10()+
+  # xlim(c(-50,50))+
+  # ylim(c(-50,120))+
+  # xlab("Proportion of timeseries")+
+  ylab("Relative difference [% of HM flux]")+
+  theme_article()+ggtitle(paste0("HM-LM models difference is below 1% for ",round(n_less_1perc/n*100*10)/10,"% of the measurements"))
+
+
+df_exceedance_co2 <- NULL
+for(thresh in c(0.1,0.5,seq(1,100))){
+  n_less <- length(which(abs(table_co2$diff_model)<thresh/100))
+  df_exceedance_co2 <- rbind(df_exceedance_co2,
+                             data.frame(t = thresh,
+                                        n = n_less,
+                                        p = n_less/dim(table_co2)[1]*100))
+}
+
+p_co2 <- ggplot(df_exceedance_co2, aes(t, p))+geom_path()+geom_point()+theme_article()+
+  geom_segment(aes(x=-0,xend=10,
+                   y=df_exceedance_co2$p[df_exceedance_co2$t==10], yend=df_exceedance_co2$p[df_exceedance_co2$t==10]))+
+  geom_segment(aes(x=10,xend=10,
+                   y=-Inf, yend=df_exceedance_co2$p[df_exceedance_co2$t==10]))+
+  # scale_x_log10()+
+  ylab("Proportion of timeseries [%]")+
+  xlab("Relative difference [% of HM flux]")+
+  ggtitle(paste0("For CO2, HM-LM models difference is below 10% for ",round(df_exceedance_co2$p[df_exceedance_co2$t==10]),"% of the measurements"))
+
+
+table_ch4$diff_model <- (table_ch4$HM.flux-table_ch4$LM.flux)/table_ch4$HM.flux
+
+df_exceedance_ch4 <- NULL
+for(thresh in c(0.1,0.5,seq(1,100))){
+  n_less <- length(which(abs(table_ch4$diff_model)<thresh/100))
+  df_exceedance_ch4 <- rbind(df_exceedance_ch4,
+                             data.frame(t = thresh,
+                                        n = n_less,
+                                        p = n_less/dim(table_ch4)[1]*100))
+}
+
+p_ch4 <- ggplot(df_exceedance_ch4, aes(t, p))+geom_path()+geom_point()+theme_article()+
+  geom_segment(aes(x=-0,xend=10,
+                   y=df_exceedance_ch4$p[df_exceedance_ch4$t==10], yend=df_exceedance_ch4$p[df_exceedance_ch4$t==10]))+
+  geom_segment(aes(x=10,xend=10,
+                   y=-Inf, yend=df_exceedance_ch4$p[df_exceedance_ch4$t==10]))+
+  # scale_x_log10()+
+  ylab("Proportion of timeseries [%]")+
+  xlab("Relative difference [% of HM flux]")+
+  ggtitle(paste0("For CH4, HM-LM models difference is below 10% for ",round(df_exceedance_ch4$p[df_exceedance_ch4$t==10]),"% of the measurements"))
+
+
+p_diff_models <- ggarrange(p_co2, p_ch4, ncol = 1)
+ggsave(plot = p_diff_models, filename = "HM-LM models difference.jpeg", path = plots_path, 
+       width = 7, height = 5, dpi = 300, units = 'in', scale = 1.1)
+
+
+ggplot(table_co2, aes(HM.MAE, diff_model))+geom_point(aes(colour = model))+
+  scale_colour_viridis_d("best model", option = "A", end = 0.8, direction = -1)+
+  theme_article()+ 
+  scale_x_log10()+  scale_y_log10()
+
+
+ggplot(table_ch4, aes(HM.MAE, diff_model))+geom_point(aes(colour = model))+
+  scale_colour_viridis_d("best model", option = "A", end = 0.8, direction = -1)+
+  theme_article()+ 
+  scale_x_log10()+  scale_y_log10()
+
+
+
+
+ggplot(table_co2)+
+  geom_point(aes(abs(best.flux), HM.MAE, colour = "HM"), alpha=0.2, size=3)+
+  geom_point(aes(abs(best.flux), LM.MAE, colour = "LM"), alpha=0.2, size=3)+
+  theme_article()+
+  # xlim(c(0,50))+
+  scale_x_log10()+
+  scale_y_log10()+
+  ylab("MAE")+
+  scale_colour_viridis_d("model", option = "A", end = 0.8, direction = -1)
+
+
+ggplot(table_ch4, aes(LM.MAE, HM.MAE, shape=model,colour = model))+
+  geom_point(alpha=0.4, size=3)+
+  theme_article()+
+  scale_x_log10()+
+  scale_y_log10()+
+  scale_colour_viridis_d("best model", option = "A", end = 0.8, direction = -1)
+
+
+
+
+
+ggplot(table_ch4)+
+  geom_density(aes(LM.MAE, fill = "LM"), alpha=0.5)+
+  geom_density(aes(HM.MAE, fill = "HM"), alpha=0.5)+
+  theme_article()+
+  # facet_grid(.~strata)+
+  scale_x_log10()
+
+
+ggplot(table_ch4, aes(LM.MAE, best.flux, colour = HM.MAE))+
+  geom_point(alpha=0.9, size=3)+
+  theme_article()+
+  scale_x_log10()+
+  scale_y_log10()+
+  scale_colour_viridis_c(option = "A", end = 0.8, direction = -1)
+
+
+
+
+
+# ---- Select data with reasonable fits ----
+
+ind_sel <- which(table_co2$HM.MAE<10)
+table_co2_sel <- table_co2[ind_sel,]
+table_co2_sel <- table_co2_sel[]
+
+ind_sel <- which(table_ch4$HM.MAE<100)
+table_ch4_sel <- table_ch4[ind_sel,]
+
+
+# save selection in a single table
+
+table_co2_out <- table_co2_sel[,c(which(names(table_co2_sel)=="UniqueID"),
+                                  which(names(table_co2_sel)=="sampling"):which(names(table_co2_sel)=="lightCondition"),
+                                  which(names(table_co2_sel)=="best.flux"))]
+
+myfilename <- paste("all_CO2_fluxes",min(as.Date(table_co2_out$start.time)),"to",
+                    max(as.Date(table_co2_out$start.time)), sep = "_")
+write.csv(x = table_co2_out, file = paste0(myfilename,".csv"), 
+          row.names = F)
+
+table_ch4_out <- table_ch4_sel[,c(which(names(table_ch4_sel)=="UniqueID"),
+                                  which(names(table_ch4_sel)=="sampling"):which(names(table_ch4_sel)=="lightCondition"),
+                                  which(names(table_ch4_sel)=="best.flux"),
+                                  which(names(table_ch4_sel)=="ebullition"),
+                                  which(names(table_ch4_sel)=="diffusion"))]
+
+myfilename <- paste("all_CH4_fluxes",min(as.Date(table_ch4_out$start.time)),"to",
+                    max(as.Date(table_ch4_out$start.time)), sep = "_")
+write.csv(x = table_ch4_out, file = paste0(myfilename,".csv"), 
+          row.names = F)
+
+
+
+
+

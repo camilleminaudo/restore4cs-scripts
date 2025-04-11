@@ -6,10 +6,10 @@ set.seed(123)  # For reproducibility
 n_points <- 100
 
 df <- data.frame(
-  # x = runif(n_points, 1, 10),
-  # y = runif(n_points, 1, 20)
-  x=as.numeric(mydata_ow[[2]]$POSIX.time-first(mydata_ow[[2]]$POSIX.time)),
-  y=mydata_ow[[2]]$CH4dry_ppb
+  x = runif(n_points, 1, 10),
+  y = runif(n_points, 1, 20)
+  # x=as.numeric(mydata_ow[[2]]$POSIX.time-first(mydata_ow[[2]]$POSIX.time)),
+  # y=mydata_ow[[2]]$CH4dry_ppb
 )
 
 

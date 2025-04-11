@@ -1,14 +1,34 @@
 
 # ---
-# Authors: Camille Minaudo
+# Authors: Miguel Cabrera
 # Project: "RESTORE4Cs"
-# date: "May 2024"
+# date: "Dec 2023"
 # https://github.com/camilleminaudo/restore4cs-scripts
 # ---
 
 # --- Description of this script
-# This script loads the fluxes estimates from script raw2flux.R. 
-# it is used to explore and analyze the dataset.
+# This script makes summaries of CO2 and CH4 fluxes calculated in the raw2flux for each season, subsite and strata. 
+#ALL GHGflux are expresed in umol m-2 s-1 
+
+
+#1st. Incubation fluxes to plot daily fluxes: Combine Vegetated plots transparent and dark CO2flux with daylight hours into dailyNEE_CO2, same approach for CH4 (although not conceptually necessary, for consistency) 
+
+#For plots with Open water and bare strata: take CO2flux and CH4flux as representative for the whole day. 
+#For plots with Vegetated strata: use night_CO2flux (CO2flux for dark) and day_CO2flux (CO2flux for transparent) to calculate ER, GPP. 
+
+
+
+
+
+#TODO:
+
+#Create folders to save summaries and plots. 
+
+
+
+#Inputs: 
+    #per-season CSV files with computed fluxes
+    #fieldsheets 
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -26,10 +46,11 @@ require(dplyr)
 require(purrr)
 require(data.table)
 require(tools)
+library(ggpubr)
 
 repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
-# files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
-# for (f in files.sources){source(f)}
+files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
+for (f in files.sources){source(f)}
 
 
 # ---- Directories and data loading ----
@@ -38,17 +59,19 @@ results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
 plots_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/plots")
 
+fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
+#Load csv files produced by raw2flux.R. script
 setwd(results_path)
 
-listf<- list.files(path = results_path, pattern = "^S", full.names = T)
-
+listf <- list.files(path = results_path, pattern = "^S[0-9]{1}_fluxes", all.files = T, full.names = T, recursive = F)
 table_results_all <- NULL
+
 for (f in listf){
   table_results_all <- rbind(table_results_all, 
-                             read.csv(file = f, header = T))
-}
+                             read.csv(file = f, header = T))}
 
+#Add
 table_results_all$sampling <- str_sub(table_results_all$subsite, start = 1, 2)
 table_results_all$pilotsite <- str_sub(table_results_all$subsite, start = 4, 5)
 table_results_all$subsite <- str_sub(table_results_all$subsite, start = 7, 8)
@@ -59,7 +82,7 @@ table_results_all <- table_results_all[!is.na(table_results_all$lightCondition),
 
 # table_results_all <- table_results_all[table_results_all$CO2_best.flux<1000,]
 
-
+#Load subsites level_incubation CSV files with details of flux calulation for different models (produced by raw2flux.R script)
 get_full_detailed_table <- function(table_results_all, variable){
   
   listf <- list.files(path = paste0(results_path,"level_incubation"), pattern = ".csv", all.files = T, full.names = T, recursive = F)
@@ -146,7 +169,6 @@ n_less_1perc <- length(which(abs(table_co2$diff_model)<0.01))
 
 message("Linear and non-linear models have less than 1% difference for ",round(n_less_1perc/n*100*100)/100,"% of the measurements")
 
-n_less_10perc<- length(which(abs(table_co2$diff_model)<0.1))
 ggplot(table_co2[order((table_co2$diff_model)),], aes(seq(1,n)/n*100, (diff_model)*100))+
   geom_vline(xintercept = seq(0,100,50), color = "grey70")+
   geom_hline(yintercept = c(-100,-10,0,10,100), color = "grey70")+
@@ -155,7 +177,7 @@ ggplot(table_co2[order((table_co2$diff_model)),], aes(seq(1,n)/n*100, (diff_mode
   ylim(c(-50,120))+
   xlab("Proportion of timeseries")+
   ylab("Relative difference [% of HM flux]")+
-  theme_article()+ggtitle(paste0("HM-LM models difference is below 10% for ",round(n_less_10perc/n*100*10)/10,"% of the measurements"))
+  theme_article()+ggtitle(paste0("HM-LM models difference is below 10% for ",round(n_less_1perc/n*100*10)/10,"% of the measurements"))
 
 
 ggplot(table_co2, aes(abs(best.flux), abs(diff_model)*100))+
@@ -289,7 +311,7 @@ table_co2_out <- table_co2_sel[,c(which(names(table_co2_sel)=="UniqueID"),
                                   which(names(table_co2_sel)=="sampling"):which(names(table_co2_sel)=="lightCondition"),
                                   which(names(table_co2_sel)=="best.flux"))]
 
-myfilename <- paste("all_good_CO2_fluxes",min(as.Date(table_co2_out$start.time)),"to",
+myfilename <- paste("all_CO2_fluxes",min(as.Date(table_co2_out$start.time)),"to",
                     max(as.Date(table_co2_out$start.time)), sep = "_")
 write.csv(x = table_co2_out, file = paste0(myfilename,".csv"), 
           row.names = F)
@@ -300,7 +322,7 @@ table_ch4_out <- table_ch4_sel[,c(which(names(table_ch4_sel)=="UniqueID"),
                                   which(names(table_ch4_sel)=="ebullition"),
                                   which(names(table_ch4_sel)=="diffusion"))]
 
-myfilename <- paste("all_good_CH4_fluxes",min(as.Date(table_ch4_out$start.time)),"to",
+myfilename <- paste("all_CH4_fluxes",min(as.Date(table_ch4_out$start.time)),"to",
                     max(as.Date(table_ch4_out$start.time)), sep = "_")
 write.csv(x = table_ch4_out, file = paste0(myfilename,".csv"), 
           row.names = F)
@@ -774,4 +796,338 @@ p_ebull <- ggplot(table_ch4_ebull,
 
 
 ggarrange(p_ebull, p_prop, nrow = 1)
+
+
+
+rm(list = ls()) # clear workspace
+cat("/014") # clear console
+
+
+# ---- packages ----
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(zoo)
+library(ggplot2)
+library(grid)
+library(egg)
+
+# repo_root <- dirname(dirname(rstudioapi::getSourceEditorContext()$path))
+# files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T)
+# for (f in files.sources){source(f)}
+
+
+# ---- Directories ----
+dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
+# datapath <- paste0(dropbox_root,"/GHG/RAW data")
+# fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
+# loggerspath <- paste0(datapath,"/RAW Data Logger")
+# RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
+results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
+summary_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/summaries/")
+plots_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/summaries/sumplots/")
+
+
+#Read all computed fluxes per season
+season_csvs<- list.files(path = results_path, pattern = "^S[0-9]{1}_fluxes")
+dat<- data.frame()
+for (i in season_csvs){
+  s<- read.csv(paste0(results_path,i))
+  
+  dat<- rbind(dat,s)
+}
+rm(s, i)
+
+
+####OPEN wATER DATASET####
+ow<- dat %>% 
+  separate(subsite, into = c("season", "site", "subsite_only"), remove = F) %>% 
+  filter(strata=="open water")
+
+ow_wrongchamber<-ow %>% filter(chamberType!="floating") %>% pull(UniqueID)
+#S1-VA-P2-16 open water with tube, transparent and dark, test for biofilm
+#S1-VA-R2-(13,14,15) only 2cm of water, used tube chamber instead of floating
+
+ow_wronglight<- ow %>% filter(lightCondition!="dark") %>% pull(UniqueID)
+#S1-DA-R2-11 wrong lightcondition, fixed in fieldsheet but not recalculated as of 20241203
+#S1-DU-A1-(2,3,4) 3 open water with floating chamber but lightcondition written "transparent"
+#S1-VA-P2-16 open water with tube, transparent and dark, test for biofilm
+#S4-CA-R1-8 wrong lightcondition, fixed in fieldsheet but not recalculated as of 20241203
+
+
+
+#Filter OW dataset to remove anything suspicious:
+
+unique(ow$CO2_quality.check)
+  #check decissions for CO2_quality.check and CH4_quality.check:
+    # SE indicates noisy timeseries, 
+    # g-fact. indicates ratio between nonlinear model(HM) and linear one(LM)  
+    # MDF: below minimum detectable flow for instrument accuracy (~below detection limit)
+    #"HM.flux is NA" 
+
+
+ow_tointegrate<- ow %>% 
+  filter(!UniqueID%in%c(ow_wrongchamber,ow_wronglight))
+  # filter(!grepl("g-fact. > 2", CO2_quality.check))
+  
+unique(ow$CO2_quality.check)
+
+ow_long<-ow %>% 
+  filter(chamberType=="floating"&lightCondition=="dark") %>% 
+  select(UniqueID, season,site,subsite_only, water_depth, CO2_best.flux,CO2_best.model,CO2_quality.check, )
+
+
+
+
+#CH4 from Vegetation dark vs light
+dat %>% 
+  filter(strata=="vegetated") %>%
+  filter(!UniqueID%in%c("s1-va-a1-12-v-t-14:58","s1-va-a1-12-v-d-15:06")) %>% #Not well done incubations, there are repetittions
+  filter(!grepl("s1-da-r1-8|s1-da-r2-12",UniqueID)) %>% #wrong lightcondition, fixed in fieldsheets but not recalculated yet
+  mutate(plotID=str_extract(string = UniqueID, pattern="s[0-9]{1}-[a-z]{2}-[a-z]{1}[0-9]{1}-[0-9]{1,2}")) %>% 
+  filter(CH4_quality.check=="") %>%
+  select(plotID, lightCondition,CH4_best.flux) %>% 
+  pivot_wider(id_cols = plotID,names_from = lightCondition, values_from = CH4_best.flux) %>% 
+  ggplot(aes(x=transparent, y=dark))+
+  geom_point()+
+  geom_abline(slope = 1)
+str(a)
+
+
+
+####GHG veg-land vs veg-water####
+
+
+#Load CH4 data after filter implemented table_ch4$HM.MAE<100
+ch4<- read.csv(paste0(results_path,"all_good_CH4_fluxes_2023-10-03_to_2024-08-01.csv"))
+
+#Load co2 data after filter implemented table_co2$Hm.MAE<10
+co2<- read.csv(paste0(results_path,"all_good_CO2_fluxes_2023-10-03_to_2024-08-01.csv"))
+
+#####1. Strata distribution####
+
+#Check the strata distribution (veg-land vs veg-water) in each subsite
+#I.e. for which subsites would it make a difference to separate?
+#Use distribution from fieldsheets
+
+fieldsheets<- list.files(path= fieldsheetpath, recursive = T, pattern = "GHG.xlsx",full.names = T)
+field<- read_GHG_fieldsheets(fieldsheets)
+
+lifewatch_example_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/LifeWatch Italy GHG dataset example/")
+incubations_without_flux<- read.csv(file = paste0(lifewatch_example_path,"Incubations_without_flux.csv"))
+
+#How many incubations performed per strata and light-condition
+chamber_deployments<- field %>% 
+  select(-c(logger_floating_chamber,logger_transparent_chamber,chamber_type,longitude,latitude, start_time,end_time, initial_co2,initial_ch4,final_co2,final_ch4, chamber_height_cm, unix_start,unix_stop, plot_id,comments,date, person_sampling, gas_analyzer)) %>% 
+  filter(!uniqID%in%incubations_without_flux$uniqID) %>% 
+  mutate(campaign=substr(subsite, 1,2),
+         status=substr(subsite, 7,7),
+         sampling=subsite,
+         subsite=substr(sampling,4,8),
+         water_presence=case_when(water_depth>0~T,
+                                  water_depth==0~F,
+                                  TRUE~NA),
+         vegetation_presence=case_when(strata=="vegetated"~T,
+                                       TRUE~F),
+         transparent_condition=case_when(transparent_dark=="dark"~F,
+                                         transparent_dark=="transparent"~T)
+         
+  ) %>% 
+  select(campaign, pilot_site, status, subsite,sampling, uniqID,water_depth, water_presence, vegetation_presence, transparent_condition)
+
+
+chamber_deployments %>% 
+  group_by(pilot_site, campaign, subsite, vegetation_presence) %>% 
+  summarise(Yes=sum(water_presence),
+            No=sum(!water_presence)) %>% 
+  filter(vegetation_presence==T) %>% 
+  pivot_longer(cols=c(No, Yes),names_to = "water_presence",values_to = "num_fluxes") %>% 
+  rbind(tibble(pilot_site=c("RI","RI"), campaign=c("S1","S3"), subsite=c("RI-A1","RI-A1"), vegetation_presence=c(T,T), water_presence=c("No","Yes"), num_fluxes=c(0,0))) %>% 
+  rowwise() %>% 
+  mutate(subsite_only=gsub(paste0(pilot_site,"-"), "", subsite)) %>% 
+  ggplot(aes(x=campaign, y=num_fluxes, fill=water_presence))+
+  scale_fill_manual(values = c("No" = "brown", "Yes" = "blue")) +
+  geom_bar(stat = "identity", position = "dodge")+
+  scale_y_continuous(name = "Number of vegetated fluxes")+
+  facet_grid(pilot_site~subsite_only, scales = "free")+
+  theme_bw()+
+  ggtitle("Water presence (depth>0cm) in vegetated plots (number of fluxes)")
+  
+
+#CASE PILOTS with uniform water presence in each subsite (for relevant fluxes): CU, DA, RI  
+
+#CASE PILOTS with variable water presence: CA, DU, VA. 
+#How relevant is the water variability? Is  just for a couple of chambers?
+
+#CA: subsites with very mixed water presence 
+#VA: subsites with mixed water presence, strong seasonality in some cases
+#DU: most subsites with fairly uniform water absence, some with more mixed presence.
+
+
+#DECISSION: separating vegetated-land and vegetated-water will be the best option for coherence across case-pilots IF there is any obvious effect of water presence on the fluxes of vegetated plots. 
+
+
+
+#####2.GHG Veg-land vs Veg-water####
+
+######2.1. CH4#####
+#Overview CA, DU, VA CH4
+#CA shows significant differences in CH4 emissions between vegetated land and vegetated water for most subsites, not so clear for DU and VA using the best.flux CH4 dataset (after filtering out non-reliable fluxes based on model fit)
+ch4 %>% 
+  filter(strata=="vegetated") %>% 
+  filter(pilotsite%in%c("ca","du","va")) %>%
+  mutate(water_presence=case_when(water_depth>0~"Yes",
+                                  water_depth<=0~"No",
+                                  T~NA)) %>% 
+  ggplot(aes(x=water_presence,y=best.flux, col=water_presence))+
+  geom_boxplot()+
+  scale_color_manual(values = c("No" = "brown", "Yes" = "blue")) +
+  stat_compare_means(label.sep = "\n",label.y.npc = 0.8)+
+  scale_y_continuous(name="CH4 best.flux")+
+  stat_summary(fun = length, aes(label = paste("n =", ..y..)), geom = "text", vjust = -2.5, size = 3) +
+  theme_bw()+
+  facet_grid(pilotsite~subsite,scales = "free")
+
+######2.1. CO2#####
+#Only a few subsites show significant differences in transparent CO2 flux, even considering that veg-water vegetation is usually much bigger
+
+co2 %>% 
+  filter(strata=="vegetated") %>% 
+  filter(lightCondition=="transparent") %>% 
+  filter(pilotsite%in%c("ca","du","va")) %>%
+  mutate(water_presence=case_when(water_depth>0~"Yes",
+                                  water_depth<=0~"No",
+                                  T~NA)) %>% 
+  ggplot(aes(x=water_presence,y=best.flux, col=water_presence))+
+  geom_boxplot()+
+  scale_color_manual(values = c("No" = "brown", "Yes" = "blue")) +
+  stat_compare_means(label.sep = "\n",label.y.npc = 0.1)+
+  scale_y_continuous(name="CO2 best.flux transparent", limits = c(-45,45))+
+  stat_summary(fun = length, 
+               aes(label = paste("n =", ..y..)), 
+               geom = "text", 
+               size = 3, 
+               vjust = -2.5) +
+  theme_bw()+
+  facet_grid(pilotsite~subsite)
+
+#CO2 dark
+#As for transparent, only a few subsites show a significant difference, with veg-water ER being usually lower than veg-land.
+co2 %>% 
+  filter(strata=="vegetated") %>% 
+  filter(lightCondition=="dark") %>% 
+  filter(pilotsite%in%c("ca","du","va")) %>%
+  mutate(water_presence=case_when(water_depth>0~"Yes",
+                                  water_depth<=0~"No",
+                                  T~NA)) %>% 
+  ggplot(aes(x=water_presence,y=best.flux, col=water_presence))+
+  geom_boxplot()+
+  scale_color_manual(values = c("No" = "brown", "Yes" = "blue")) +
+  stat_compare_means(label.sep = "\n",label.y.npc = 0.1)+
+  scale_y_continuous(name="CO2 best.flux dark", limits = c(-30,30))+
+  stat_summary(fun = length, 
+               aes(label = paste("n =", ..y..)), 
+               geom = "text", 
+               size = 3, 
+               vjust = -2.5) +
+  theme_bw()+
+  facet_grid(pilotsite~subsite)
+
+
+###CH4 OW vs Veg-water####
+#####1. Strata distribution####
+
+#Check the strata distribution (Open-water vs veg-water) in each subsite
+#Use distribution from fieldsheets
+
+chamber_deployments %>% 
+  group_by(pilot_site, campaign, subsite, water_presence) %>% 
+  summarise(Yes=sum(vegetation_presence),
+            No=sum(!vegetation_presence)) %>% 
+  filter(water_presence==T) %>% 
+  pivot_longer(cols=c(No, Yes),names_to = "vegetation_presence",values_to = "num_fluxes") %>% 
+  # rbind(tibble(pilot_site=c("RI","RI"), campaign=c("S1","S3"), subsite=c("RI-A1","RI-A1"), vegetation_presence=c(T,T), water_presence=c("No","Yes"), num_fluxes=c(0,0))) %>% 
+  rowwise() %>% 
+  mutate(subsite_only=gsub(paste0(pilot_site,"-"), "", subsite)) %>% 
+  ggplot(aes(x=campaign, y=num_fluxes, fill=vegetation_presence))+
+  scale_fill_manual(values = c("No" = "lightblue", "Yes" = "darkgreen")) +
+  geom_bar(stat = "identity", position = "dodge")+
+  scale_y_continuous(name = "Number of Water fluxes")+
+  facet_grid(pilot_site~subsite_only, scales = "free")+
+  theme_bw()+
+  ggtitle("Distribution of Vegetation presence in water plots (depth>0cm)")
+
+
+######2.1. CH4#####
+#CH4 from go.flux
+#Significant increase due to vegetation_presence for CH4 fluxes in most subsites 
+ch4 %>% 
+  filter(strata!="bare") %>% 
+  filter(water_depth>0) %>% 
+  filter(pilotsite%in%c("ca","cu","da","du","va")) %>%
+  mutate(vegetation_presence=case_when(strata=="vegetated"~"Yes",
+                                       strata=="open water"~"No",
+                                  T~NA)) %>% 
+  ggplot(aes(x=vegetation_presence,y=best.flux, col=vegetation_presence))+
+  geom_boxplot()+
+  scale_color_manual(values = c("No" = "lightblue", "Yes" = "darkgreen")) +
+  stat_compare_means(label.sep = "\n",label.y.npc = 0.8)+
+  scale_y_continuous(name="CH4 best.flux")+
+  stat_summary(fun = length, aes(label = paste("n =", ..y..)), geom = "text", vjust = -2.5, size = 3) +
+  theme_bw()+
+  facet_grid(pilotsite~subsite,scales = "free")
+
+
+#CH4 ebullition (when detected)
+#Significant increase due to vegetation_presence for CH4 ebullitive fluxes in almost all subsites
+ch4 %>% 
+  filter(strata!="bare") %>% 
+  filter(water_depth>0) %>% 
+  filter(pilotsite%in%c("ca","cu","da","du","va")) %>%
+  mutate(vegetation_presence=case_when(strata=="vegetated"~"Yes",
+                                       strata=="open water"~"No",
+                                       T~NA)) %>% 
+  filter(ebullition>0) %>% 
+  ggplot(aes(x=vegetation_presence,y=ebullition, col=vegetation_presence))+
+  geom_boxplot()+
+  scale_color_manual(values = c("No" = "lightblue", "Yes" = "darkgreen")) +
+  stat_compare_means(label.sep = "\n",label.y.npc = 0.8)+
+  scale_y_continuous(name="CH4 ebullition")+
+  stat_summary(fun = length, aes(label = paste("n =", ..y..)), geom = "text", vjust = -2.5, size = 3) +
+  theme_bw()+
+  facet_grid(pilotsite~subsite,scales = "free")
+
+
+#CH4 total flux (ebullition+diffusion with camille aproach), Including cases without detectable ebullition 
+#Significant increase due to vegetation_presence for CH4 total fluxes in almost all subsites
+ch4 %>% 
+  filter(strata!="bare") %>% 
+  filter(water_depth>0) %>% 
+  filter(pilotsite%in%c("ca","cu","da","du","va")) %>%
+  mutate(vegetation_presence=case_when(strata=="vegetated"~"Yes",
+                                       strata=="open water"~"No",
+                                       T~NA)) %>% 
+  mutate(total_ch4_flux=ebullition+diffusion) %>% 
+  ggplot(aes(x=vegetation_presence,y=total_ch4_flux, col=vegetation_presence))+
+  geom_boxplot()+
+  scale_color_manual(values = c("No" = "lightblue", "Yes" = "darkgreen")) +
+  stat_compare_means(label.sep = "\n",label.y.npc = 0.8)+
+  scale_y_continuous(name="CH4 total flux (ebu+diff)")+
+  stat_summary(fun = length, aes(label = paste("n =", ..y..)), geom = "text", vjust = -2.5, size = 3) +
+  theme_bw()+
+  facet_grid(pilotsite~subsite,scales = "free")
+
+
+
+#Sampling dates per subsite####
+samplingdates<- field %>% 
+  select(subsite, date) %>% 
+  separate(subsite, into = c("season", "site", "status_num"), sep = "-") %>% 
+  mutate(subsite=paste(site, status_num,sep = "-")) %>% 
+  select(season,subsite, date) %>% 
+  distinct() %>% 
+  filter(!(subsite=="RI-R2"&date%in%as.POSIXct(c("2023-11-15","2024-01-24","2024-04-10","2024-07-03"))))#Remove days for high-tide sampling only (3samples) of Restored site RI-R2, leaving the day when the bulk of sampling was performed.
+
+
+write.csv(samplingdates, file = paste0(lifewatch_example_path,"Restore4Cs_ghg_sampling_dates_per_subsite.csv"),row.names = F)
 
