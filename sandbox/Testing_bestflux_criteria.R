@@ -105,9 +105,9 @@ table_ch4 <- get_full_detailed_table(table_results_all, variable = "ch4")
 
 
 
-#CO2 table filter------
+#Remove Wrong CO2------
 
-#Remove wrong incubations: those with too much influence of artefacts or wrong manipulations.
+#Remove wrong incubations: those with too much influence of artefacts or wrong manipulations based on visual inspection of time-series.
 inspectiontable<- read_xlsx(path = paste0(quality_path, "Inspection_table_allincubations_tocrop_perGHG.xlsx")) %>% 
   select(UniqueID,co2_decission,co2_obs_inspection, ch4_decission,ch4_obs_inspection)
 
@@ -120,38 +120,19 @@ table_ch4<- table_ch4 %>%  filter(!UniqueID%in%ch4_discard)
 
 
 
-
-#1. For fluxes below detection (MDF), the choice of model is not relevant (we can leave the best.flux result). 
-table_co2 %>% 
-  mutate(below_detection=abs(LM.flux)<MDF.lim) %>%  
-  ggplot(aes(x=LM.r2, fill=below_detection))+
-  geom_histogram()+
-  facet_wrap(~below_detection, scales="free")
+#Weighted Score of models-----
 
 
-co2_sig<- table_co2 %>% 
-  filter(abs(LM.flux)>MDF.lim)
-
-
-
-
-
-#Akaike weights------
-
-#Calculated from the AICc, it provides the probability of being the best model (0-1) 
-# Akaike weights give you a probabilistic interpretation of how much better one model is than the other
-
-
-# ---- Define your weights ----
+## ---- Define your weights ----
 weights <- c(RMSE = 0.1, MAE = 0.1, CV = 0.1, AICc_weight = 0.7)  # Adjust as needed
 epsilon <- 1e-6  # Small constant to avoid division by zero
 
-# ---- Compute Akaike weights ----
+## ---- Compute Akaike weights ----
 # Calculate the delta AICc for each model
 #It provides the probability of being the best model (0-1) 
 # Akaike weights give you a probabilistic interpretation of how much better one model is than the other
 
-co2_sig <- co2_sig %>%
+table_co2 <- table_co2 %>%
   mutate(
     delta_AICc_LM = LM.AICc - pmin(LM.AICc, HM.AICc),  # Compare to the best AICc (min AICc)
     delta_AICc_HM = HM.AICc - pmin(LM.AICc, HM.AICc),
@@ -161,8 +142,8 @@ co2_sig <- co2_sig %>%
     AICc_weight_HM = exp(-0.5 * delta_AICc_HM) / (exp(-0.5 * delta_AICc_LM) + exp(-0.5 * delta_AICc_HM))
   )
 
-# ---- Now we can calculate relative improvements and composite scores ----
-co2_sig <- co2_sig %>%
+## ---- Rel. improve and Score ----
+table_co2 <- table_co2 %>%
   mutate(
     # Compute CVs
     LM.CV = LM.SE / (abs(LM.slope) + epsilon),
@@ -171,7 +152,7 @@ co2_sig <- co2_sig %>%
     # Compute relative improvements (positive = HM is better, relative reduction in error)
     Improvement.RMSE = (LM.RMSE - HM.RMSE) / LM.RMSE, 
     Improvement.MAE  = (LM.MAE  - HM.MAE)  / LM.MAE,  
-    Improvement.CV   = (LM.CV   - HM.CV)   / LM.CV,   
+    Improvement.CV   = (LM.CV   - (HM.CV/4))   / LM.CV,   
     
     # Rescale AICc weights to [-1 LM is 100% likely to 1 HM is 100% likely]
     Rescaled_AICc_weight_HM = 2 * AICc_weight_HM - 1,   # Rescale to [-1, 1]
@@ -187,6 +168,106 @@ co2_sig <- co2_sig %>%
   )
 
 
+#MDF-----
+#1. For fluxes below detection (MDF), the choice of model is not relevant (we can leave the best.flux result). 
+table_co2 %>% 
+  mutate(below_detection=abs(LM.flux)<MDF.lim) %>%  
+  ggplot(aes(x=LM.r2, fill=below_detection))+
+  geom_histogram()+
+  facet_wrap(~below_detection, scales="free")
+
+
+co2_sig<- table_co2 %>% 
+  filter(abs(LM.flux)>MDF.lim)
+
+#fluxes flaged as MDF are below-detection based on incubation "design", taking only into account 1)the length of incubation and 2) precision of the instrument used. 
+
+
+#g.fact ------
+#We avoided arbitrarily setting a g.fact limit, lets see what is the highest g.fact of the best-performing HM models
+
+good_hm<- co2_sig %>% 
+  filter(HM.CV<quantile(HM.CV, .7,na.rm=T))
+
+ggplot(good_hm, aes(x=HM.CV, y=g.fact))+
+  geom_point()+
+  geom_hline(yintercept = 4)+
+  geom_label(data=. %>% filter(g.fact>3), aes(label=UniqueID))
+
+#s4-ri-a2-13-o-d is true, long flat end lowering LM 
+#s4-du-a1-14-b-d is true, long flat end lowering LM U-shaped cropped
+
+#s3-du-p2-1-o-d more or less, long flatter end, basically 2 LM with different slope taken second slope
+#S1-du-p1-14-t true but due to long flat end lowering LM  cropped
+
+
+
+ggplot(good_hm, aes(x=HM.CV, y=HM.k/k.max))+
+  geom_point()+
+  geom_hline(yintercept = 1)+
+  geom_label(data=. %>% filter(HM.k/k.max>0.5), aes(label=UniqueID))
+
+
+
+
+#SE.rel-----
+#We need a metric to distinguish how good the estimates are when the model performance is very bad (even when the estimate is higher than the MDF), this will flag very noisy measurements, we could base this on se.rel (expressed as % of SE/flux). Hard limit could be se.rel< 5%, check number of incubations. 
+
+
+co2_sig %>% 
+  ggplot(aes(x=abs(LM.se.rel), y=abs(HM.se.rel), col=Preferred.Model))+
+  geom_point()+
+  geom_abline(slope = 4)
+
+
+co2_sig %>% 
+  ggplot(aes(x=abs(LM.se.rel)))+
+  geom_histogram()
+
+#Proportion of incubations with less than 5% error for LM
+n<- dim(co2_sig)[1]
+n_less_5perc <- length(which(abs(co2_sig$LM.se.rel)<5))
+ggplot(co2_sig[order(abs(co2_sig$LM.se.rel)),], aes(seq(1,n)/n*100, abs(LM.se.rel)))+
+  geom_vline(xintercept = seq(0,100,50), color = "grey70")+
+  geom_hline(yintercept = c(0,5,100), color = "grey70")+
+  geom_point()+
+  xlab("Proportion of timeseries")+
+  ylab("Relative error [% of LM flux]")+
+  theme_article()+
+  ggtitle(paste0("LM SE.rel is below 5% for ",round(n_less_5perc/n*100,digits = 2),"% of the measurements"))
+
+
+noisyLM<- co2_sig[which(abs(co2_sig$LM.se.rel)>=5),]
+
+noisyLM %>% arrange(desc(abs(LM.flux))) %>% select(UniqueID, LM.flux, LM.se.rel, HM.se.rel, g.fact)
+
+noisyLM %>% 
+  ggplot(aes(x=abs(LM.flux), y=abs(LM.se.rel), col=Preferred.Model))+
+  geom_point()
+
+
+#Proportion of incubations with less than 5% error for HM
+n_less_5perc_hm <- length(which(abs(co2_sig$HM.se.rel)<5))
+ggplot(co2_sig[order(abs(co2_sig$HM.se.rel)),], aes(seq(1,n)/n*100, abs(HM.se.rel)))+
+  geom_vline(xintercept = seq(0,100,50), color = "grey70")+
+  geom_hline(yintercept = c(0,5,100), color = "grey70")+
+  geom_point()+
+  xlab("Proportion of timeseries")+
+  ylab("Relative error [% of HM flux]")+
+  theme_article()+
+  ggtitle(paste0("HM SE.rel is below 5% for ",round(n_less_5perc_hm/n*100,digits = 2),"% of the measurements"))
+
+noisyHM<- co2_sig[which(abs(co2_sig$HM.se.rel)>=5),]
+noisyHM %>% arrange(desc(abs(HM.flux))) %>% select(UniqueID, HM.flux, HM.se.rel, LM.se.rel, g.fact)
+
+noisyHM %>% 
+  ggplot(aes(x=abs(HM.flux), y=abs(HM.se.rel), col=Preferred.Model))+
+  geom_point()
+
+
+
+
+#Inspect composite score------
 co2_sig %>%
   ggplot(aes(x = Composite.Score, fill = Preferred.Model)) +
   geom_histogram(bins = 60, alpha = 0.3) +
@@ -197,10 +278,26 @@ co2_sig %>%
 
 
 co2_sig %>% 
-  ggplot(aes(x=AICc_weight_LM, fill=Preferred.Model))+
+  ggplot(aes(x=AICc_weight_HM, fill=Preferred.Model))+
   geom_histogram()+
-  scale_x_continuous(name="AICc weight for LM, probability of LM being best")
+  scale_x_continuous(name="AICc weight for HM, probability of HM being best")
 
+co2_sig %>% 
+  ggplot(aes(x=Improvement.MAE, fill=Preferred.Model))+
+  geom_histogram()+
+  scale_x_continuous(name="Relative improvement of MAE with HM")
+
+co2_sig %>% 
+  ggplot(aes(x=Improvement.RMSE, fill=Preferred.Model))+
+  geom_histogram()+
+  scale_x_continuous(name="Relative improvement of RMSE with HM")
+
+co2_sig %>% 
+  ggplot(aes(x=Improvement.CV, fill=Preferred.Model))+
+  geom_histogram(bins = 60)+
+  scale_x_continuous(name="Relative improvement of SE.rel with HM")
+
+co2_sig %>% filter(Improvement.CV<(-1))
 
 #DIrect comparison of model quality LM vs HM
 #In current run, criteria are "SE", "RMSE", "AICc", 
@@ -219,7 +316,16 @@ co2_sig %>%
 co2_sig %>% 
   ggplot(aes(x=LM.SE, y=HM.SE, col=Preferred.Model))+
   geom_point()+
-  geom_abline(slope = 1)
+  geom_abline(slope = 4)
+
+#IN incubations where LM behaves good (90% of incubations with LM relative error <5%) and same flux estimate for LM and HM (0.95<g.fact<1.05), the relative error of the HM model is exactly 4 times as high as that of the LM. We should take this "penalization of the HM model into account in our weighted Improvement criteria. 
+ggMarginal(p=
+co2_sig %>% 
+  filter(abs(LM.se.rel)<5) %>% 
+  ggplot(aes(x=abs(LM.CV), y=abs(HM.CV), col=between(g.fact,0.95,1.05)))+
+  geom_point()+
+  geom_abline(slope = 4)
+)
 
 #Our best.flux criteria result in almost always choosing HM due to RMSE and AICc despite SE (HM wins 2:1)
 
