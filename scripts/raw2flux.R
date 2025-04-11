@@ -41,7 +41,7 @@ for (f in files.sources){source(f)}
 
 
 #################################
-sampling <- "S4"
+sampling <- "S3"
 # USER, please specify if you want plots to be saved
 harmonize2RData <- T
 doPlot <- T
@@ -53,7 +53,7 @@ datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 loggerspath <- paste0(datapath,"/RAW Data Logger")
 plots_path <- paste0(dropbox_root,"/GHG/Processed data/plots_all_incubations/")
-RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
+RData_path <- paste0("C:/Users/Camille Minaudo/OneDrive - Universitat de Barcelona/Documentos/PROJECTS/RESTORE4Cs/data/Harmonized_GHG")
 results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
 
@@ -155,7 +155,7 @@ fieldsheet_Picarro$unix_stop <- map_incubations$stop[corresponding_row]
 # ---- Correct fieldsheets in the case of LiCOR data, whenever available ---
 
 # load incubation map (run get_exact_incubation_times_Licor.R to update it)
-map_incubations <- read.csv( file = paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810/map_incubations.csv"))
+map_incubations <- read.csv( file = paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810/map_incubations_touse.csv"))
 # only select realistic start/stop
 map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$start < 15*60),]
 
@@ -215,7 +215,7 @@ if(harmonize2RData){
   print(data_folders)
   
   
-  # Import and store data for for Picarro and LosGatos data
+  # Import and store data for Picarro and LosGatos data
   
   raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format, prec){
     r <- grep(pattern = instrument, x=data_folders)
