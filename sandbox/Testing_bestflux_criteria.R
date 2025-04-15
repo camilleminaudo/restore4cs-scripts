@@ -124,7 +124,7 @@ table_ch4<- table_ch4 %>%  filter(!UniqueID%in%ch4_discard)
 
 
 ## ---- Define your weights ----
-weights <- c(RMSE = 0.1, MAE = 0.1, CV = 0.1, AICc_weight = 0.7)  # Adjust as needed
+weights <- c(RMSE = 0.15, MAE = 0.15, CV = 0.1, AICc_weight = 0.6)  # Adjust as needed
 epsilon <- 1e-6  # Small constant to avoid division by zero
 
 ## ---- Compute Akaike weights ----
@@ -187,18 +187,13 @@ co2_sig<- table_co2 %>%
 #We avoided arbitrarily setting a g.fact limit, lets see what is the highest g.fact of the best-performing HM models
 
 good_hm<- co2_sig %>% 
-  filter(HM.CV<quantile(HM.CV, .7,na.rm=T))
+  filter(HM.CV<quantile(HM.CV, .9,na.rm=T))
 
 ggplot(good_hm, aes(x=HM.CV, y=g.fact))+
   geom_point()+
   geom_hline(yintercept = 4)+
   geom_label(data=. %>% filter(g.fact>3), aes(label=UniqueID))
 
-#s4-ri-a2-13-o-d is true, long flat end lowering LM 
-#s4-du-a1-14-b-d is true, long flat end lowering LM U-shaped cropped
-
-#s3-du-p2-1-o-d more or less, long flatter end, basically 2 LM with different slope taken second slope
-#S1-du-p1-14-t true but due to long flat end lowering LM  cropped
 
 
 
