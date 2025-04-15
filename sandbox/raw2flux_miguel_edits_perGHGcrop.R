@@ -66,6 +66,8 @@ doPlot <- T
 #Minimum duration of incubation (seconds) to calculate flux for
 minimum_duration_for_flux<- 100
 
+#Calculate and plot high-leverage points for LM? (For quality control, plots Cook's values for incubations that contain data higher than the typical threshold of  4 / n.obs)
+flag_lm_leverage<- F
 
 
 # ---- Directories ----
@@ -468,7 +470,10 @@ for (subsite in subsites){
   if(file.exists(paste0(subsite,"_",gs_suffix,".RData"))){
     load(file = paste0(subsite,"_",gs_suffix,".RData"))
     
+    #Correct the units for picarro H2O,import function assumes mmol/mol, actual units of our instrument are % (i.e. 100* mol/mol). We correct the Rdata by multiplying the concentration by 10. 
+    if (gs=="Picarro"){mydata$H2O_ppm<- mydata$H2O_ppm*10}
     
+    #Loop over each incubation: 
     for (incub in seq_along(corresp_fs$plot_id)){
       my_incub <- mydata[as.numeric(mydata$POSIX.time)> corresp_fs$unix_start[incub] &
                            as.numeric(mydata$POSIX.time)< corresp_fs$unix_stop[incub],]
@@ -626,11 +631,11 @@ for (subsite in subsites){
     
     
     # Calculate fluxes
-    #K.mult sets the multiplier for maximum Kappa (curvature parameter of H.M. model), defaults to 1 (no multiplier)
+    #K.mult sets the multiplier for maximum Kappa (curvature parameter of H.M. model), defaults to 1 (no multiplier). Allow k.mult of 1.1 to discard HM models that exceed K.max
     
-    CO2_results_auto <- goFlux(dataframe = mydata_auto_co2, gastype = "CO2dry_ppm")
-    CH4_results_auto <- goFlux(dataframe = mydata_auto_ch4, gastype = "CH4dry_ppb")
-    H2O_results_auto <- goFlux(dataframe = mydata_auto_h2o, gastype = "H2O_ppm")
+    CO2_results_auto <- goFlux(dataframe = mydata_auto_co2, gastype = "CO2dry_ppm",k.mult = 1.1)
+    CH4_results_auto <- goFlux(dataframe = mydata_auto_ch4, gastype = "CH4dry_ppb",k.mult = 1.1)
+    H2O_results_auto <- goFlux(dataframe = mydata_auto_h2o, gastype = "H2O_ppm", k.mult = 1.1)
     
     
     
@@ -665,6 +670,7 @@ for (subsite in subsites){
     
     #----FLAG high-leverage points-----
     
+    if (flag_lm_leverage==T){
     # Function to generate gas vs elapsed time and Cook's Distance vs elapsed time plots
     generate_combined_plots <- function(df, gas) {
       # Create the formula dynamically
@@ -735,101 +741,7 @@ for (subsite in subsites){
     invisible(lapply(Cooksplots_co2, print))
     dev.off()
     
-    
-    # 
-    # 
-    # # Combined function to generate leverage plots and count high-leverage points
-    # generate_plots_and_flags <- function(df, gas) {
-    #   # Create the formula dynamically
-    #   formula_str <- paste0(gas, " ~ unixtime")
-    #   
-    #   # Generate the plots and flags in one pass
-    #   results_list <- df %>%
-    #     group_by(UniqueID) %>%
-    #     group_split() %>%
-    #     lapply(function(group_df) {
-    #       n <- nrow(group_df)
-    #       if (n < 3) return(NULL)  # Skip groups too small to assess
-    #       
-    #       # Fit the linear model once
-    #       model <- lm(as.formula(formula_str), data = group_df)
-    #       
-    #       # Extract Cook's Distance, Leverage, and DFBETAS for the slope (unixtime)
-    #       cook <- cooks.distance(model)
-    #       leverage <- hatvalues(model)
-    #       dfb <- tryCatch(dfbetas(model)[, "unixtime"], error = function(e) rep(0, n))
-    #       
-    #       # Influence thresholds for high-leverage points
-    #       dfb_thresh <- max(quantile(abs(dfb), 0.99), 2 / sqrt(n))
-    #       cook_thresh <- max(quantile(cook, 0.99), 4 / n)
-    #       
-    #       # Count high-leverage points
-    #       high_leverage_count <- sum(abs(dfb) > dfb_thresh & cook > cook_thresh)
-    #       
-    #       # Create the Cook's Distance vs unixtime plot
-    #       plot_data <- data.frame(
-    #         UniqueID = rep(group_df$UniqueID[1], n),  # Use first UniqueID for all points in group
-    #         unixtime = group_df$unixtime,
-    #         cook = cook
-    #       )
-    #       
-    #       plot <- ggplot(plot_data, aes(x = unixtime, y = cook)) +
-    #         geom_point(aes(color = cook), size = 3) +
-    #         labs(title = paste("Cook's Distance vs unixtime for", unique(group_df$UniqueID)),
-    #              x = "unixtime",
-    #              y = "Cook's Distance") +
-    #         theme_minimal() +
-    #         theme(legend.position = "none")
-    #       
-    #       # Return the plot and high-leverage count as a list
-    #       return(list(
-    #         plot = plot,
-    #         high_leverage_count = high_leverage_count
-    #       ))
-    #     })
-    #   
-    #   # Filter out NULL results (in case any groups were skipped)
-    #   results_list <- results_list[!sapply(results_list, is.null)]
-    #   
-    #   # Extract the plots and high-leverage counts separately
-    #   plots <- sapply(results_list, function(x) x$plot, simplify = FALSE)
-    #   high_leverage_counts <- sapply(results_list, function(x) x$high_leverage_count, simplify = TRUE)
-    #   
-    #   # Create a tibble with UniqueID and high-leverage counts
-    #   high_leverage_flags <- tibble(
-    #     UniqueID = unique(df$UniqueID),
-    #     high_leverage_count = high_leverage_counts
-    #   )
-    #   
-    #   return(list(
-    #     plots = plots,
-    #     high_leverage_flags = high_leverage_flags
-    #   ))
-    # }
-    # 
-    # # For CO2 data
-    # results_co2 <- generate_plots_and_flags(mydata_auto_co2, gas = "CO2dry_ppm")
-    # 
-    # # For CH4 data
-    # results_ch4 <- generate_plots_and_flags(mydata_auto_ch4, gas = "CH4dry_ppb")
-    # 
-    # 
-    # co2_flags <- contains_highleverage(mydata_auto_co2, gas = "CO2dry_ppm")
-    # 
-    # CO2_flux_res_auto <- CO2_flux_res_auto %>%
-    #   left_join(co2_flags, by = "UniqueID")
-    # 
-    # ch4_flags <- contains_highleverage(mydata_auto_ch4, gas = "CH4dry_ppb")
-    # 
-    # CH4_flux_res_auto <- CH4_flux_res_auto %>%
-    #   left_join(ch4_flags, by = "UniqueID")
-    # 
-    # # For CO2 data
-    # results_co2 <- generate_plots_and_flags(mydata_auto_co2, gas = "CO2dry_ppm")
-    # 
-    # # For CH4 data
-    # results_ch4 <- generate_plots_and_flags(mydata_auto_ch4, gas = "CH4dry_ppb")
-
+    }
         
     #----5. Plot Goflux (optional)----
     if(doPlot){
