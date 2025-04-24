@@ -57,7 +57,8 @@ fieldsheets_map<- data.frame(filepath=myfiles) %>%
 #Any sampling missing fieldsheet? (i.e. less than 6 fieldsheets per sampling?)
 fieldsheets_map %>% group_by(sampling_code) %>% mutate(nfiles=n()) %>% filter(nfiles<6) %>% 
   select(filename)
-#S2-DA-R2 does not have sediment fieldsheet! 
+#S2-DA-R2 does not have sediment fieldsheet!
+#OK, no sediments or cores were collected
 
 
 # load files
@@ -85,8 +86,8 @@ core_list<- complete_list %>%
 
 
 #Samples with missing values (other than comments)
-incomplete_details<- complete_list[!complete.cases(complete_list[,!names(complete_list) %in% "comments"]),] %>% filter(!is.na(pilot_site)) 
-message(paste("The following subsites have incomplete information:"))
+incomplete_details<- core_list[!complete.cases(core_list[,!names(core_list) %in% "comments"]),] %>% filter(!is.na(pilot_site)) 
+message(paste("The following subsites have incomplete information for cores:"))
 paste(unique( incomplete_details$subsite_code))
 
 
@@ -130,5 +131,5 @@ core_list_formated<- core_list %>%
 
 
 #Save core-fieldsheet compilation:
-write.csv(core_list_formated, file = paste0(cores_folder, "Core_fieldsheet_compilation_",today(),".csv"), row.names = F)
+write.csv(core_list_formated, file = paste0(cores_folder, "Core_fieldsheet_compilation.csv"), row.names = F)
 
