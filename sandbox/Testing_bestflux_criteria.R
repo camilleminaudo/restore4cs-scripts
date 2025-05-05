@@ -10,27 +10,34 @@
 
 # This script analyses the quality of fit of all fluxes to check the aproppriateness of selection criteria of best.flux function. This is based on the per-GHG cropped fluxes calculated.
 
+#Biggest risk is overestimating fluxes by choosing HM over LM when is the HM curvature is exaggerated due to artefacts. The Exaggeration of curvature can be assessed based on the K.ratio and based on g-factor. 
 
-#Biggest risk is overestimating fluxes by chosing HM over LM when is the HM curvature is exagerated due to artefacts. The Exageration of curvature can be assessed based on the K.ratio and based on g-factor. 
+#CO2 criteria-----
+#CO2 flux selection: after inspection and cropping of artefacts 
 
-#g-factor should not be used to decide model when HM fit is "reasonably good"
+#Removal of wrong incubations: incubations with unreliable timeseries (due to artefacts or errors in manipulations) are logged in the same excell for cropping decissions. No CO2 flux will be included for these incubations. 
 
-#General rules: for incubations with bad fit (R2 or SE rel), default to LM 
-
-#When there is a very strong curvature, the LM will progresively fit worse
-
-
-#FLuxes below detection for LM (LM.flux<MDF.lim), should be considered as such for both models (i.e. the choice of model should not make an insignificant flux become significant)
-
-#In practice, remove bdl fluxes before checking for best model
+#Hard thresholds: 
+#1. Exaggerated curvature: K.ratio > 1 --> default to LM
+#2. Exaggerated curvature: gfactor > 4 --> default to LM. All fluxes with g.fact > 4 have been inspected for apropriateness of LM over HM.
+#3. Minimum detectable flux (MDF): LM flux < MDF.lim --> default to LM. All fluxes with MDF have been inspected for aproppriateness of LM over HM. Rationale: the choice of model should be the defining factor of a significant/insignificant flux. Additionally, if the flux is below detection, the premise of HM model (i.e. concentration gradient reduction during incubation leading to progresively lower flux over time) is extremely unlikely.
 
 
+#Scoring system: we will use AICc improvement (via AICc weights) to select HM over LM when doing so improves fit by more than 5%. 
 
-rm(list = ls()) # clear workspace
-cat("/014") # clear console
+#We will only assess the scoring system with the fluxes that do not breach any of the hard thresholds. 
+
+
+
+
+
+
 
 
 # ---- packages ----
+rm(list = ls()) # clear workspace
+cat("/014") # clear console
+
 library(tidyverse)
 library(readxl)
 library(lubridate)
@@ -101,22 +108,160 @@ get_full_detailed_table <- function(table_results_all, variable){
 
 #Get detailed table for each gas
 table_co2 <- get_full_detailed_table(table_results_all, variable = "co2")
-table_ch4 <- get_full_detailed_table(table_results_all, variable = "ch4")
+# table_ch4 <- get_full_detailed_table(table_results_all, variable = "ch4")
 
 
 
-#Remove Wrong CO2------
+#Get Wrong CO2------
 
-#Remove wrong incubations: those with too much influence of artefacts or wrong manipulations based on visual inspection of time-series.
+#Get wrong incubations: those with too much influence of artefacts or wrong manipulations based on visual inspection of time-series.
 inspectiontable<- read_xlsx(path = paste0(quality_path, "Inspection_table_allincubations_tocrop_perGHG.xlsx")) %>% 
   select(UniqueID,co2_decission,co2_obs_inspection, ch4_decission,ch4_obs_inspection)
 
-unique(inspectiontable$co2_decission)
 co2_discard<- inspectiontable %>% filter(co2_decission=="discard") %>% pull(UniqueID)
-ch4_discard<- inspectiontable %>% filter(ch4_decission=="discard") %>% pull(UniqueID)
 
-table_co2<- table_co2 %>%  filter(!UniqueID%in%co2_discard)
-table_ch4<- table_ch4 %>%  filter(!UniqueID%in%ch4_discard)
+#these incubations will be flagged in the final dataset and will not influence the criteria decisions. 
+
+
+
+#Criteria Hard.threshold checks
+
+#Inspect mdf----
+#We want to make sure MDF fluxes do not arise from artefacts
+
+co2_mdf<- table_co2 %>%  
+  filter(!UniqueID%in%co2_discard) %>%
+  filter(abs(LM.flux)<=MDF.lim)
+
+#MDFs CO2 inspected: true below detection flat-ish white noise incubations
+mdf_inspected<- c("s1-ca-a2-1-v-d-10:44","s1-du-p2-12-b-d-11:01","s1-ri-a2-1-b-d-10:20","s1-ri-p1-1-v-d-10:19","s1-ri-p1-3-v-d-10:51","s1-ri-r2-4-b-d-10:01","s2-du-a1-15-v-t-13:29","s2-du-a2-1-o-d-08:54","s3-du-p2-7-b-d-10:26","s3-va-p1-13-v-t-11:48","s1-ca-a2-13-o-d-13:17","s1-ca-a2-4-v-d-11:25","s1-ca-a2-5-o-d-11:33","s1-ca-a2-6-v-d-11:49","s1-ca-a2-8-o-d-12:12","s1-ca-r1-1-o-d-08:41","s1-ca-r1-4-o-d-09:45","s1-ca-r1-6-o-d-10:17","s1-cu-a1-14-v-d-11:14","s1-cu-a2-14-o-d-11:32","s1-cu-a2-16-o-d-11:58","s1-cu-a2-4-o-d-07:53","s1-cu-a2-6-o-d-08:12","s1-cu-p2-9-o-d-10:56","s1-cu-r2-18-v-d-10:36","s1-cu-r2-21-b-d-11:20","s1-da-p1-3-o-d-09:11","s1-da-p1-5-o-d-09:33","s1-da-p1-8-o-d-10:05","s1-da-p1-9-o-d-10:17","s1-du-a1-2-o-d-09:26","s1-du-a1-3-o-d-09:38","s1-du-a1-4-o-d-09:50","s1-du-p2-5-b-t-08:39","s1-du-p2-6-v-t-08:52","s1-du-r2-8-v-t-09:44","s1-ri-a2-10-b-d-11:50","s1-ri-a2-12-b-d-12:05","s1-ri-a2-5-b-d-10:56","s1-ri-a2-6-b-d-11:01","s1-ri-p1-10-v-t-12:59","s1-ri-p1-4-v-d-11:11","s1-ri-r2-6-v-d-10:39","s1-ri-r2-7-b-d-10:50","s1-va-a2-1-o-d-09:02","s1-va-a2-4-v-d-10:01","s1-va-a2-6-o-d-10:35","s1-va-p1-13-v-t-12:41","s1-va-p2-4-b-t-09:56","s1-va-r2-13-o-d-12:34","s1-va-r2-14-o-d-12:53","s1-va-r2-15-o-d-13:13","s1-va-r2-8-b-d-11:08","s2-ca-a1-3-v-t-09:12","s2-ca-a1-8-b-d-11:08","s2-ca-a2-1-v-d-08:15","s2-ca-a2-10-v-d-10:58","s2-ca-a2-7-v-d-09:47","s2-ca-a2-9-v-d-10:31","s2-ca-r1-14-v-d-12:21","s2-cu-a1-4-v-t-08:59","s2-cu-a2-11-o-d-10:30","s2-cu-a2-14-o-d-11:03","s2-cu-a2-15-o-d-11:11","s2-cu-a2-3-v-d-08:54","s2-cu-a2-6-o-d-09:42","s2-cu-a2-7-o-d-09:50","s2-cu-a2-8-o-d-10:04","s2-cu-a2-9-o-d-10:13","s2-cu-p1-2-v-t-07:51","s2-cu-p2-1-v-d-08:26","s2-cu-p2-1-v-t-08:18","s2-cu-p2-10-o-d-10:52","s2-cu-p2-11-o-d-11:08","s2-cu-p2-13-o-d-11:23","s2-cu-p2-14-o-d-11:31","s2-cu-p2-15-o-d-11:39","s2-cu-p2-2-v-d-08:46","s2-cu-p2-2-v-t-08:38","s2-cu-p2-3-v-d-09:08","s2-cu-p2-3-v-t-09:00","s2-cu-p2-9-o-d-10:45","s2-cu-r1-4-v-t-08:40","s2-cu-r2-1-b-d-08:08","s2-cu-r2-1-b-t-08:01","s2-cu-r2-10-o-d-11:10","s2-cu-r2-11-o-d-11:23","s2-cu-r2-12-o-d-11:37","s2-cu-r2-3-b-d-08:41","s2-cu-r2-4-v-d-09:02","s2-cu-r2-4-v-t-08:55","s2-cu-r2-5-v-d-09:23","s2-cu-r2-5-v-t-09:14","s2-cu-r2-6-v-t-09:40","s2-cu-r2-9-o-d-11:00","s2-da-a1-1-o-d-08:17","s2-da-a1-3-o-d-08:43","s2-da-a2-1-o-d-07:32","s2-da-a2-10-o-d-09:31","s2-da-a2-11-o-d-09:57","s2-da-a2-12-o-d-10:06","s2-da-a2-13-o-d-10:17",
+                  "s2-da-a2-15-o-d-10:46","s2-da-a2-2-o-d-07:52","s2-da-a2-3-o-d-08:04","s2-da-a2-4-o-d-08:16","s2-da-a2-5-o-d-08:26","s2-da-a2-6-o-d-08:36","s2-da-a2-7-o-d-08:47","s2-da-a2-8-o-d-09:02","s2-da-p1-1-o-d-08:10","s2-da-p2-2-v-t-09:58","s2-da-r2-2-v-d-07:46","s2-du-a1-1-o-d-09:21","s2-du-a1-2-o-d-09:36","s2-du-a1-3-o-d-09:48","s2-du-a2-12-v-d-12:36","s2-du-a2-14-b-d-13:04","s2-du-p2-1-o-d-09:17","s2-du-p2-3-o-d-10:11","s2-du-r1-9-v-d-11:22","s2-ri-a2-1-b-d-08:35","s2-ri-a2-16-o-d-12:08","s2-ri-a2-2-b-d-08:51","s2-ri-a2-7-b-d-10:00","s2-ri-a2-8-b-d-10:10","s2-ri-p1-13-o-d-12:52","s2-ri-p1-14-o-d-13:19","s2-ri-p1-15-o-d-13:41","s2-ri-p1-2-v-d-09:11","s2-ri-p1-3-v-d-09:31","s2-ri-p1-4-v-d-09:54","s2-ri-p1-5-v-d-10:08","s2-ri-p1-7-o-d-10:36","s2-ri-r2-12-v-d-12:40","s2-ri-r2-2-o-d-12:47","s2-ri-r2-3-o-d-13:26","s2-va-a1-2-o-d-10:21","s2-va-a1-4-v-d-11:06","s2-va-a1-4-v-t-10:57","s2-va-a1-6-b-d-11:34","s2-va-a1-7-v-t-11:57","s2-va-p2-12-v-t-11:44","s2-va-p2-13-v-d-12:14","s2-va-p2-15-v-t-12:49","s2-va-p2-5-o-d-10:05","s2-va-p2-6-o-d-10:18","s2-va-p2-7-o-d-10:35","s2-va-p2-9-b-d-11:07","s2-va-r1-1-o-d-09:18","s2-va-r1-11-v-d-12:46","s2-va-r1-11-v-t-12:36","s2-va-r1-12-v-d-13:13","s2-va-r1-12-v-t-13:03","s2-va-r1-5-o-d-10:22","s2-va-r1-8-o-d-11:15","s3-ca-a2-10-o-d-09:29","s3-ca-a2-12-o-d-09:56","s3-ca-a2-14-o-d-10:25","s3-ca-a2-15-v-d-10:39","s3-ca-a2-16-v-d-10:57","s3-ca-a2-2-o-d-07:43","s3-ca-a2-3-v-d-08:05","s3-ca-a2-4-o-d-08:13","s3-ca-a2-5-v-d-08:27","s3-ca-a2-5-v-t-08:20","s3-ca-a2-6-o-d-08:36","s3-ca-a2-7-v-d-08:50","s3-da-a2-1-o-d-06:06","s3-da-a2-4-o-d-07:00","s3-du-a1-6-b-d-09:19","s3-du-a2-11-b-d-10:55","s3-du-a2-3-v-t-07:43","s3-du-p2-5-o-d-09:38","s3-du-r1-9-v-t-09:18","s3-ri-a2-11-b-d-10:58","s3-ri-a2-13-b-d-11:20","s3-ri-a2-14-b-d-11:30","s3-ri-a2-16-o-d-12:03","s3-ri-a2-17-o-d-12:23","s3-ri-a2-6-b-d-09:51","s3-ri-a2-8-b-d-10:21","s3-ri-a2-9-b-d-10:29","s3-ri-r1-13-b-d-14:04","s3-va-r2-1-o-d-08:29","s3-va-r2-3-v-d-09:10","s3-va-r2-3-v-t-09:04","s4-cu-a2-11-o-d-10:31","s4-cu-r2-12-o-d-10:10","s4-da-a2-12-o-d-08:51","s4-da-p1-12-o-d-09:55","s4-ri-a2-6-b-d-07:41","s4-ri-p1-5-o-d-07:54","s2-ca-a2-5-v-t-09:15","s2-ca-a2-2-v-d-08:33")
+
+
+#any MDF flux not inspected?
+co2_mdf %>% filter(!UniqueID%in%mdf_inspected) %>% pull(UniqueID)
+
+
+
+#check g.fact ------
+
+#Here we check that the hard-threshold for g.fact (i.e. if g.fact > 4 --> LM) does not cause any truly non-linear pattern to be lost (i.e. that there is no good HM of flux >4*LM)
+
+#These are All the incubations with unreasonably large g-fact (>4). They have all been visually inspected and LM is more representative for them. 
+co2_gfact_inspected<- c("s3-va-r1-1-v-d-08:47","s4-ri-p2-6-o-d-08:28","s2-va-a2-14-v-d-13:06","s4-da-p2-5-o-d-09:34","s4-ca-a1-8-v-t-10:52","s1-ca-p2-3-v-t-10:53","s4-da-r2-7-o-d-08:01","s4-du-a1-14-b-d-12:34","s1-va-r1-13-v-d-12:55","s1-ca-p1-14-v-d-14:49","s3-ri-r1-13-b-d-14:04","s2-da-p2-9-o-d-11:15","s4-cu-a1-10-o-d-09:59","s2-cu-p1-13-o-d-10:11","s4-cu-a1-4-v-t-08:22","s2-cu-p1-11-v-t-09:50","s4-ri-p1-14-o-d-11:04","s1-cu-p1-17-v-t-14:01","s1-da-p2-11-o-d-12:38","s2-du-r2-4-b-d-10:07","s4-ca-a2-13-o-d-10:27","s1-da-r2-15-b-t-12:35","s3-da-p2-3-v-d-09:45","s4-da-p2-1-v-t-08:45","s2-cu-a1-15-v-d-11:02","s2-da-p2-1-o-d-09:44","s4-ca-p2-1-v-d-08:01","s2-du-p1-15-v-d-13:01","s4-du-r2-11-v-t-10:49","s4-ri-p1-7-o-d-08:26","s3-cu-r1-2-v-t-07:06","s3-cu-r1-2-v-t-07:06","s1-cu-r1-13-v-t-08:53","s3-cu-r2-12-v-t-11:39","s1-va-a2-12-v-t-12:32","s3-cu-a2-5-v-t-10:37","s4-va-r1-12-v-d-11:39","s4-da-a1-8-v-t-09:40","s4-da-p1-4-v-t-08:06","s1-cu-a1-6-o-d-08:23","s1-du-r2-15-v-d-12:56","s4-ca-p1-5-v-t-08:24","s1-du-r2-11-v-t-11:16","s4-du-r2-10-v-t-10:26","s2-du-r2-14-v-t-13:09","s1-da-p2-8-o-d-12:04","s2-da-p2-12-v-d-11:57")
+
+
+#Any g.fact >4 to inspect?
+table_co2 %>% filter(!UniqueID%in%co2_discard) %>%
+  filter(abs(LM.flux)>MDF.lim) %>% 
+  filter(g.fact>=4) %>% 
+  filter(!UniqueID%in%co2_gfact_inspected)  %>% 
+  select(UniqueID, g.fact, LM.flux, HM.flux)
+
+
+
+
+
+
+#Table TO decide----
+#After checking that g.fact and mdf criteria are appropriate, subset dataset that needs a decision.
+
+
+co2_todecide<- table_co2 %>% 
+  #Remove incubations marked to discard
+  filter(!UniqueID%in%co2_discard) %>%
+  #Remove HM NA (when HM fails, there is nothing to decide, default to LM)
+  filter(!is.na(HM.flux)) %>% 
+  #Remove K.ratio >= 1 (HM curvature cannot exceed the max in any case, if so default to LM)
+  filter(HM.k<k.max) %>% 
+  #Remove g.fact >4 (after our inspection, these will default to LM)
+  filter(g.fact<4) %>% 
+  #Remove MDF fluxes (after our inspection, these will default to LM)
+  filter(abs(LM.flux)>MDF.lim)
+
+
+#Inspect AICc for selection criteria (using AICc weight)
+#Test criteria: using AICc weight (based on the relative difference in AICc, calculate the AICc weight metric, a probabilistic estimate of how likely it is that one model is better than the other). 
+
+co2_todecide <- co2_todecide %>%
+  mutate(
+    delta_AICc_LM = LM.AICc - pmin(LM.AICc, HM.AICc),  # Compare to the best AICc (min AICc)
+    delta_AICc_HM = HM.AICc - pmin(LM.AICc, HM.AICc),
+    
+    # Calculate the Akaike weight for HM: AICc_weight_HM (0-1), how likely is it that HM is better than LM?
+    AICc_weight_HM = exp(-0.5 * delta_AICc_HM) / (exp(-0.5 * delta_AICc_LM) + exp(-0.5 * delta_AICc_HM))
+  ) %>% 
+  mutate(k.ratio=HM.k/k.max)
+
+#Inspect AICc_weight_HM
+co2_todecide %>%
+  ggplot(aes(x=AICc_weight_HM, fill=AICc_weight_HM>0.5))+
+  geom_histogram()+
+  scale_x_continuous(name="AICc weight for HM, probability of HM being best")
+
+#Most cases have very clear separation. 
+
+
+#Inspect against g.fact 
+co2_todecide %>%
+  ggplot(aes(x=AICc_weight_HM,y=g.fact, col=AICc_weight_HM>0.5))+
+  geom_point()+
+  geom_hline(yintercept=1.25)+
+  scale_x_continuous(name="AICc weight for HM, probability of HM being best")
+
+#Inspect cases with non-clear separation (those within 0.25-0.9 AICc_weight_HM) and with relatively big differences in flux estimate (g.fact>1.25)
+
+co2_inspect<- co2_todecide %>% 
+  filter(between(AICc_weight_HM, 0.25,0.9)) %>% 
+  filter(g.fact>1.25)
+
+#The following cases have been inspected and the model choice resulting from the above criteria (based on AICc weight) has been deemed aproppriate
+co2_inspected_aicc<- c("s1-da-p1-11-o-d-10:46","s1-du-r2-5-b-d-08:32","s1-du-r2-8-v-d-09:51","s2-ca-r2-3-o-d-09:09","s2-cu-a1-14-o-d-10:48","s2-cu-a1-4-v-d-09:05","s2-cu-a1-7-o-d-09:37","s2-cu-a2-2-v-d-08:32","s2-cu-a2-3-v-t-08:47","s2-da-r1-11-o-d-11:15","s2-da-r1-9-v-d-10:56","s2-du-a2-10-b-d-12:03","s2-ri-a2-10-b-d-10:48","s2-ri-p1-6-v-t-10:17","s2-ri-p2-11-v-d-12:24","s2-va-a2-14-v-t-12:57","s2-va-r1-9-v-d-11:42","s2-va-r2-14-o-d-12:59","s2-va-r2-7-v-t-11:08","s3-ca-p2-1-v-t-07:40","s3-ca-p2-5-v-t-09:33","s3-da-a1-2-b-d-07:34","s3-da-a2-10-o-d-08:57","s3-ri-a2-2-b-d-09:06","s4-da-a1-8-v-t-09:40","s4-da-r1-2-v-d-09:03","s4-da-r2-8-o-d-08:12","s4-ri-a2-12-b-d-09:02","s4-ri-a2-9-b-d-08:27","s2-va-r2-3-v-t-10:19")
+
+co2_inspect %>% select(UniqueID, LM.flux, HM.flux, g.fact, k.ratio,AICc_weight_HM) %>% filter(!UniqueID%in%co2_inspected_aicc)
+
+
+#Final step CO2: 
+#Check that AICc weight and AICc raw comparison output the same choice (to be able to simplify the criteria), then limit the use of AICc weight to inspection of doubts (already done)
+co2_todecide %>% 
+  mutate(aicc_weight_choice=if_else(AICc_weight_HM>0.5,"HM","LM"),
+         rawaicc_choice=if_else(LM.AICc>HM.AICc, "HM","LM")) %>% 
+  mutate(choice_agree=aicc_weight_choice==rawaicc_choice) %>% 
+  select(choice_agree) %>% distinct()
+
+
+
+#FINAL CO2 table----
+co2_final<-table_co2 %>% 
+#Set prefered_model variable with current criteria (thresholds for MDF, Kappa and g.fact, plus best AICc as only criteria)
+  mutate(prefered_model=case_when(UniqueID%in%co2_discard~"discard",
+                                  is.na(HM.flux)~"LM",
+                                  abs(LM.flux)<=MDF.lim~"LM",
+                                  HM.k>=k.max~"LM",
+                                  g.fact>=4~"LM",
+                                  LM.AICc<HM.AICc~"LM",
+                                  LM.AICc>HM.AICc~"HM",
+                                  TRUE~"no selection"))
+
+#Any flux without selection
+unique(co2_final$prefered_model)
+
+#TO DO-------
+#Add quality_check variable to overwrite go.flux ones: "MDF", "HM kappa exceeds max", "G.factor exceeds 4", "Unreliable flux due to artefacts". Potentially multiple messages. 
+
+
+
+
+#CH4 criteria--------
+
+#before deciding on criteria, adapt new method CAmille and check results. 
+
+
+
+
+
+
+
 
 
 
@@ -132,7 +277,7 @@ epsilon <- 1e-6  # Small constant to avoid division by zero
 #It provides the probability of being the best model (0-1) 
 # Akaike weights give you a probabilistic interpretation of how much better one model is than the other
 
-table_co2 <- table_co2 %>%
+co2_todecide <- co2_todecide %>%
   mutate(
     delta_AICc_LM = LM.AICc - pmin(LM.AICc, HM.AICc),  # Compare to the best AICc (min AICc)
     delta_AICc_HM = HM.AICc - pmin(LM.AICc, HM.AICc),
@@ -143,7 +288,7 @@ table_co2 <- table_co2 %>%
   )
 
 ## ---- Rel. improve and Score ----
-table_co2 <- table_co2 %>%
+co2_todecide <- co2_todecide %>%
   mutate(
     # Compute CVs
     LM.CV = LM.SE / (abs(LM.slope) + epsilon),
@@ -153,7 +298,7 @@ table_co2 <- table_co2 %>%
     Improvement.RMSE = (LM.RMSE - HM.RMSE) / LM.RMSE, 
     Improvement.MAE  = (LM.MAE  - HM.MAE)  / LM.MAE,  
     Improvement.CV   = (LM.CV   - (HM.CV/4))   / LM.CV,   
-    
+    Improvement.AICc = (LM.AICc - HM.AICc) / LM.AICc,
     # Rescale AICc weights to [-1 LM is 100% likely to 1 HM is 100% likely]
     Rescaled_AICc_weight_HM = 2 * AICc_weight_HM - 1,   # Rescale to [-1, 1]
     
@@ -168,39 +313,30 @@ table_co2 <- table_co2 %>%
   )
 
 
-#MDF-----
-#1. For fluxes below detection (MDF), the choice of model is not relevant (we can leave the best.flux result). 
-table_co2 %>% 
-  mutate(below_detection=abs(LM.flux)<MDF.lim) %>%  
-  ggplot(aes(x=LM.r2, fill=below_detection))+
-  geom_histogram()+
-  facet_wrap(~below_detection, scales="free")
+#G.fact inspection----
+#Not adapted
 
-
-co2_sig<- table_co2 %>% 
-  filter(abs(LM.flux)>MDF.lim)
-
-#fluxes flaged as MDF are below-detection based on incubation "design", taking only into account 1)the length of incubation and 2) precision of the instrument used. 
-
-
-#g.fact ------
-#We avoided arbitrarily setting a g.fact limit, lets see what is the highest g.fact of the best-performing HM models
-
+#lets see what is the highest g.fact of the best-performing HM models (best 75%)
 good_hm<- co2_sig %>% 
-  filter(HM.CV<quantile(HM.CV, .9,na.rm=T))
+  filter(HM.CV<=quantile(HM.CV, 0.8, na.rm=T))
 
 ggplot(good_hm, aes(x=HM.CV, y=g.fact))+
   geom_point()+
-  geom_hline(yintercept = 4)+
-  geom_label(data=. %>% filter(g.fact>3), aes(label=UniqueID))
+  geom_hline(yintercept = 3)
 
-
-
+good_hm%>% filter(g.fact>3) %>%arrange(HM.CV) %>%  select(UniqueID, HM.CV, HM.k, k.max, g.fact) %>% mutate(kratio=HM.k/k.max)
 
 ggplot(good_hm, aes(x=HM.CV, y=HM.k/k.max))+
   geom_point()+
   geom_hline(yintercept = 1)+
   geom_label(data=. %>% filter(HM.k/k.max>0.5), aes(label=UniqueID))
+
+co2_sig %>% 
+  ggplot(aes(x=HM.CV, y=g.fact))+
+  geom_point()+
+  geom_hline(yintercept = 1)+
+  geom_label(data=. %>% filter(HM.k/k.max>0.5), aes(label=UniqueID))
+
 
 
 
@@ -209,20 +345,16 @@ ggplot(good_hm, aes(x=HM.CV, y=HM.k/k.max))+
 #We need a metric to distinguish how good the estimates are when the model performance is very bad (even when the estimate is higher than the MDF), this will flag very noisy measurements, we could base this on se.rel (expressed as % of SE/flux). Hard limit could be se.rel< 5%, check number of incubations. 
 
 
-co2_sig %>% 
+co2_todecide %>% 
   ggplot(aes(x=abs(LM.se.rel), y=abs(HM.se.rel), col=Preferred.Model))+
   geom_point()+
   geom_abline(slope = 4)
 
 
-co2_sig %>% 
-  ggplot(aes(x=abs(LM.se.rel)))+
-  geom_histogram()
-
 #Proportion of incubations with less than 5% error for LM
-n<- dim(co2_sig)[1]
-n_less_5perc <- length(which(abs(co2_sig$LM.se.rel)<5))
-ggplot(co2_sig[order(abs(co2_sig$LM.se.rel)),], aes(seq(1,n)/n*100, abs(LM.se.rel)))+
+n<- dim(co2_todecide)[1]
+n_less_5perc <- length(which(abs(co2_todecide$LM.se.rel)<5))
+ggplot(co2_todecide[order(abs(co2_todecide$LM.se.rel)),], aes(seq(1,n)/n*100, abs(LM.se.rel)))+
   geom_vline(xintercept = seq(0,100,50), color = "grey70")+
   geom_hline(yintercept = c(0,5,100), color = "grey70")+
   geom_point()+
@@ -232,7 +364,7 @@ ggplot(co2_sig[order(abs(co2_sig$LM.se.rel)),], aes(seq(1,n)/n*100, abs(LM.se.re
   ggtitle(paste0("LM SE.rel is below 5% for ",round(n_less_5perc/n*100,digits = 2),"% of the measurements"))
 
 
-noisyLM<- co2_sig[which(abs(co2_sig$LM.se.rel)>=5),]
+noisyLM<- co2_todecide[which(abs(co2_todecide$LM.se.rel)>=5),]
 
 noisyLM %>% arrange(desc(abs(LM.flux))) %>% select(UniqueID, LM.flux, LM.se.rel, HM.se.rel, g.fact)
 
@@ -242,8 +374,8 @@ noisyLM %>%
 
 
 #Proportion of incubations with less than 5% error for HM
-n_less_5perc_hm <- length(which(abs(co2_sig$HM.se.rel)<5))
-ggplot(co2_sig[order(abs(co2_sig$HM.se.rel)),], aes(seq(1,n)/n*100, abs(HM.se.rel)))+
+n_less_5perc_hm <- length(which(abs(co2_todecide$HM.se.rel)<5))
+ggplot(co2_todecide[order(abs(co2_todecide$HM.se.rel)),], aes(seq(1,n)/n*100, abs(HM.se.rel)))+
   geom_vline(xintercept = seq(0,100,50), color = "grey70")+
   geom_hline(yintercept = c(0,5,100), color = "grey70")+
   geom_point()+
@@ -252,7 +384,7 @@ ggplot(co2_sig[order(abs(co2_sig$HM.se.rel)),], aes(seq(1,n)/n*100, abs(HM.se.re
   theme_article()+
   ggtitle(paste0("HM SE.rel is below 5% for ",round(n_less_5perc_hm/n*100,digits = 2),"% of the measurements"))
 
-noisyHM<- co2_sig[which(abs(co2_sig$HM.se.rel)>=5),]
+noisyHM<- co2_todecide[which(abs(co2_todecide$HM.se.rel)>=5),]
 noisyHM %>% arrange(desc(abs(HM.flux))) %>% select(UniqueID, HM.flux, HM.se.rel, LM.se.rel, g.fact)
 
 noisyHM %>% 
@@ -263,7 +395,7 @@ noisyHM %>%
 
 
 #Inspect composite score------
-co2_sig %>%
+co2_todecide %>%
   ggplot(aes(x = Composite.Score, fill = Preferred.Model)) +
   geom_histogram(bins = 60, alpha = 0.3) +
   theme_minimal() +
@@ -272,50 +404,74 @@ co2_sig %>%
        y = "Count")
 
 
-co2_sig %>% 
+co2_todecide %>%
+  ggplot(aes(x=Rescaled_AICc_weight_HM, fill=Preferred.Model))+
+  geom_histogram()+
+  scale_x_continuous(name="AICc weight for HM, probability of HM being best")
+
+
+co2_todecide %>%
   ggplot(aes(x=AICc_weight_HM, fill=Preferred.Model))+
   geom_histogram()+
   scale_x_continuous(name="AICc weight for HM, probability of HM being best")
 
-co2_sig %>% 
+
+co2_todecide %>%
+  ggplot(aes(x=AICc_weight_HM, y=g.fact, col=Rescaled_AICc_weight_HM>0.05))+
+  geom_point()+
+  scale_x_continuous(name="AICc weight for HM, probability of HM being best")
+
+
+
+
+co2_todecide %>%
+  filter(Improvement.AICc>-0.2) %>% 
+  filter(Improvement.AICc<0.5) %>% 
+  ggplot(aes(x=Improvement.AICc, fill=Preferred.Model))+
+  geom_histogram()+
+  geom_vline(xintercept = 0.05)+
+  scale_x_continuous(name="AICc relative improvement with HM")
+
+
+co2_todecide %>% 
   ggplot(aes(x=Improvement.MAE, fill=Preferred.Model))+
   geom_histogram()+
   scale_x_continuous(name="Relative improvement of MAE with HM")
 
-co2_sig %>% 
+co2_todecide %>% 
   ggplot(aes(x=Improvement.RMSE, fill=Preferred.Model))+
   geom_histogram()+
   scale_x_continuous(name="Relative improvement of RMSE with HM")
 
-co2_sig %>% 
+co2_todecide %>% 
   ggplot(aes(x=Improvement.CV, fill=Preferred.Model))+
   geom_histogram(bins = 60)+
   scale_x_continuous(name="Relative improvement of SE.rel with HM")
 
-co2_sig %>% filter(Improvement.CV<(-1))
+co2_todecide %>% filter(Improvement.CV<(-1))
 
 #DIrect comparison of model quality LM vs HM
 #In current run, criteria are "SE", "RMSE", "AICc", 
 
 
-co2_sig %>% 
+co2_todecide %>% 
   ggplot(aes(x=LM.AICc, y=HM.AICc, col=Preferred.Model))+
   geom_point()+
   geom_abline(slope = 1)
 
-co2_sig %>% 
+co2_todecide %>% 
   ggplot(aes(x=LM.RMSE, y=HM.RMSE, col=Preferred.Model))+
   geom_point()+
   geom_abline(slope = 1)
 
-co2_sig %>% 
+co2_todecide %>% 
   ggplot(aes(x=LM.SE, y=HM.SE, col=Preferred.Model))+
   geom_point()+
   geom_abline(slope = 4)
 
 #IN incubations where LM behaves good (90% of incubations with LM relative error <5%) and same flux estimate for LM and HM (0.95<g.fact<1.05), the relative error of the HM model is exactly 4 times as high as that of the LM. We should take this "penalization of the HM model into account in our weighted Improvement criteria. 
 ggMarginal(p=
-co2_sig %>% 
+             co2_todecide %>% 
   filter(abs(LM.se.rel)<5) %>% 
   ggplot(aes(x=abs(LM.CV), y=abs(HM.CV), col=between(g.fact,0.95,1.05)))+
   geom_point()+
@@ -346,23 +502,23 @@ co2_sig %>%
 
 #Check Relative improvement of fit vs risk of oversestimation (g.fact)
 
-co2_sig %>% 
+co2_todecide %>% 
   ggplot(aes(x=(LM.RMSE-HM.RMSE)/LM.RMSE, y=g.fact, col=Preferred.Model))+
   geom_point()+
   scale_x_continuous(name="Relative improvement of RMSE with HM")+
   scale_y_log10()
 
-co2_sig %>% 
+co2_todecide %>% 
   ggplot(aes(x=(LM.MAE-HM.MAE)/LM.MAE, y=g.fact, col=Preferred.Model))+
   geom_point()+
   scale_x_continuous(name="Relative improvement of MAE with HM")
 
-co2_sig %>% 
+co2_todecide %>% 
   ggplot(aes(x=(LM.CV-HM.CV)/LM.CV, y=g.fact, col=Preferred.Model))+
   geom_point()+
   scale_x_continuous(name="Relative improvement of CV with HM")
 
-co2_sig %>% 
+co2_todecide %>% 
   ggplot(aes(x=AICc_weight_HM, y=g.fact, col=Preferred.Model))+
   geom_point()+
   scale_x_continuous(name="AICc weight for HM, probability of HM being best")+
@@ -507,18 +663,13 @@ co2_sig %>%
   geom_label(data=. %>% filter(HM.k/k.max>0.35), aes(label=UniqueID))
 
 
-
-table_co2 %>% table_co2 %>% table_co2 %>% 
-  ggplot(aes(x=LM.r2, y=HM.r2))+
-  geom_point()+
-  geom_label(data=. %>% g.factaes())
-
-
-table_co2 %>% 
+co2_todecide %>% 
   mutate(below_detectionLM=abs(LM.flux)<MDF.lim,
          below_detectionHM=abs(HM.flux)<MDF.lim) %>% 
-  ggplot(aes(x=(HM.flux-LM.flux)/HM.flux, y=LM.r2, col=below_detectionLM))+
+  ggplot(aes(x=(HM.flux-LM.flux)/HM.flux, y=LM.r2, col=Preferred.Model))+
   geom_point()
+
+
 
 table_co2 %>% 
   mutate(below_detectionLM=abs(LM.flux)<MDF.lim,

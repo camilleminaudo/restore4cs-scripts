@@ -370,7 +370,7 @@ write.csv(core_fluxes,file = paste0(core_path, "Cores_flux/All_core_GHGfluxes_an
 #_________________####
 
 
-
+#Check completeness of dataset
 core_fluxes %>% 
   select(CO2_flux_pvalue, CH4_flux_pvalue, N2O_flux_pvalue) %>% 
   pivot_longer(cols = names(.), values_to = "value", names_to = "variable") %>% 
@@ -378,6 +378,34 @@ core_fluxes %>%
   summarise(cores=n(), measures=sum(!is.na(value)),percent_significant=sum(value<0.05, na.rm=T)/measures*100, percent_NAs=100-(measures/cores*100))
 
 
+#Check NAs:
 
+incomplete_cores<- core_fluxes %>% 
+  select(core_id, CO2_flux_mmol_per_m2_per_d, CH4_flux_micromol_per_m2_per_d, N2O_flux_micromol_per_m2_per_d) %>% 
+  #get all cores with at least 1 ghg flux missing
+  filter(is.na(CO2_flux_mmol_per_m2_per_d*CH4_flux_micromol_per_m2_per_d*N2O_flux_micromol_per_m2_per_d)) %>% 
+  #remove those from S1 that have Co2 and CH4, n2o fluxes were never calculated for S1 (issues GC, not Licor-data)
+  filter(!(grepl("S1",core_id)&!is.na(CO2_flux_mmol_per_m2_per_d*CH4_flux_micromol_per_m2_per_d)))%>% left_join(incub %>% select(core_id, comment), by="core_id")
+
+#8 cores with missing fluxes: 
+#Cores without any flux: 
+incomplete_cores 
+
+#ALL SAMPLES WITH NAs are NON-recoverable (no reliable data, keep as NAs)
+#S2-DA-A2-C6 no fluxes, no comment:  No exetainer UB (lost/not taken). 
+#S2-RI-P1-C3 no fluxes, no comment: No exetainer UB (lost/not taken). 
+#S3-CU-R2-C4 no fluxes, comment "Muestra perdida: No exetainer UB (lost/not taken). 
+#S3-RI-P1-C1 no fluxes, comment. NO exetainer UB (lost)
+#UVEG injections for these 4 samples?                 NOTHING RECOVERABLE
+#S2-DA-A2-C6: CH4 inj ok, CO2 baseline remark
+#S2-RI-P1-C3: CH4 baseline remark, CO2 inj ok-ish (recoverable)
+#S3-CU-R2-C4:  NO Data
+#S3-RI-P1-C1: CH4 weird not reliable, CO2  weird 
+
+#UNRECOVERABLE SAMPLES. (no Licor, or not calibrated RUMANIA)
+#S4-CA-A2-C4 no CO2 (ch4-caused artefacts, no reliable CO2).  
+#S4-DA-A2-C6 no CO2 (ch4-caused artefacts, no reliable CO2), no N2O (artefacts no reliable N2O). 
+#S4-DA-R1-C4 no CO2 (ch4-caused artefacts, no reliable CO2)
+#S4-DA-R1-C5 no CO2 (ch4-caused artefacts, no reliable CO2)
 
 

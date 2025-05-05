@@ -8,21 +8,15 @@
 # ---
 
 # --- Description of this script
-# This script computes fluxes for all incubations present in the fieldsheet for a given sampling season
-# User has to specify which sampling has to be processed, and all the rest is done automatically.
+# This script is adapted to produce plots for CO2, CH4 and H2O (using goflux) for S4 vegetated and bare plots with transparent and dark incubations. This will be used to check ventilation events between the transparent and dark incubation and decide for which dark chambers we can calculate N2O fluxes (discard flux N2O flux from dark if no ventilation took place between transparent and dark chamber). We cannot justify an incubation transparent+dark, from a design standpoint. Confirm ventilation or discard dark N2O fluxes. 
 
-#TO-DO------
-#EDITS Miguel: 
-  #DONE: Comments and formating sections
-  #DONE: Improvement Picarro starstop corrections
-  #DONE: Licor map_injections corrected
-  #DONE: Per-GHG cropping of start and stop after visual inspection of every incubation.
-  #DONE: Use meteo-stations instead of data-loggers for flux.term (section Auxtable prep)
+#This script was adapted from the typical raw2flux procedure, modifying the fieldsheets to obtain only transparent-dark incubation pairs (same plot, 2 incubations) for S4 sampling campaign. We produce auxfiles from the modified fieldsheets (uniqueID from transparent incubation is kept, duration is calcualted as dark_end minus transparent start, without margins)
 
-#TO-DO: Update ebullition method with camille's new function (Section Diffusion vs ebullition)
-#TO-DO: set criteria per-GHG for best.flux, & adjust k.mult in goflux (if needed)
+#THIS sript does not produce csv files only pdfs to check ventilations.
 
+#For plot S4-VA-A2-5 bare, no ventilation plot  (transparent incubation performed after dark one), but checked manually that chamber was ventilated in between incubations. 
 
+#After inspection of plots, ventilation event are recorded as logical "ventilated" (T/F) in Dark_incubation_ventilationcheck.xlsx inside N2O_fluxes folder for every "UniqueID_notime"
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -55,7 +49,7 @@ for (f in files.sources){source(f)}
 
 #---USER OPTIONS ----- 
 #sampling is the pattern to select in the fieldsheet filenames, every matching fieldsheet will have their incubations processed.
-sampling <- "S" 
+sampling <- "S4" 
 
 #create/update RDATA?
 harmonize2RData <- F
@@ -79,10 +73,9 @@ RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
 quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #quality assessment, crop decisions and flags after inspection.
 meteo_path<- paste0(dropbox_root, "/Meteo/Formated_data/")
 
-# results_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
-#Final run in local pc
-results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/Per_GHG_cropped_fluxes/"
-plots_path <- paste0(results_path,"level_incubation/")
+
+results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/Ventilation_test/"
+plots_path <- results_path
 
 
 
@@ -261,12 +254,6 @@ fieldsheet_LosGatos <- fieldsheet[fieldsheet$gas_analyzer=="Los Gatos",]
 #Combine all fieldsheets with corrected times based on map_incubations when available
 fieldsheet <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
 
-
-#This is legacy, the custom-cropping implemented in auxfile per-gas makes this section redundant.
-# fieldsheet$unix_start <- fieldsheet$unix_start+margin_s_after_start
-# fieldsheet$unix_stop <- fieldsheet$unix_stop-margin_s_before_end
-
-
 # recalculating start and stop in proper formats
 fieldsheet$timestamp_start <- as.POSIXct(fieldsheet$unix_start, tz = "UTC", origin = "1970-01-01")
 fieldsheet$timestamp_stop <- as.POSIXct(fieldsheet$unix_stop, tz = "UTC", origin = "1970-01-01")
@@ -277,134 +264,21 @@ fieldsheet$end_time <- strftime(fieldsheet$timestamp_stop, format="%H:%M:%S", tz
 fieldsheet <- fieldsheet[order(fieldsheet$subsite),]
 
 
+#-----ADAPT for vent----
 
-#_________________####
-#RDATA SAVE (optional) ####
-#Licor import of S4-CU corrected (Instrument not in UTC time)
-#Import and store measurements to RData ---
-if(harmonize2RData){
-  data_folders <- list.dirs(datapath, full.names = T, recursive = T)[-1]
-  i <- grep(pattern = sampling, x = data_folders) # selecting the files corresponding to the selected sampling campaign
-  data_folders <- data_folders[i]
-  
-  r <- grep(pattern = "RData",x=data_folders)
-  if(length(r)>0){data_folders <- data_folders[-r]}
-  
-  message("Here is the list of data folders in here:")
-  print(data_folders)
-  
-  
-  # Import and store data for for Picarro and LosGatos data
-  
-  raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format, prec){
-    r <- grep(pattern = instrument, x=data_folders)
-    for (data_folder in data_folders[r]){
-      setwd(data_folder)
-      subsite = basename(data_folder)
-      message(paste0("processing folder ",basename(data_folder)))
-      import2RData(path = data_folder, instrument = instrumentID,
-                   date.format = date.format, timezone = 'UTC', keep_all = FALSE,
-                   prec = prec)
-      
-      # load all these R.Data into a single dataframe
-      file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
-      z <- grep(pattern = instrumentID, x=file_list)
-      file_list <- file_list[z]
-      isF <- T
-      for(i in seq_along(file_list)){
-        load(file_list[i])
-        if(isF){
-          isF <- F
-          mydata_imp <- data.raw
-        } else {
-          mydata_imp <- rbind(mydata_imp, data.raw)
-        }
-        rm(data.raw)
-      }
-      
-      # get read of possible duplicated data
-      is_duplicate <- duplicated(mydata_imp$POSIX.time)
-      mydata <- mydata_imp[!is_duplicate,]
-      
-      setwd(RData_path)
-      
-      # save this dataframe as a new RData file
-      save(mydata, file = paste0(subsite,"_",instrument,".RData"))
-    }
-  }
-  
-  raw2RData_P_LG(data_folders, instrument = "Picarro", instrumentID = "G4301", date.format = "ymd", prec=c(0.025, 0.1, 10))
-  raw2RData_P_LG(data_folders, instrument = "Los Gatos", instrumentID = "UGGA", date.format = "mdy", prec =  c(0.2, 1.4, 50))
-  
-  
-  
-  # Import and store data for LiCOR data
-  fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
-  list_subsites_Licor <- unique(fieldsheet_Licor$subsite)
-  
-  
-  
-  r_licor <- grep(pattern = "Licor",x=data_folders)
-  for (data_folder in data_folders[r_licor]){
-    setwd(data_folder)
-    message(paste0("processing folder ",basename(data_folder)))
-    if (grepl("S4-CU",data_folder)){
-      import2RData(path = data_folder, instrument = "LI-7810",
-                   date.format = "ymd", timezone = 'Europe/Riga', keep_all = FALSE, 
-                   prec = c(3.5, 0.6, 45))
-    } else {
-      import2RData(path = data_folder, instrument = "LI-7810",
-                   date.format = "ymd", timezone = 'UTC', keep_all = FALSE, 
-                   prec = c(3.5, 0.6, 45))
-    }
-    
-    
-    # load all these R.Data into a single dataframe
-    file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
-    isF <- T
-    for(i in seq_along(file_list)){
-      load(file_list[i])
-      if(isF){
-        isF <- F
-        mydata_imp <- data.raw
-      } else {
-        mydata_imp <- rbind(mydata_imp, data.raw)
-      }
-      rm(data.raw)
-    }
-    
-    #Correct lithuanian licor tz (licor in local time)
-    if (grepl("S4-CU",data_folder)){
-      message("S4-CU Licor not in UTC time!!")  
-      mydata_imp$POSIX.time<- with_tz(mydata_imp$POSIX.time,tzone = "UTC")
-      mydata_imp$DATE<- as.character(as_date(mydata_imp$POSIX.time))
-      mydata_imp$TIME<- strftime(mydata_imp$POSIX.time, format="%H:%M:%S",tz = "utc")
-    }
-    
-    # get rid of possible duplicated data
-    is_duplicate <- duplicated(mydata_imp$POSIX.time)
-    mydata_imp <- mydata_imp[!is_duplicate,]
-    
-    
-    # r_site <- grep(pattern = basename(data_folder), x=list_subsites_Licor)
-    
-    # create separate folders for each subsite where data actually exists
-    for (subsite in list_subsites_Licor){
-      corresponding_date <- as.Date(unique(fieldsheet_Licor$date[fieldsheet_Licor$subsite == subsite]))
-      
-      # check if we already have this data somewhere in the clean file
-      n_lines_d <- dim(mydata_imp[which(as.Date(mydata_imp$POSIX.time) == corresponding_date),])[1]
-      if(n_lines_d > 0){
-        message(paste0("... there is some data to store for subsite ",subsite))
-        mydata <- mydata_imp[as.Date(mydata_imp$POSIX.time) == corresponding_date,]
-        
-        setwd(RData_path)
-        # save this dataframe as a new RData file
-        save(mydata, file = paste0(subsite,"_","LI-7810",".RData"))
-      }
-    }
-  }
-}
+#filter for plots with transparent and dark 
+fieldsheet_td<- fieldsheet %>% 
+  mutate(plotuniqueID= paste0(subsite,"-",plot_id)) %>% 
+  group_by(plotuniqueID) %>% 
+  filter(n()==2) %>%  #get only plots with 2 incubations 
+#Subsitute transparent unix_stop wiht dark unxistop
+  mutate(dark_unixstop= if_else(transparent_dark=="dark",unix_stop,NA_real_),
+         unix_stop=mean(dark_unixstop,na.rm=T)) %>% 
+  #Remove dark incubations from fieldsheet
+  filter(transparent_dark=="transparent")
+
+
+fieldsheet<- fieldsheet_td
 
 #_________________####
 #FLUX CALCULATION####
@@ -412,26 +286,7 @@ if(harmonize2RData){
 
 #----0. Load crop & Meteo-----
 
-#Import table with decisions and cropping amounts: all cropping is based on last run of 5-s margin script, so we have to re-add this 5 seconds to the cropping margins
-croping<- read_xlsx(paste0(quality_path, "Inspection_table_allincubations_tocrop_perGHG.xlsx"),na = "NA")
-
-#Simplify and add the additional 5s of cropping to all crop-start and crop-end: Inspection and cropping decisions were taken on fluxes calculated based on 5-s margin. WE re-add this 5s of margin here for all incubations (custom-cropped or not) 
-croping_simple<- croping %>%
-  select(UniqueID, 
-         co2_start_crop_s, co2_end_crop_s,
-         ch4_start_crop_s, ch4_end_crop_s) %>%
-  mutate(h2o_start_crop_s=5, h2o_end_crop_s=5) %>% #add 5s crop for all h2o
-  mutate(co2_start_crop_s=case_when(is.na(co2_start_crop_s)~5,
-                                    TRUE~co2_start_crop_s+5),
-         co2_end_crop_s=case_when(is.na(co2_end_crop_s)~5,
-                                  TRUE~co2_end_crop_s+5),
-         ch4_start_crop_s=case_when(is.na(ch4_start_crop_s)~5,
-                                    TRUE~ch4_start_crop_s+5),
-         ch4_end_crop_s=case_when(is.na(ch4_end_crop_s)~5,
-                                  TRUE~ch4_end_crop_s+5))# add 5s to all crop decissions for co2 and ch4
-
-#croping_simple is used to adapt the auxfile for each gas in the section Goflux calculation
-
+#NO crop
 #Load data for all meteostations and correspondence of subsite-meteostation (used to subset the correct data)
 
 meteocorresp <- read_csv(paste0(meteo_path, "correspondence_subsite-meteostation.csv"),show_col_types = F)
@@ -549,27 +404,30 @@ for (subsite in subsites){
   
     
 #3. Per-GHG crop------    
+    #DO NOT CROP anything, just split auxfile into one per GHG (to avoid modifying code too much)
+    auxfile_co2<- auxfile
+    auxfile_ch4<- auxfile
+    auxfile_h2o<- auxfile
     
-    #Create 3 separate auxfiles, one per GHG, with modified start.time and duration based on cropping decissions per GHG (h2o is only cropped by 5s start and end: inspection runned with these margings)
-    
-    auxfile_co2<- auxfile %>% 
-      left_join(croping_simple %>% select(UniqueID,co2_start_crop_s,co2_end_crop_s), by="UniqueID") %>% 
-      mutate(start.time=start.time+co2_start_crop_s,
-             duration=duration-(co2_start_crop_s+co2_end_crop_s)) %>% 
-      select(-c(co2_start_crop_s, co2_end_crop_s))
-    
-    auxfile_ch4<- auxfile %>% 
-      left_join(croping_simple %>% select(UniqueID,ch4_start_crop_s,ch4_end_crop_s), by="UniqueID") %>% 
-      mutate(start.time=start.time+ch4_start_crop_s,
-             duration=duration-(ch4_start_crop_s+ch4_end_crop_s)) %>% 
-      select(-c(ch4_start_crop_s, ch4_end_crop_s))
-    
-    auxfile_h2o<- auxfile %>% 
-      left_join(croping_simple %>% select(UniqueID,h2o_start_crop_s,h2o_end_crop_s), by="UniqueID") %>% 
-      mutate(start.time=start.time+h2o_start_crop_s,
-             duration=duration-(h2o_start_crop_s+h2o_end_crop_s)) %>% 
-      select(-c(h2o_start_crop_s, h2o_end_crop_s))
-    
+    #DO NOT RUN:
+    # auxfile_co2<- auxfile %>% 
+    #   left_join(croping_simple %>% select(UniqueID,co2_start_crop_s,co2_end_crop_s), by="UniqueID") %>% 
+    #   mutate(start.time=start.time+co2_start_crop_s,
+    #          duration=duration-(co2_start_crop_s+co2_end_crop_s)) %>% 
+    #   select(-c(co2_start_crop_s, co2_end_crop_s))
+    # 
+    # auxfile_ch4<- auxfile %>% 
+    #   left_join(croping_simple %>% select(UniqueID,ch4_start_crop_s,ch4_end_crop_s), by="UniqueID") %>% 
+    #   mutate(start.time=start.time+ch4_start_crop_s,
+    #          duration=duration-(ch4_start_crop_s+ch4_end_crop_s)) %>% 
+    #   select(-c(ch4_start_crop_s, ch4_end_crop_s))
+    # 
+    # auxfile_h2o<- auxfile %>% 
+    #   left_join(croping_simple %>% select(UniqueID,h2o_start_crop_s,h2o_end_crop_s), by="UniqueID") %>% 
+    #   mutate(start.time=start.time+h2o_start_crop_s,
+    #          duration=duration-(h2o_start_crop_s+h2o_end_crop_s)) %>% 
+    #   select(-c(h2o_start_crop_s, h2o_end_crop_s))
+    # 
     
     #Define the measurements window of observation (one per GHG)
     #suppressMessagesto avoid the "Do not loop through more than 20 measurements...." message
@@ -760,100 +618,6 @@ for (subsite in subsites){
       
     }
     
-    #6. Diffusion vs ebullition----
-    # estimate ch4 diffusion and ebullition components
-    CH4_res_meth1 <- CH4_flux_res_auto  #keep best flux from goflux
-    CH4_res_meth1$total_estimated <- NA
-    CH4_res_meth1$ebullition <- NA
-    CH4_res_meth1$diffusion <- NA
-    
-    #Only for plots with water, apply estimate of ebullition and diffusion
-    for (i in which(auxfile_ch4$water_depth>0)){
-      if(auxfile_ch4$water_depth[i]>0){
-        my_incub <- mydata[as.numeric(mydata$POSIX.time)> auxfile_ch4$start.time[i] &
-                             as.numeric(mydata$POSIX.time)< auxfile_ch4$start.time[i]+auxfile_ch4$duration[i],]
-        my_incub <- my_incub[!is.na(my_incub$CO2dry_ppm),]
-        # calling dedicated function
-        df_ebull <- separate_ebullition_from_diffusion(my_incub, UniqueID = auxfile_ch4$UniqueID[i], doPlot=F)
-        # computing fluxes
-        H2O_mol = my_incub$H2O_ppm / (1000*1000)
-        myfluxterm <- flux.term(auxfile_ch4$Vtot[i], auxfile_ch4$Pcham[i], auxfile_ch4$Area[i],
-                                auxfile_ch4$Tcham[i], first(H2O_mol))
-        CH4_flux_total <- df_ebull$delta_ch4/df_ebull$duration*myfluxterm # nmol/m2/s
-        CH4_flux_diff <- df_ebull$avg_diff_slope*myfluxterm # nmol/m2/s
-        CH4_flux_ebull <- CH4_flux_total - CH4_flux_diff
-      } else {
-        #For plots without water, set ebullition to 0 
-        CH4_flux_total <- CH4_flux_ebull <- CH4_res_meth1$best.flux[which(CH4_res_meth1$UniqueID==auxfile_ch4$UniqueID[i])]
-        CH4_flux_ebull <- 0
-      }
-      CH4_res_meth1$total_estimated[which(CH4_res_meth1$UniqueID==auxfile_ch4$UniqueID[i])] <- CH4_flux_total
-      CH4_res_meth1$ebullition[which(CH4_res_meth1$UniqueID==auxfile_ch4$UniqueID[i])] <- CH4_flux_ebull
-      CH4_res_meth1$diffusion[which(CH4_res_meth1$UniqueID==auxfile_ch4$UniqueID[i])] <- CH4_flux_diff
-    }
-    
-    CH4_res_meth1$ebullition[which(CH4_res_meth1$ebullition<0)] <- 0
-    
-  
-    
-    #__________________####
-    #SAVE RESULTS####
-    #---- 1. Save incubation-level ----
-    
-    #Save full results in incubation-level path
-    myfilenameCO2 <- paste(subsite,"co2_fluxes", as.character(as.Date(last(auxfile$start.time))),sep="_")
-    myfilenameCH4 <- paste(subsite,"ch4_fluxes", as.character(as.Date(last(auxfile$start.time))),sep="_")
-    write.csv(x = CO2_flux_res_auto, file = paste0(plots_path,myfilenameCO2,".csv"), row.names = F)
-    write.csv(x = CH4_res_meth1, file = paste0(plots_path,myfilenameCH4,".csv"), row.names = F)
-    
-    
-    #---- 2. Save Season simple ----
-    
-    #Join simplified results for both gases in results_path
-    table_results <- auxfile %>%
-      left_join(CO2_flux_res_auto %>% select(UniqueID, LM.flux, HM.flux, best.flux, model, quality.check),by = "UniqueID") %>%
-      rename(CO2_LM.flux = LM.flux, CO2_HM.flux = HM.flux, CO2_best.flux = best.flux, CO2_best.model = model,
-             CO2_quality.check = quality.check) %>%
-      left_join(CH4_res_meth1 %>% select(UniqueID, LM.flux, HM.flux, best.flux, best.flux, model, quality.check, 
-                                         diffusion, ebullition),by = "UniqueID") %>%
-      rename(CH4_LM.flux = LM.flux, CH4_HM.flux = HM.flux, CH4_best.flux = best.flux, CH4_best.model = model, 
-             CH4_quality.check = quality.check, CH4_diffusive_flux = diffusion, CH4_ebullitive_flux = ebullition)
-    
-    if (isFsubsite){
-      isFsubsite <- F
-      table_results_all <- table_results
-    } else {
-      table_results_all <- rbind(table_results_all, table_results)
-    }
-  } else {
-    message("----- auxfile could not be built for this susbite. It seems data from ",gs," is missing.")
-  }
-  
+
 }
-
-# setwd(results_path)
-myfilename <- paste(sampling,"fluxes",min(as.Date(table_results_all$start.time)),"to",
-                    max(as.Date(table_results_all$start.time)), sep = "_")
-write.csv(x = table_results_all, file = paste0(results_path, myfilename,".csv"), row.names = F)
-
-s1<-table_results_all %>% filter(grepl("S1", subsite))
-s2<-table_results_all %>% filter(grepl("S2", subsite))
-s3<-table_results_all %>% filter(grepl("S3", subsite))
-s4<-table_results_all %>% filter(grepl("S4", subsite))
-
-myfilename <- paste("S1","fluxes",min(as.Date(s1$start.time)),"to",
-                    max(as.Date(s1$start.time)), sep = "_")
-write.csv(x = s1, file = paste0(results_path, myfilename,".csv"), row.names = F)
-
-myfilename <- paste("S2","fluxes",min(as.Date(s2$start.time)),"to",
-                    max(as.Date(s2$start.time)), sep = "_")
-write.csv(x = s2, file = paste0(results_path, myfilename,".csv"), row.names = F)
-
-myfilename <- paste("S3","fluxes",min(as.Date(s3$start.time)),"to",
-                    max(as.Date(s3$start.time)), sep = "_")
-write.csv(x = s3, file = paste0(results_path, myfilename,".csv"), row.names = F)
-
-myfilename <- paste("S4","fluxes",min(as.Date(s4$start.time)),"to",
-                    max(as.Date(s4$start.time)), sep = "_")
-write.csv(x = s4, file = paste0(results_path, myfilename,".csv"), row.names = F)
-
+}

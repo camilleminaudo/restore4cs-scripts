@@ -61,15 +61,16 @@ fieldsheets_map %>% group_by(sampling_code) %>% mutate(nfiles=n()) %>% filter(nf
 #OK, no sediments or cores were collected
 
 
-# load files
+#Load sediment fieldsheets:
+fieldsheet_temp <- readxl::read_xlsx(myfiles[1], col_names = TRUE)
+colnames_target <- tolower(names(fieldsheet_temp))
+
 for (f in myfiles){
-  if (f==myfiles[1]){fieldsheet_temp <- readxl::read_xlsx(f,col_names = T)}
-      
-  fieldsheet <- readxl::read_xlsx(f,skip = 2, col_names = F, n_max = 30)
-  names(fieldsheet) <- tolower(names(fieldsheet_temp))
-  fieldsheet$date <- as.Date(fieldsheet$date, tryFormats = c("%d.%m.%Y", "%d/%m/%Y"))
-  fieldsheets_list[[f]] <- fieldsheet
+  df <- readxl::read_xlsx(f, skip = 2, col_names = colnames_target, n_max = 30)
+  df$date <- as.Date(df$date, tryFormats = c("%d.%m.%Y", "%d/%m/%Y"))
+  fieldsheets_list[[f]] <- df
 }
+
 
 complete_list <- do.call(rbind, fieldsheets_list) %>% 
   rownames_to_column(var = "filepath") %>% 
@@ -84,11 +85,17 @@ core_list<- complete_list %>%
   mutate(sampling_time=format(sampling_time, format = "%H:%M:%S", tz="utc"),#format sampling time
          )
 
+#Subsites without core details: 
+complete_list %>% 
+  filter(!is.na(pilot_site))  %>% 
+  group_by(subsite_code) %>% 
+  summarise(number_ofcores=sum(type=="core")) %>% 
+  filter(number_ofcores==0)
+  
 
 #Samples with missing values (other than comments)
 incomplete_details<- core_list[!complete.cases(core_list[,!names(core_list) %in% "comments"]),] %>% filter(!is.na(pilot_site)) 
-message(paste("The following subsites have incomplete information for cores:"))
-paste(unique( incomplete_details$subsite_code))
+message(paste("The following subsites have incomplete information:",unique( incomplete_details$subsite_code)))
 
 
 #Check consistency in sample_ID: sample_ID subsite vs filename subsite
@@ -97,8 +104,7 @@ inconsistencies_core_id<- core_list %>%
   filter(!is.na(core_site)) %>% 
   mutate(core_subsite_code=paste(core_season,core_site,core_subsite, sep = "-")) %>% 
   filter(core_subsite_code!=subsite_code)
-message(paste("The following cores have inconsistent codes:"))
-paste(unique( inconsistencies_core_id$sample_id))
+if(length(unique(inconsistencies_core_id$sample_id))>0){message(paste("The following cores have inconsistent codes:", unique(inconsistencies_core_id$sample_id)))}
 
 
 #Suspect units for water-depth (suposed to be in cm)
