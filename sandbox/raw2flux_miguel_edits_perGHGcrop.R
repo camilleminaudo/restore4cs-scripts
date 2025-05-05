@@ -647,7 +647,7 @@ for (subsite in subsites){
     
     #Possible selection criteria: c("g.factor", "kappa", "MAE", "RMSE", "AICc", "SE" )
     
-      #g.factor: arbitrary limit for HM/LM, defaults to 2 (if non-linearity is expected, this is not a good selection criteria). If threshold is exceeded, LM is chosen. Decission: DO NOT USE
+      #g.factor: arbitrary limit for HM/LM, defaults to 2 (if non-linearity is expected, this is not a good selection criteria). If threshold is exceeded, LM is chosen. Decission: set threshold afterwards
     
       #kappa: compares the ratio k.HM/k.max to a threshold (default=1), is a measure of how extreme is the curvature fitted by HM against the theoretical maximum curvature (determined by LM.flux, MDF  and duration). IF the threshold is exceeded, LM is chosen.  Decision: USE, check distribution of kappa and, if needed set a thrsehold lower than 1 so that kappa is used for selection.
     
