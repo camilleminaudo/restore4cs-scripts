@@ -249,7 +249,10 @@ da_Mahmudia<- read.csv(paste0(meteopath, "/Meteo_DA/Mahmudia.csv")) %>%
          winddir_degrees=ifelse(winddir_degrees==360,0,winddir_degrees),
          cloudcover_percent=NA_real_,
          globalrad_Wperm2=globalrad_KJperm2*1000/3600) %>% 
-  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent)
+  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent) %>% 
+  #Remove duplicate times if any (keep only first)
+  arrange(datetime_utc) %>%
+  filter(!duplicated(datetime_utc))
 
 
 da_Tulcea<- read.csv(paste0(meteopath, "/Meteo_DA/Tulcea.csv")) %>% 
@@ -260,7 +263,10 @@ da_Tulcea<- read.csv(paste0(meteopath, "/Meteo_DA/Tulcea.csv")) %>%
          winddir_degrees=ifelse(winddir_degrees==360,0,winddir_degrees),
          cloudcover_percent=NA_real_,
          globalrad_Wperm2=globalrad_KJperm2*1000/3600) %>% 
-  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent)
+  select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent) %>% 
+  #Remove duplicate times if any (keep only first)
+  arrange(datetime_utc) %>%
+  filter(!duplicated(datetime_utc))
   
   
 
@@ -413,8 +419,10 @@ ri_EMA<- ri[,ri_selection] %>%
          winddir_degrees=ifelse(V10m_Dir==360, 0, V10m_Dir),# substitute 360 N for 0 N
          globalrad_Wperm2=Rsolar,#Global radiation is in W/m2
          cloudcover_percent=NA_real_) %>% 
-         select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent)
-
+         select(station_id, datetime_utc, temp_c,Patm_hPa, precip_mm, humidity_percent, windspeed_ms,winddir_degrees, globalrad_Wperm2,cloudcover_percent) %>% 
+  #Remove duplicate times if any (keep only first)
+  arrange(datetime_utc) %>%
+  filter(!duplicated(datetime_utc))
 
 
 ####hourly_RI: TO-DO------
@@ -546,7 +554,18 @@ meteo_sampling_days<- all %>%
   filter(site_day%in%site_daystokeep) %>% 
   select(-site_day) %>% 
   arrange(datetime_utc,station_id)
-         
+
+#Check is any datetime_utc duplicated?
+meteo_sampling_days %>% 
+  group_by(station_id,datetime_utc) %>% 
+  summarise(n=n(), .groups = "drop") %>% 
+  filter(n>1)
+
+all %>% 
+  group_by(station_id,datetime_utc) %>% 
+  summarise(n=n(), .groups = "drop") %>% 
+  filter(n>1)
+
 
 #Save meteo_sampling_days
 write.csv(meteo_sampling_days, paste0(meteopath, "/Formated_data/allmeteostations_onlysamplingdays.csv"),row.names = F)
