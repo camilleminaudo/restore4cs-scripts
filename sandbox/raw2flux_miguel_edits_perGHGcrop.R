@@ -55,7 +55,7 @@ for (f in files.sources){source(f)}
 
 #---USER OPTIONS ----- 
 #sampling is the pattern to select in the fieldsheet filenames, every matching fieldsheet will have their incubations processed.
-sampling <- "S" 
+sampling <- "S3-CA" 
 
 #create/update RDATA?
 harmonize2RData <- F
@@ -84,6 +84,10 @@ meteo_path<- paste0(dropbox_root, "/Meteo/Formated_data/")
 results_path<- "C:/Users/Miguel/Dropbox/TEST_quality_raw2flux/Per_GHG_cropped_fluxes/"
 plots_path <- paste0(results_path,"level_incubation/")
 
+#test_newRdata --------
+#The results are the same after updating Rdata  with correct picarro h2o units
+# results_path<- "C:/Users/Miguel/Dropbox/testing_aquaGHG/"
+# plots_path <- paste0(results_path,"level_incubation/")
 
 
 #_________________####
