@@ -470,8 +470,9 @@ for (subsite in subsites){
   if(file.exists(paste0(subsite,"_",gs_suffix,".RData"))){
     load(file = paste0(subsite,"_",gs_suffix,".RData"))
     
-    #Correct the units for picarro H2O,import function assumes mmol/mol, actual units of our instrument are % (i.e. 100* mol/mol). We correct the Rdata by multiplying the concentration by 10. 
-    if (gs=="Picarro"){mydata$H2O_ppm<- mydata$H2O_ppm*10}
+    #Correct the units for picarro H2O,import function assumes mmol/mol, actual units of our instrument are % (i.e. 100* mol/mol). We correct the Rdata by multiplying the concentration by 10
+    # if (gs=="Picarro"){mydata$H2O_ppm<- mydata$H2O_ppm*10}
+    #The correction of units is now already implemented in Rdata as of 6/5/2025
     
     #Loop over each incubation: 
     for (incub in seq_along(corresp_fs$plot_id)){

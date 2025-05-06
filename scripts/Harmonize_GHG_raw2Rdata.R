@@ -15,8 +15,8 @@
 
 
 #Last run date CHECK!-----
-#The Rdata files in dropbox were last updated with this script on: DATE OF LAST UPDATE
-#still not runned, rdata in dropbox as of 5/5/2025 has correct tz but picarro H2O units are not correct. 
+#The Rdata files in dropbox were last updated with this script on: 06/05/2025
+
 
 
 
@@ -29,7 +29,7 @@ dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have
 
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
-
+fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 
 # --- install goFlux if needed ---
 #library(devtools)
@@ -68,9 +68,15 @@ for (f in files.sources){source(f)}
   r <- grep(pattern = "RData",x=data_folders)
   if(length(r)>0){data_folders <- data_folders[-r]}
   
+  #remove basefolders (to avoid duplicating data): 
+  basefolders<- paste0(datapath, c("/RAW Data Licor-7810", "/RAW Data Picarro", "/RAW Data Los Gatos"))
+  data_folders<- data_folders[!(data_folders%in%basefolders)]
+  
+  
   message("Here is the list of data folders in here:")
   print(data_folders)
   
+
   
   # Import and store data for for Picarro and LosGatos data
   raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format, prec){
@@ -99,13 +105,13 @@ for (f in files.sources){source(f)}
         rm(data.raw)
       }
       
-      # get read of possible duplicated data
+      # get rid of possible duplicated data
       is_duplicate <- duplicated(mydata_imp$POSIX.time)
       mydata <- mydata_imp[!is_duplicate,]
       
       #Correction of units for H2O in case of picarro data: default function "import2RData" assumes mmol/mol, but our instrument reports H2O in mol % (100* mol/mol)
       if(instrument=="Picarro"){
-       mydata$H2O_ppm<- mydata$H2O_ppm*10 
+       mydata$H2O_ppm<- mydata$H2O_ppm*10
       }
       
       # save this dataframe as a new RData file
@@ -115,11 +121,19 @@ for (f in files.sources){source(f)}
   }
   
   raw2RData_P_LG(data_folders, instrument = "Picarro", instrumentID = "G4301", date.format = "ymd", prec=c(0.025, 0.1, 10))
+  
+  
   raw2RData_P_LG(data_folders, instrument = "Los Gatos", instrumentID = "UGGA", date.format = "mdy", prec =  c(0.2, 1.4, 50))
   
   
   
   # Import and store data for LiCOR data
+  # list filenames
+  myfieldsheets_list <- list.files(fieldsheetpath, pattern = "Fieldsheet-GHG.xlsx", all.files = T, full.names = T, recursive = T)
+  # Read all fieldsheets and put them in a single dataframe
+  fieldsheet <- read_GHG_fieldsheets(myfieldsheets_list)
+  
+  #Subset licor fieldsheets
   fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
   list_subsites_Licor <- unique(fieldsheet_Licor$subsite)
   
