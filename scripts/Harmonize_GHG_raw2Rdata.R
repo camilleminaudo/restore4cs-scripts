@@ -15,8 +15,8 @@
 
 
 #Last run date CHECK!-----
-#The Rdata files in dropbox were last updated with this script on: 06/05/2025
-
+#The Rdata files in dropbox were last updated with this script on: 07/05/2025
+#there was an imcomplete subsite Rdata (S1-ca-r1) due to the presence of the same data (but incomplete in a different folder), unclear why it was not "filled in" with the rawfile containing the complete sampling. 
 
 
 

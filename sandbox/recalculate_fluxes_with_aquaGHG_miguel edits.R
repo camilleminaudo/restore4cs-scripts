@@ -364,9 +364,72 @@ for (k in seq_along(list_ids)){
 
 
 
+#Ch4 auxfile 4 review------
+#save ch4 auxfile to log mistakes that could be corrected (i.e. cases of obious ebullition from visual inspection) log in them sucess or miss (with short description)
+
+write.csv(x = ch4_auxfile, file = paste0(results_path, "ch4_auxfile4inspection.csv"), row.names = F)
 
 
 
 
 
 
+#Miscelanea-----
+
+
+#UniqueID s1-ca-r1-1-o-d had an artefact at the beginning first ~260 s with constant ch4, check that the actual data. 
+#There was an issue with an incomplete rawfile in the wrong folder that caused data to be incomplete for this UniqueID, wrong rawfile was deleted and rdata re-imported. Now this is fixed. 
+
+#WE will have to re-run alos the co2 loop to update the flux of this UniqueID. 
+ch4_auxfile %>% filter(grepl("s1-ca-r1-1-o-d", UniqueID))
+co2_auxfile %>% filter(grepl("s1-ca-r1-1-o-d", UniqueID))
+#Duration is 710 in both auxfiles, starting at 8:40:39
+
+a<-load_incubation(auxfile_i = ch4_auxfile %>% filter(grepl("s1-ca-r1-1-o-d", UniqueID)), RData_path = RData_path)
+#when loaded, only 450 s of data. starting at 8:45:00
+a$POSIX.time[1]
+a %>% 
+  ggplot(aes(x=Etime, y=CO2dry_ppm))+
+  geom_point()
+
+a %>% 
+  ggplot(aes(x=POSIX.time, y=CH4dry_ppb))+
+  geom_point()
+
+#NO artefacts in loaded data
+
+#Check Rdata file: the Rdatafile starts at 8:45:00 
+load(file = paste0(RData_path, "/S1-CA-R1_LI-7810.RData"))
+first(mydata$POSIX.time) 
+
+start<- ch4_auxfile %>% filter(grepl("s1-ca-r1-1-o-d", UniqueID)) %>% pull(start.time)
+stop<- start+ ch4_auxfile %>% filter(grepl("s1-ca-r1-1-o-d", UniqueID)) %>% pull(duration)
+
+mydataauxfile<- mydata %>% 
+  filter(between(POSIX.time,start,stop ))
+
+rawdata<- read.delim(file=)
+#Check raw-data: raw data file has non-NA ghg data starting from 08:23:29 (more than 20 minutes before start of incubation). 
+#first non-NA POSIX.time in raw file: 2023-10-31	08:23:29, 
+
+#raw-data file has remark starting at 08:40:34 (start of incubation)
+
+#It seems the first part of rawdata file is not imported as Rdata  #WHY???!!
+
+#Check data in rawdata and Rdata is the same (match ghg concentrations and time?)
+
+#YES!! Same data in both,
+# 08:45:00	13898.349	  439.44772	  2034.1851 in rawfile
+# 08:45:00  13898.35  439.4477  2034.185 in Rdata 
+ 
+#fieldsheet start.time: 8:41 
+
+#Only "filter" when harmonizing Rdata is removing duplicate Posixtimes
+#In data.raw (Rdata direct from raw-file) only 4 duplicated times, and not within incubation timeframe. 
+
+#different number of lines in data.raw (Rdata direct from rawfile)
+
+is_duplicate <- duplicated(data.raw$POSIX.time)
+data.raw_nodup <- data.raw[!is_duplicate,]
+
+#FOUND a different raw-file with same data,but starting at 8:45:00, in wrong folder that seems to override the data (deleted incomplete file of S1-ca-r1 day from folder S1-CU-DA-DU). 
