@@ -157,6 +157,8 @@ if(sum(is.na(corresponding_row))==0){
   message(paste("looking in a plus or minus 5-minute window did not work for", sum(is.na(corresponding_row)), "incubations:"))
   print(fieldsheet_Picarro[which(is.na(corresponding_row)),]$uniqID)
 }
+#the following incubations should not be found (not map_incubation for them):
+#"s1-ri-a1-18-o-d-14:28" "s1-ri-a1-19-o-d-14:40"
 
 # finding corresponding row in case of NA in corresponding_row
 if(sum(is.na(corresponding_row))>0){
@@ -172,14 +174,16 @@ if(sum(is.na(corresponding_row))>0){
   message("Could not find a corresponding incubation map for the following incubations:")
   print(fieldsheet_Picarro$uniqID[ind_NAs])
   
-  # removing rows from fieldsheet_Picarro with missing correspondance
-  fieldsheet_Picarro <- fieldsheet_Picarro[-ind_NAs,]
-  corresponding_row <- corresponding_row[-ind_NAs]
 }
-
 # replacing unix_start and unix_stop with new values
 fieldsheet_Picarro$unix_start <- map_incubations$start[corresponding_row]
 fieldsheet_Picarro$unix_stop <- map_incubations$stop[corresponding_row]
+
+#The above chunk causes incubations without match in map_incubations to lose their unix_start and unix_stop, re-calculate them
+fieldsheet_Picarro<- fieldsheet_Picarro %>% 
+  mutate(unix_start=if_else(is.na(unix_start), as.numeric(as.POSIXct(paste(date, start_time),tz = "UTC")), unix_start),
+         unix_stop=if_else(is.na(unix_stop), as.numeric(as.POSIXct(paste(date, end_time),tz = "UTC")), unix_stop))
+
 
 
 #Check that unix_start and Unix_stop are not duplicated after picarro time-matching: 
@@ -195,7 +199,8 @@ fieldsheet_Picarro$unix_stop <- map_incubations$stop[corresponding_row]
   }else{
     message(paste("All Picarro fieldsheet start-stop times are now corrected"))
     rm(duplicated_starts_picarro, duplicated_stops_picarro)}
-}
+  }
+
 
 ## ---- Correct LiCOR fieldsheets ----
 
@@ -442,7 +447,7 @@ for (subsite in subsites){
 
 #Check fiedlsheet not in auxfile
 mising<- fieldsheet %>% filter(!uniqID%in%all_auxfile_ch4$UniqueID)
-mising$comments
+mising %>% select(uniqID,comments)
 #Good, only missing incubations without actual gas-analyzer data
 
 #4. Save AUXFILES----

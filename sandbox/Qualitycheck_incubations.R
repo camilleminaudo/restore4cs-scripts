@@ -11,7 +11,7 @@
 # This script analyses the quality of fit of all fluxes. First by ranking and flagging incubations based on regression fit. Then by flagging incubations that include artefacts (examining deltaGHG and flagging incubations with more than 5% of deltaGHG==0)
 #It saves all flags and quality issues based on the 5s margin incubation run to inspect every incubation and save cropping decissions for final flux calculation
 
-
+#LAST update on inspection files (including cropping decisions): 8/5/2025
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console

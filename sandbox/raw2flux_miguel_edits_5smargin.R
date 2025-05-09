@@ -18,10 +18,10 @@
 #Licor: start-stop from remarks (when available) or from fieldsheets (when no remark is matched)
 #Los gatos: start-stop from fieldsheets
 
-#AFTER all start-stop times have been identified and corrected, 5 seconds of margin is applied to the start and  the end of the incubation
+#AFTER all start-stop times have been identified and corrected, 5 seconds of margin is applied to the start and  the end of each incubation
 
 ##TO DO------
-# : Check Licor map_incubations to fieldsheet correspondence
+
 
 rm(list = ls()) # clear workspace
 cat("/014") # clear console
@@ -60,8 +60,6 @@ sampling <- "S" #All fluxes will be calculated
 margin_s_after_start <- 5 
 margin_s_before_end <- 5
 
-#create/update RDATA?
-harmonize2RData <- F
 
 #Save plots from goflux?
 doPlot <- T
@@ -75,17 +73,16 @@ shoulder_goflux<- 0
 #Artefact definition: how many seconds (minimum) of constant slope constitute an incubation with artefact?
 artefact_duration_threshold<- 5
 
+#Optional (override data-logger import and use default Tº and P for flux.term)
+usedataloggers<- F
+
+
 # ---- Directories ----
 dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data" # You have to make sure this is pointing to the write folder on your local machine
 datapath <- paste0(dropbox_root,"/GHG/RAW data")
 fieldsheetpath <- paste0(dropbox_root,"/GHG/Fieldsheets")
 loggerspath <- paste0(datapath,"/RAW Data Logger")
 RData_path <- paste0(dropbox_root,"/GHG/Processed data/RData/")
-
-
-# results_path<- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
-# plots_path <- paste0(results_path,"level_incubation/")
-# quality_path<- paste0(dropbox_root, "/GHG/Working data/Incubation_quality/") #quality assessment, crop decisions and flags after inspection.
 
 
 #Custom directories for this script: To save results to be used for cropping decissions
@@ -173,9 +170,11 @@ for (i in seq_along(fieldsheet_Picarro$plot_id)){
 if(sum(is.na(corresponding_row))==0){
   message("All fielsheet incubations could be assigned to corrected start-stop times from picarro software")
 }else if (sum(is.na(corresponding_row))>0){
-message(paste("looking in a plus or minus 5-minute window did not work for", sum(is.na(corresponding_row)), "incubations:"))
-print(fieldsheet_Picarro[which(is.na(corresponding_row)),]$uniqID)
+  message(paste("looking in a plus or minus 5-minute window did not work for", sum(is.na(corresponding_row)), "incubations:"))
+  print(fieldsheet_Picarro[which(is.na(corresponding_row)),]$uniqID)
 }
+#the following incubations should not be found (not map_incubation for them):
+#"s1-ri-a1-18-o-d-14:28" "s1-ri-a1-19-o-d-14:40"
 
 # finding corresponding row in case of NA in corresponding_row
 if(sum(is.na(corresponding_row))>0){
@@ -191,29 +190,31 @@ if(sum(is.na(corresponding_row))>0){
   message("Could not find a corresponding incubation map for the following incubations:")
   print(fieldsheet_Picarro$uniqID[ind_NAs])
   
-  # removing rows from fieldsheet_Picarro with missing correspondance
-  fieldsheet_Picarro <- fieldsheet_Picarro[-ind_NAs,]
-  corresponding_row <- corresponding_row[-ind_NAs]
 }
-
 # replacing unix_start and unix_stop with new values
 fieldsheet_Picarro$unix_start <- map_incubations$start[corresponding_row]
 fieldsheet_Picarro$unix_stop <- map_incubations$stop[corresponding_row]
 
+#The above chunk causes incubations without match in map_incubations to lose their unix_start and unix_stop, re-calculate them
+fieldsheet_Picarro<- fieldsheet_Picarro %>% 
+  mutate(unix_start=if_else(is.na(unix_start), as.numeric(as.POSIXct(paste(date, start_time),tz = "UTC")), unix_start),
+         unix_stop=if_else(is.na(unix_stop), as.numeric(as.POSIXct(paste(date, end_time),tz = "UTC")), unix_stop))
+
+
 
 #Check that unix_start and Unix_stop are not duplicated after picarro time-matching: 
 {duplicated_starts_picarro<- fieldsheet_Picarro %>% 
-  filter(unix_start %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_start,incomparables = F),]$unix_start)
-duplicated_stops_picarro<-fieldsheet_Picarro %>% 
-  filter(unix_stop %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_stop,incomparables = F),]$unix_stop)
-
-#Check potential duplicate incubations created by the approach, code below.
-if(sum(dim(duplicated_starts_picarro)[1],dim(duplicated_stops_picarro)[1])>0){
-  message(paste("CAUTION: picarro correction duplicates incubations, check duplicates and correct fieldsheet times"))
-  print(duplicated_starts_picarro$uniqID)
-}else{
-  message(paste("All Picarro fieldsheet start-stop times are now corrected"))
-  rm(duplicated_starts_picarro, duplicated_stops_picarro)}
+    filter(unix_start %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_start,incomparables = F),]$unix_start)
+  duplicated_stops_picarro<-fieldsheet_Picarro %>% 
+    filter(unix_stop %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_stop,incomparables = F),]$unix_stop)
+  
+  #Check potential duplicate incubations created by the approach, code below.
+  if(sum(dim(duplicated_starts_picarro)[1],dim(duplicated_stops_picarro)[1])>0){
+    message(paste("CAUTION: picarro correction duplicates incubations, check duplicates and correct fieldsheet times"))
+    print(duplicated_starts_picarro$uniqID)
+  }else{
+    message(paste("All Picarro fieldsheet start-stop times are now corrected"))
+    rm(duplicated_starts_picarro, duplicated_stops_picarro)}
 }
 
 ## ---- Correct LiCOR fieldsheets ----
@@ -221,6 +222,7 @@ if(sum(dim(duplicated_starts_picarro)[1],dim(duplicated_stops_picarro)[1])>0){
 #Correct Licor start-stop times whenever remarks are available
 # load incubation map: updated with last incubations and corrected to get all non-duplicated remarks (removing also remarks that cause wrong-assignments)
 map_incubations <- read.csv( file = paste0(dropbox_root,"/GHG/RAW data/RAW Data Licor-7810/map_incubations_touse.csv"))
+
 # only select realistic start/stop
 map_incubations <- map_incubations[which(map_incubations$stop-map_incubations$start < 15*60),]
 
@@ -238,8 +240,8 @@ for (i in seq_along(fieldsheet_Licor$plot_id)){
     }
   }
 }
-
 ind_noNAs <- which(!is.na(corresponding_row))
+
 
 #Check how many were found:
 if(sum(!is.na(ind_noNAs))>0){
@@ -247,11 +249,11 @@ if(sum(!is.na(ind_noNAs))>0){
   fieldsheet_Licormapped$foundinmap<- FALSE
   fieldsheet_Licormapped$foundinmap[ind_noNAs]<- TRUE
   fieldsheet_Licormapped %>% 
-  mutate(sampling=substr(subsite,1,5)) %>% 
-  group_by(sampling) %>% 
-  summarise(foundinmap=sum(foundinmap), total_incubations= n(), percentfound=foundinmap/total_incubations*100)
+    mutate(sampling=substr(subsite,1,5)) %>% 
+    group_by(sampling) %>% 
+    summarise(foundinmap=sum(foundinmap), total_incubations= n(), percentfound=foundinmap/total_incubations*100)
   message(paste("Licor start-stop times corrected for",sum(!is.na(ind_noNAs)),"incubations" ))
-
+  
 }
 
 
@@ -266,58 +268,10 @@ fieldsheet_Licor$unix_stop <- fieldsheet_Licor$unix_start + duration_fieldsheet
 fieldsheet_LosGatos <- fieldsheet[fieldsheet$gas_analyzer=="Los Gatos",]
 
 #Combine all fieldsheets with corrected times based on map_incubations when available
-fieldsheet_beforecrop <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
-
-# ## ----(DO NOT EXECUTE) Cropping after inspection-----
-#  
-# #Import table with decisions and cropping amounts: all cropping is based on last run of 5-s margin script, so we have to re-add this 5 seconds to the cropping margins
-# croping<- read_xlsx(paste0(quality_path, "Inspection_table_allincubations_tocrop.xlsx"),na = "NA")
-# 
-# 
-# #Simplify and add the additional 5s of cropping to all crop_start_s and crop_end_s: Inspection and cropping decisions were taken on fluxes calculated based on 5-s margin. WE re-add this 5s of margin here for all incubations (custom-cropped or not) 
-# croping_simple<- croping %>%
-#   select(UniqueID, crop_start_s, crop_end_s) %>%
-#   mutate(crop_start_s=case_when(is.na(crop_start_s)~5,
-#                                 TRUE~crop_start_s+5),
-#          crop_end_s=case_when(is.na(crop_end_s)~5,
-#                               TRUE~crop_end_s+5)) %>%
-#   rename(uniqID=UniqueID)
-# 
-# #ANY incubation to re-inspect?
-# if(sum(!is.na(croping$To_recheck))>0){
-#   message("CAUTION: these incubations need to be re-checked and re-cropped. Incomplete artefact removal. ")
-#   print(croping %>%
-#           filter(!is.na(To_recheck)) %>%
-#           select(UniqueID))
-# }
-# 
-# #ANY incubation without not inspected?
-# if(sum(!fieldsheet_beforecrop$uniqID%in%croping_simple$uniqID)>0){
-# message("The following incubations were never inspected or cropped, script did not produce a flux for them:")
-# print(fieldsheet_beforecrop[!fieldsheet_beforecrop$uniqID%in%croping_simple$uniqID,c("uniqID","gas_analyzer","comments")])
-# }
-# #No missing incubation from S1
-# #1 missing incubation from S2: 
-# # s2-cu-r1-8-o-d-09:38 Los Gatos    Battery 1 stopped mid sample, there is no data for this incubation
-# #2 missing incubation from S3:
-# # s3-cu-p2-9-o-d-11:58  LI-COR       Times not in raw-data (Was here when LICOR BROKE?
-# # s3-cu-p2-10-o-d-12:07 LI-COR       Times not in raw-data (Was here when LICOR BROKE?
-# #No missing incubation from S4
-# 
-# 
-# #Add the cropping decission to the fieldsheets:
-# fieldsheet<- fieldsheet_beforecrop %>%
-#   merge.data.frame(croping_simple, by="uniqID",all.x = T) %>%
-#   mutate(unix_start=case_when(!is.na(crop_start_s)~unix_start+crop_start_s,
-#                               TRUE~unix_start),
-#          unix_stop=case_when(!is.na(crop_end_s)~unix_stop-crop_end_s,
-#                               TRUE~unix_stop)) %>%
-#   select(-c(crop_end_s,crop_start_s ))
-# 
+fieldsheet <- rbind(fieldsheet_Licor, fieldsheet_LosGatos, fieldsheet_Picarro)
 
 
 ##---Apply 5s margin-----
-fieldsheet<- fieldsheet_beforecrop
 fieldsheet$unix_start <- fieldsheet$unix_start+margin_s_after_start
 fieldsheet$unix_stop <- fieldsheet$unix_stop-margin_s_before_end
 
@@ -332,132 +286,6 @@ fieldsheet$end_time <- strftime(fieldsheet$timestamp_stop, format="%H:%M:%S", tz
 fieldsheet <- fieldsheet[order(fieldsheet$subsite),]
 
 
-#_________________####
-#RDATA SAVE (optional) ####
-#Import and store measurements to RData ---
-if(harmonize2RData){
-  data_folders <- list.dirs(datapath, full.names = T, recursive = T)[-1]
-  i <- grep(pattern = sampling, x = data_folders) # selecting the files corresponding to the selected sampling campaign
-  data_folders <- data_folders[i]
-  
-  r <- grep(pattern = "RData",x=data_folders)
-  if(length(r)>0){data_folders <- data_folders[-r]}
-  
-  message("Here is the list of data folders in here:")
-  print(data_folders)
-  
-  
-  # Import and store data for for Picarro and LosGatos data
-  
-  raw2RData_P_LG <- function(data_folders, instrument, instrumentID, date.format, prec){
-    r <- grep(pattern = instrument, x=data_folders)
-    for (data_folder in data_folders[r]){
-      setwd(data_folder)
-      subsite = basename(data_folder)
-      message(paste0("processing folder ",basename(data_folder)))
-      import2RData(path = data_folder, instrument = instrumentID,
-                   date.format = date.format, timezone = 'UTC', keep_all = FALSE,
-                   prec = prec)
-      
-      # load all these R.Data into a single dataframe
-      file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
-      z <- grep(pattern = instrumentID, x=file_list)
-      file_list <- file_list[z]
-      isF <- T
-      for(i in seq_along(file_list)){
-        load(file_list[i])
-        if(isF){
-          isF <- F
-          mydata_imp <- data.raw
-        } else {
-          mydata_imp <- rbind(mydata_imp, data.raw)
-        }
-        rm(data.raw)
-      }
-      
-      # get read of possible duplicated data
-      is_duplicate <- duplicated(mydata_imp$POSIX.time)
-      mydata <- mydata_imp[!is_duplicate,]
-      
-      setwd(RData_path)
-      
-      # save this dataframe as a new RData file
-      save(mydata, file = paste0(subsite,"_",instrument,".RData"))
-    }
-  }
-  
-  raw2RData_P_LG(data_folders, instrument = "Picarro", instrumentID = "G4301", date.format = "ymd", prec=c(0.025, 0.1, 10))
-  raw2RData_P_LG(data_folders, instrument = "Los Gatos", instrumentID = "UGGA", date.format = "mdy", prec =  c(0.2, 1.4, 50))
-  
-  
-  
-  # Import and store data for LiCOR data
-  fieldsheet_Licor <- fieldsheet[fieldsheet$gas_analyzer=="LI-COR",]
-  list_subsites_Licor <- unique(fieldsheet_Licor$subsite)
-  
-
-  
-  r_licor <- grep(pattern = "Licor",x=data_folders)
-  for (data_folder in data_folders[r_licor]){
-    setwd(data_folder)
-    message(paste0("processing folder ",basename(data_folder)))
-    if (grepl("S4-CU",data_folder)){
-    import2RData(path = data_folder, instrument = "LI-7810",
-                 date.format = "ymd", timezone = 'Europe/Riga', keep_all = FALSE, 
-                 prec = c(3.5, 0.6, 45))
-    } else {
-      import2RData(path = data_folder, instrument = "LI-7810",
-                   date.format = "ymd", timezone = 'UTC', keep_all = FALSE, 
-                   prec = c(3.5, 0.6, 45))
-    }
-    
-
-    # load all these R.Data into a single dataframe
-    file_list <- list.files(path = paste(data_folder,"/RData",sep=""), full.names = T)
-    isF <- T
-    for(i in seq_along(file_list)){
-      load(file_list[i])
-      if(isF){
-        isF <- F
-        mydata_imp <- data.raw
-      } else {
-        mydata_imp <- rbind(mydata_imp, data.raw)
-      }
-      rm(data.raw)
-    }
-
-    #Correct lithuanian licor tz (licor in local time)
-    if (grepl("S4-CU",data_folder)){
-      message("S4-CU Licor not in UTC time!!")  
-      mydata_imp$POSIX.time<- with_tz(mydata_imp$POSIX.time,tzone = "UTC")
-      mydata_imp$DATE<- as.character(as_date(mydata_imp$POSIX.time))
-      mydata_imp$TIME<- strftime(mydata_imp$POSIX.time, format="%H:%M:%S",tz = "utc")
-    }
-
-    # get rid of possible duplicated data
-    is_duplicate <- duplicated(mydata_imp$POSIX.time)
-    mydata_imp <- mydata_imp[!is_duplicate,]
-    
-    
-    # r_site <- grep(pattern = basename(data_folder), x=list_subsites_Licor)
-    
-    # create separate folders for each subsite where data actually exists
-    for (subsite in list_subsites_Licor){
-      corresponding_date <- as.Date(unique(fieldsheet_Licor$date[fieldsheet_Licor$subsite == subsite]))
-      
-      # check if we already have this data somewhere in the clean file
-      n_lines_d <- dim(mydata_imp[which(as.Date(mydata_imp$POSIX.time) == corresponding_date),])[1]
-      if(n_lines_d > 0){
-        message(paste0("... there is some data to store for subsite ",subsite))
-        mydata <- mydata_imp[as.Date(mydata_imp$POSIX.time) == corresponding_date,]
-        
-        setwd(RData_path)
-        # save this dataframe as a new RData file
-        save(mydata, file = paste0(subsite,"_","LI-7810",".RData"))
-      }
-    }
-  }
-}
 
 #_________________####
 #FLUX CALCULATION####
@@ -479,6 +307,13 @@ for (subsite in subsites){
   # read corresponding temperature logger file and keep initial temperature
   SN_logger_float <- first(corresp_fs$logger_floating_chamber)
   SN_logger_tube <- first(corresp_fs$logger_transparent_chamber)
+  
+  #----override data logger----
+  if(usedataloggers==F){
+  SN_logger_float<- NA
+  SN_logger_tube <- NA
+  }
+  
   site_ID <- str_sub(subsite, start = 1, end = 5)
   
   # finding out if corresponding file exists, and its extension
@@ -512,10 +347,10 @@ for (subsite in subsites){
   } else {
     message("===> no data logger linked to the floating chamber!")
     is_data_logger_float = F}
-  if(dim(data_logger_float)[1]<10){
+  if(is_data_logger_float){if(dim(data_logger_float)[1]<10){
     message("===> not enough data could be linked to the floating chamber!")
     is_data_logger_float = F
-  }
+  }}
   
   if(!is.na(SN_logger_tube) & !is.na(i_f_tube)){
     is_data_logger_tube = T
@@ -540,10 +375,10 @@ for (subsite in subsites){
     is_data_logger_tube = F
     message("===> no data logger linked to the tube chamber!")
   }
-  if(dim(data_logger_tube)[1]<10){
+  if(is_data_logger_tube){if(dim(data_logger_tube)[1]<10){
     message("===> not enough data could be linked to the tube chamber!")
     is_data_logger_tube = F
-  }
+  }}
   
   
   
