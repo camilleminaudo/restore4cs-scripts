@@ -13,12 +13,14 @@
 #Needs for restore4cs: 
 #CO2: no need to calulate fluxes with aquaGHG, all results have been correctly produced and model chosen with previous raw2flux scripts. Done here for consistency and to test. 
 
-#CH4: we need to use aquaGHG to be able to separate difusion and ebullition and decide on method to produce final estimates ("best.flux"). For it we need to plot to evaluate the performance of the approach in multiple UniqueID cases. 
+#CH4: we need to use aquaGHG to be able to separate difusion and ebullition and decide on method to produce final estimates ("best.flux"). full.total.flux and full.ebullition.flux are calculated within this script (section Fix full.total.flux). Plots produced by this script give aquaGHG results directly. 
 
 
 #BUGs and issues------
 # #SOME ISSUES WITH start.time class (rounding causes class change to POSIXt), easy fix by re-transforming to POSIXct
 
+#BUG: total.flux within aquaGHG calculates total flux with the incubation cropped until the start of the identified difusive chunk. Total flux should include the whole incubation, irregardless of which section is identified as the diffusive chunk. In this script, corrected variables are added to the CH4water_flux results:
+# full.total.flux (and SD), full.ebullition.flux (using full.total.flux - difusive.flux)
 
 
 #BUG: flux.plot fails when HM.flux is NA (breaking the loop): 
@@ -245,6 +247,7 @@ save(list = c("CH4dry_flux.auto",
 
 
 
+
 #----CH4 water loop (with pdf plots)-----
 rm(subsite, k)
 for (subsite in unique(ch4_water_auxfile$subsite)){
@@ -259,7 +262,8 @@ for (subsite in unique(ch4_water_auxfile$subsite)){
     #Select uniqueID and display progress
     i = ch4_water_auxfile[which(ch4_water_auxfile$subsite==subsite),]$UniqueID[k]
 
-    message(paste0("Processing CH4water incubation ",k, " of ",length(ch4_water_auxfile$UniqueID)," (",round(100*k/length(ch4_water_auxfile$UniqueID),0), " %)"))
+    incubnum<- which(ch4_water_auxfile$UniqueID==i)
+    message(paste0("Processing CH4water incubation ",incubnum, " of ",length(ch4_water_auxfile$UniqueID)," (",round(100*incubnum/length(ch4_water_auxfile$UniqueID),0), " %)"))
     
     #Load auxfiles for UniqueID
     ch4_water_auxfile_i <- ch4_water_auxfile[which(ch4_water_auxfile$UniqueID==i),]
@@ -285,6 +289,51 @@ for (subsite in unique(ch4_water_auxfile$subsite)){
                                          fluxSeparation = T,
                                          displayPlots = TRUE, 
                                          method = "trust.it.all")
+        
+        ##Fix full.total.flux------
+        #ADD full.total.flux and full.ebullition.flux with whole incubation period:
+        {
+        #Calculate total.flux and total.flux.SD for whole incubation (to overwrite that coming from automaticflux, which only selects that after the start of identified difusion). Using chunks copied from aquaGHG:
+        
+        #smoothing signal:
+        # smooth signal from incubation (whole duration)
+        mydf <- data.frame(POSIX.time = mydata_ch4_water$POSIX.time,
+                           time = as.numeric(mydata_ch4_water$POSIX.time-first(mydata_ch4_water$POSIX.time)),
+                           conc = mydata_ch4_water[["CH4dry_ppb"]])
+        
+        concsmooth <- smooth.spline(x = mydf$time, y = mydf$conc, nknots = round(length(mydf$time)/3), spar = 0.8)
+        mydf$concsmooth <- approx(concsmooth$x, concsmooth$y, xout = mydf$time, rule = 2)$y
+        
+        #get initial, final concentration and incubation time (whole duration)
+        t.win <- 30
+        C0 = min(mydf$concsmooth[mydf$time<t.win])
+        Cf = max(mydf$concsmooth[mydf$time>max(mydf$time)-t.win])
+        incubation_time = last(mydf$time)
+        #get deltaconcs
+        deltaconcs = Cf-C0
+        #Calculate SD for initial final and deltaconc
+        SD_C0 <- sd(mydf$conc[mydf$time<t.win])
+        SD_Cf <- sd(mydf$conc[mydf$time>max(mydf$time)-t.win])
+        SD_deltaconcs <- sqrt(SD_C0^2+SD_Cf^2)
+        
+        #Calculate full.total.flux aplying flux.term for whole incubation
+        full.total.flux <- (deltaconcs)/incubation_time*CH4water_flux.auto_i$flux.term # nmol/m2/s
+        full.ebullition.flux <- full.total.flux-CH4water_flux.auto_i$diffusion.flux
+        #Calculate SD of total flux
+        SD_full.total.flux <- abs(full.total.flux) * SD_deltaconcs/deltaconcs
+        
+        #Re-calculate SD_full.ebullition.flux using updated SD_full.total.flux and extracted SD_diffusion.flux
+        SD_diffusion.flux <- CH4water_flux.auto_i$diffusion.flux.SD
+        SD_full.ebullition.flux <- sqrt(SD_diffusion.flux^2+SD_full.total.flux^2)
+        
+        #ADD to CH4water_flux.auto_i results for full.total flux and full.ebullition.flux
+        CH4water_flux.auto_i$full.total.flux<- full.total.flux
+        CH4water_flux.auto_i$SD_full.total.flux<- SD_full.total.flux
+        CH4water_flux.auto_i$full.ebullition.flux<- full.ebullition.flux
+        CH4water_flux.auto_i$SD_full.ebullition.flux<- SD_full.ebullition.flux
+        
+        }
+        
         
         #Join flux to rest of CH4water dataset
         CH4water_flux.auto <- rbind(CH4water_flux.auto, CH4water_flux.auto_i)
@@ -422,7 +471,6 @@ for (subsite in unique(co2_auxfile$subsite)){
 
 
 #Miscelanea-----
-
 
 #UniqueID s1-ca-r1-1-o-d had an artefact at the beginning first ~260 s with constant ch4, check that the actual data. 
 #There was an issue with an incomplete rawfile in the wrong folder that caused data to be incomplete for this UniqueID, wrong rawfile was deleted and rdata re-imported. Now this is fixed. 

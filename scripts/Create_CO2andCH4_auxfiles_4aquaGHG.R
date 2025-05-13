@@ -31,6 +31,8 @@
 #chamberType
 #lightCondition
 
+#TO-DO: add discard decissions from croping excel file
+
 #The columns Start.time and duration might be different for each gas due to ghg-dedicated cropping of artefacts. 
 
 
@@ -157,7 +159,7 @@ if(sum(is.na(corresponding_row))==0){
   message(paste("looking in a plus or minus 5-minute window did not work for", sum(is.na(corresponding_row)), "incubations:"))
   print(fieldsheet_Picarro[which(is.na(corresponding_row)),]$uniqID)
 }
-#the following incubations should not be found (not map_incubation for them):
+#the following incubations should not be found (no map_incubation for them):
 #"s1-ri-a1-18-o-d-14:28" "s1-ri-a1-19-o-d-14:40"
 
 # finding corresponding row in case of NA in corresponding_row
@@ -293,7 +295,7 @@ croping_simple<- croping %>%
                                   TRUE~ch4_end_crop_s+5))
 
 #croping_simple is used to adapt the auxfile for each gas in the section Goflux calculation
-rm(croping)
+
 
 
 #Load data for all meteostations and correspondence of subsite-meteostation (used to subset the correct data)
@@ -445,12 +447,23 @@ for (subsite in subsites){
 
 
 
+
+
+#4. TO-DO ______Add Discard decissions----
+#Add decissions logged in excell inspection file (discard/ok) to auxfiles for each GHG
+all_auxfile_co2<- all_auxfile_co2 %>% 
+  merge.data.frame(croping %>% select(UniqueID,co2_decission), by="UniqueID", all.x = T)
+
+all_auxfile_ch4<- all_auxfile_ch4 %>% 
+  merge.data.frame(croping %>% select(UniqueID,ch4_decission), by="UniqueID", all.x = T)
+
+
 #Check fiedlsheet not in auxfile
 mising<- fieldsheet %>% filter(!uniqID%in%all_auxfile_ch4$UniqueID)
 mising %>% select(uniqID,comments)
 #Good, only missing incubations without actual gas-analyzer data
 
-#4. Save AUXFILES----
+#5. Save AUXFILES----
 
 write.csv(all_auxfile_co2, file = paste0(auxfile_path,"co2_auxfile.csv"), row.names = F)
 write.csv(all_auxfile_ch4, file = paste0(auxfile_path,"ch4_auxfile.csv"), row.names = F)
