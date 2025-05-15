@@ -6,15 +6,15 @@
 # https://github.com/camilleminaudo/restore4cs-scripts
 # ---
 
-# --- Description of this script
+# --- Description ----
 # This script creates auxfiles needed to compute in-situ fluxes of CO2 and CH4 with the aquaGHG package from Camille https://github.com/camilleminaudo/aquaGHG
 
-#Two auxfiles (one for CO2, one for CH4) are created using:
+#INPUTS:
 # Fieldsheets + map_incubations to set correct start-stop incubations
-# Per-GHG cropping decisions logged in excel file Inspection_table_allincubations_tocrop_perGHG.xlsx
+# Per-GHG cropping and discarding decisions logged in excel file Inspection_table_allincubations_tocrop_perGHG.xlsx
 # Meteo-data harmonized for each subsite visit. 
 
-#Outputs two csv files (CO2 and CH4) with the following columns: 
+#OUTPUTS: two csv auxfilefiles (CO2 and CH4) with the following columns: 
 
 #subsite
 #UniqueID
@@ -30,10 +30,11 @@
 #strata
 #chamberType
 #lightCondition
+#ghg_decission (co2_decission/ch4_decission: "ok" vs "discard", based on inspection and fieldsheet comments)
 
-#TO-DO: add discard decissions from croping excel file
+#The columns Start.time and duration might be different for each gas due to ghg-specific cropping of artefacts. 
 
-#The columns Start.time and duration might be different for each gas due to ghg-dedicated cropping of artefacts. 
+#TO-do: (nothing)-----
 
 
 
@@ -449,14 +450,13 @@ for (subsite in subsites){
 
 
 
-#4. TO-DO ______Add Discard decissions----
+#4. Add Discard decissions----
 #Add decissions logged in excell inspection file (discard/ok) to auxfiles for each GHG
 all_auxfile_co2<- all_auxfile_co2 %>% 
-  merge.data.frame(croping %>% select(UniqueID,co2_decission), by="UniqueID", all.x = T)
+  merge.data.frame(croping %>% select(UniqueID,co2_decission), by="UniqueID", all.x = T) %>% arrange(subsite,start.time)
 
 all_auxfile_ch4<- all_auxfile_ch4 %>% 
-  merge.data.frame(croping %>% select(UniqueID,ch4_decission), by="UniqueID", all.x = T)
-
+  merge.data.frame(croping %>% select(UniqueID,ch4_decission), by="UniqueID", all.x = T)%>% arrange(subsite,start.time)
 
 #Check fiedlsheet not in auxfile
 mising<- fieldsheet %>% filter(!uniqID%in%all_auxfile_ch4$UniqueID)
@@ -467,6 +467,4 @@ mising %>% select(uniqID,comments)
 
 write.csv(all_auxfile_co2, file = paste0(auxfile_path,"co2_auxfile.csv"), row.names = F)
 write.csv(all_auxfile_ch4, file = paste0(auxfile_path,"ch4_auxfile.csv"), row.names = F)
-
-
 

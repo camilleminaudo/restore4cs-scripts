@@ -13,7 +13,8 @@
 #Needs for restore4cs: 
 #CO2: no need to calulate fluxes with aquaGHG, all results have been correctly produced and model chosen with previous raw2flux scripts. Done here for consistency and to test. 
 
-#CH4: we need to use aquaGHG to be able to separate difusion and ebullition and decide on method to produce final estimates ("best.flux"). full.total.flux and full.ebullition.flux are calculated within this script (section Fix full.total.flux). Plots produced by this script give aquaGHG results directly. 
+#CH4: We separate dry and water incubations. For dry, no flux separation. For water, calculate both no flux separation and flux separation. we need to use aquaGHG to be able to separate difusion and ebullition and decide on method to produce final estimates ("best.flux"). full.total.flux and full.ebullition.flux are calculated within this script (section Fix full.total.flux). Plots produced by this script give aquaGHG results directly. 
+
 
 
 #BUGs and issues------
@@ -144,9 +145,9 @@ ch4_water_auxfile<- ch4_auxfile %>% filter(water_depth>0)
 
 
 #-----Initialize objects----
-CO2_flux.auto <- CH4dry_flux.auto <- CH4water_flux.auto <- NULL
+CO2_flux.auto <- CH4dry_flux.auto <- CH4w_nosep_flux.auto <- CH4w_sep_flux.auto <- NULL
 
-CO2_df.no_measurements <- CH4dry_df.no_measurements <- CH4water_df.no_measurements <- NULL
+CO2_df.no_measurements <- CH4dry_df.no_measurements <- CH4w_nosep_df.no_measurements <- CH4w_sep_df.no_measurements <- NULL
 
 #----CO2 loop (No plots)-----
 rm(k,i)
@@ -194,7 +195,7 @@ rm(k,i)
 
 # Save results to Rdata
 save(list = c("CO2_flux.auto",
-              "CO2_df.no_measurements"), file = paste0(results_path,"CO2_results_aquaGHG_recalculated.Rdata"))
+              "CO2_df.no_measurements"), file = paste0(results_path,"CO2_results_aquaGHG.Rdata"))
 
 
 #----CH4 dry loop (no plots)-------
@@ -210,7 +211,7 @@ for (k in seq_along(ch4_dry_auxfile$UniqueID)){
   ch4_dry_auxfile_i <- ch4_dry_auxfile[which(ch4_dry_auxfile$UniqueID==i),]
   
   #check that UniqueID has auxfile for ch4 dry
-  if(dim(ch4_dry_auxfile)[1]==0){
+  if(dim(ch4_dry_auxfile_i)[1]==0){
     message(paste0("Could not find corresponding auxfile for ",i))
     CH4dry_df.no_measurements <- rbind(CH4dry_df.no_measurements,
                                 data.frame(UniqueID=i,
@@ -243,18 +244,71 @@ for (k in seq_along(ch4_dry_auxfile$UniqueID)){
 
 # Save results to Rdata
 save(list = c("CH4dry_flux.auto",
-              "CH4dry_df.no_measurements"), file = paste0(results_path,"CH4dry_results_aquaGHG_recalculated.Rdata"))
+              "CH4dry_df.no_measurements"), file = paste0(results_path,"CH4dry_results_aquaGHG.Rdata"))
 
 
 
 
-#----CH4 water loop (with pdf plots)-----
+
+#----CH4 water no flux separation (no plots)-------
+rm(k,i)
+#loop over uniqueID of full auxfile
+for (k in seq_along(ch4_water_auxfile$UniqueID)){
+  
+  #Select uniqueID and display progress
+  i = ch4_water_auxfile$UniqueID[k]
+  message(paste0("Processing CH4water No separation incubation ",k, " of ",length(ch4_water_auxfile$UniqueID)," (",round(100*k/length(ch4_water_auxfile$UniqueID),0), " %)"))
+  
+  #Load auxfiles for UniqueID
+  ch4_water_auxfile_i <- ch4_water_auxfile[which(ch4_water_auxfile$UniqueID==i),]
+  
+  #check that UniqueID has auxfile for ch4 water
+  if(dim(ch4_water_auxfile_i)[1]==0){
+    message(paste0("Could not find corresponding auxfile for ",i))
+    CH4w_nosep_df.no_measurements <- rbind(CH4w_nosep_df.no_measurements,
+                                       data.frame(UniqueID=i,
+                                                  message = "no auxfile ch4"))
+  } else {
+    #Load ch4 water data for UniqueID
+    mydata_ch4_water <- load_incubation(ch4_water_auxfile_i, RData_path)
+    
+    #Check that there is ch4 data for UniqueID
+    if(dim(mydata_ch4_water)[1]==0){
+      CH4w_nosep_df.no_measurements <- rbind(CH4w_nosep_df.no_measurements,
+                                         data.frame(UniqueID=i,
+                                                    message = "no measurements for ch4"))
+    } else {
+      #Calculate CH4 water flux for UniqueID (no flux separation, no plot)
+      CH4w_nosep_flux.auto_i <- automaticflux(dataframe = mydata_ch4_water, myauxfile = ch4_water_auxfile_i, shoulder = 0, gastype = "CH4dry_ppb", 
+                                          fluxSeparation = FALSE,
+                                          displayPlots = FALSE,
+                                          method = "trust.it.all")
+      
+      #Join flux to rest of CH4 water No sep dataset
+      CH4w_nosep_flux.auto <- rbind(CH4w_nosep_flux.auto, CH4w_nosep_flux.auto_i)
+    }
+  }
+  #Remove auxfile for UniqueID (avoids re-usage, if next does not exist)
+  rm(ch4_water_auxfile_i)
+  
+}#End of UniqueID loop
+
+
+# Save results to Rdata
+save(list = c("CH4w_nosep_flux.auto",
+              "CH4w_nosep_df.no_measurements"), file = paste0(results_path,"CH4w_nosep_results_aquaGHG.Rdata"))
+
+
+
+
+
+#----CH4 water flux separation(with pdf plots)-----
 rm(subsite, k)
 for (subsite in unique(ch4_water_auxfile$subsite)){
   message(paste0("processing subsite",subsite))
   
   #Start pdf for plots
-  pdf(file = paste0(results_path,"CH4water_",subsite,".pdf"))
+  pdf(file = paste0(results_path,"CH4w_sep_",subsite,".pdf"))
   
   #loop over uniqueID of current subsite
   for (k in seq_along(unique(ch4_water_auxfile[which(ch4_water_auxfile$subsite==subsite),]$UniqueID))){
@@ -263,7 +317,7 @@ for (subsite in unique(ch4_water_auxfile$subsite)){
     i = ch4_water_auxfile[which(ch4_water_auxfile$subsite==subsite),]$UniqueID[k]
 
     incubnum<- which(ch4_water_auxfile$UniqueID==i)
-    message(paste0("Processing CH4water incubation ",incubnum, " of ",length(ch4_water_auxfile$UniqueID)," (",round(100*incubnum/length(ch4_water_auxfile$UniqueID),0), " %)"))
+    message(paste0("Processing CH4water flux separation incubation ",incubnum, " of ",length(ch4_water_auxfile$UniqueID)," (",round(100*incubnum/length(ch4_water_auxfile$UniqueID),0), " %)"))
     
     #Load auxfiles for UniqueID
     ch4_water_auxfile_i <- ch4_water_auxfile[which(ch4_water_auxfile$UniqueID==i),]
@@ -271,7 +325,7 @@ for (subsite in unique(ch4_water_auxfile$subsite)){
     #check that UniqueID has auxfile for ch4 (with water)
     if(dim(ch4_water_auxfile_i)[1]==0){
       message(paste0("Could not find corresponding auxfile for ",i))
-      CH4water_df.no_measurements <- rbind(CH4water_df.no_measurements,
+      CH4w_sep_df.no_measurements <- rbind(CH4w_sep_df.no_measurements,
                                   data.frame(UniqueID=i,
                                              message = "no auxfile ch4"))
     } else {
@@ -280,12 +334,12 @@ for (subsite in unique(ch4_water_auxfile$subsite)){
       
       #Check that there is ch4 data for UniqueID
       if(dim(mydata_ch4_water)[1]==0){
-        CH4water_df.no_measurements <- rbind(CH4water_df.no_measurements,
+        CH4w_sep_df.no_measurements <- rbind(CH4w_sep_df.no_measurements,
                                     data.frame(UniqueID=i,
                                                message = "no measurements for ch4"))
       } else {
         #Calculate CH4 flux for UniqueID  with flux separation and plot    
-        CH4water_flux.auto_i <- automaticflux(dataframe = mydata_ch4_water, myauxfile = ch4_water_auxfile_i, shoulder = 0, gastype = "CH4dry_ppb", 
+        CH4w_sep_flux.auto_i <- automaticflux(dataframe = mydata_ch4_water, myauxfile = ch4_water_auxfile_i, shoulder = 0, gastype = "CH4dry_ppb", 
                                          fluxSeparation = T,
                                          displayPlots = TRUE, 
                                          method = "trust.it.all")
@@ -316,27 +370,27 @@ for (subsite in unique(ch4_water_auxfile$subsite)){
         SD_Cf <- sd(mydf$conc[mydf$time>max(mydf$time)-t.win])
         SD_deltaconcs <- sqrt(SD_C0^2+SD_Cf^2)
         
-        #Calculate full.total.flux aplying flux.term for whole incubation
-        full.total.flux <- (deltaconcs)/incubation_time*CH4water_flux.auto_i$flux.term # nmol/m2/s
-        full.ebullition.flux <- full.total.flux-CH4water_flux.auto_i$diffusion.flux
+        #Calculate full.total.flux aplying flux.term from aquaGHG
+        full.total.flux <- (deltaconcs)/incubation_time*CH4w_sep_flux.auto_i$flux.term # nmol/m2/s
+        full.ebullition.flux <- full.total.flux-CH4w_sep_flux.auto_i$diffusion.flux
         #Calculate SD of total flux
         SD_full.total.flux <- abs(full.total.flux) * SD_deltaconcs/deltaconcs
         
         #Re-calculate SD_full.ebullition.flux using updated SD_full.total.flux and extracted SD_diffusion.flux
-        SD_diffusion.flux <- CH4water_flux.auto_i$diffusion.flux.SD
+        SD_diffusion.flux <- CH4w_sep_flux.auto_i$diffusion.flux.SD
         SD_full.ebullition.flux <- sqrt(SD_diffusion.flux^2+SD_full.total.flux^2)
         
-        #ADD to CH4water_flux.auto_i results for full.total flux and full.ebullition.flux
-        CH4water_flux.auto_i$full.total.flux<- full.total.flux
-        CH4water_flux.auto_i$SD_full.total.flux<- SD_full.total.flux
-        CH4water_flux.auto_i$full.ebullition.flux<- full.ebullition.flux
-        CH4water_flux.auto_i$SD_full.ebullition.flux<- SD_full.ebullition.flux
+        #ADD to CH4w_sep_flux.auto_i results for full.total flux and full.ebullition.flux
+        CH4w_sep_flux.auto_i$full.total.flux<- full.total.flux
+        CH4w_sep_flux.auto_i$SD_full.total.flux<- SD_full.total.flux
+        CH4w_sep_flux.auto_i$full.ebullition.flux<- full.ebullition.flux
+        CH4w_sep_flux.auto_i$SD_full.ebullition.flux<- SD_full.ebullition.flux
         
         }
         
         
-        #Join flux to rest of CH4water dataset
-        CH4water_flux.auto <- rbind(CH4water_flux.auto, CH4water_flux.auto_i)
+        #Join flux to rest of CH4w_sep dataset
+        CH4w_sep_flux.auto <- rbind(CH4w_sep_flux.auto, CH4w_sep_flux.auto_i)
       }
     }
     
@@ -348,8 +402,8 @@ for (subsite in unique(ch4_water_auxfile$subsite)){
 
 
 # Save results to Rdata
-save(list = c("CH4water_flux.auto",
-              "CH4water_df.no_measurements"), file = paste0(results_path,"CH4water_results_aquaGHG_recalculated.Rdata"))
+save(list = c("CH4w_sep_flux.auto",
+              "CH4w_sep_df.no_measurements"), file = paste0(results_path,"CH4w_sep_results_aquaGHG.Rdata"))
 
 
 
