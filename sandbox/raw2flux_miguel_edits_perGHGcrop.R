@@ -55,7 +55,7 @@ for (f in files.sources){source(f)}
 
 #---USER OPTIONS ----- 
 #sampling is the pattern to select in the fieldsheet filenames, every matching fieldsheet will have their incubations processed.
-sampling <- "S3-CA" 
+sampling <- "S" 
 
 #create/update RDATA?
 harmonize2RData <- F
@@ -169,9 +169,11 @@ for (i in seq_along(fieldsheet_Picarro$plot_id)){
 if(sum(is.na(corresponding_row))==0){
   message("All fielsheet incubations could be assigned to corrected start-stop times from picarro software")
 }else if (sum(is.na(corresponding_row))>0){
-message(paste("looking in a plus or minus 5-minute window did not work for", sum(is.na(corresponding_row)), "incubations:"))
-print(fieldsheet_Picarro[which(is.na(corresponding_row)),]$uniqID)
+  message(paste("looking in a plus or minus 5-minute window did not work for", sum(is.na(corresponding_row)), "incubations:"))
+  print(fieldsheet_Picarro[which(is.na(corresponding_row)),]$uniqID)
 }
+#the following incubations should not be found (no map_incubation for them):
+#"s1-ri-a1-18-o-d-14:28" "s1-ri-a1-19-o-d-14:40"
 
 # finding corresponding row in case of NA in corresponding_row
 if(sum(is.na(corresponding_row))>0){
@@ -187,30 +189,32 @@ if(sum(is.na(corresponding_row))>0){
   message("Could not find a corresponding incubation map for the following incubations:")
   print(fieldsheet_Picarro$uniqID[ind_NAs])
   
-  # removing rows from fieldsheet_Picarro with missing correspondance
-  fieldsheet_Picarro <- fieldsheet_Picarro[-ind_NAs,]
-  corresponding_row <- corresponding_row[-ind_NAs]
 }
-
 # replacing unix_start and unix_stop with new values
 fieldsheet_Picarro$unix_start <- map_incubations$start[corresponding_row]
 fieldsheet_Picarro$unix_stop <- map_incubations$stop[corresponding_row]
 
+#The above chunk causes incubations without match in map_incubations to lose their unix_start and unix_stop, re-calculate them
+fieldsheet_Picarro<- fieldsheet_Picarro %>% 
+  mutate(unix_start=if_else(is.na(unix_start), as.numeric(as.POSIXct(paste(date, start_time),tz = "UTC")), unix_start),
+         unix_stop=if_else(is.na(unix_stop), as.numeric(as.POSIXct(paste(date, end_time),tz = "UTC")), unix_stop))
+
+
 
 #Check that unix_start and Unix_stop are not duplicated after picarro time-matching: 
 {duplicated_starts_picarro<- fieldsheet_Picarro %>% 
-  filter(unix_start %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_start,incomparables = F),]$unix_start)
-duplicated_stops_picarro<-fieldsheet_Picarro %>% 
-  filter(unix_stop %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_stop,incomparables = F),]$unix_stop)
-
-#Check potential duplicate incubations created by the approach, code below.
-if(sum(dim(duplicated_starts_picarro)[1],dim(duplicated_stops_picarro)[1])>0){
-  message(paste("CAUTION: picarro correction duplicates incubations, check duplicates and correct fieldsheet times"))
-  print(duplicated_starts_picarro$uniqID)
-}else{
-  message(paste("All Picarro fieldsheet start-stop times are now corrected"))
-  rm(duplicated_starts_picarro, duplicated_stops_picarro)}
-}
+    filter(unix_start %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_start,incomparables = F),]$unix_start)
+  duplicated_stops_picarro<-fieldsheet_Picarro %>% 
+    filter(unix_stop %in% fieldsheet_Picarro[duplicated(fieldsheet_Picarro$unix_stop,incomparables = F),]$unix_stop)
+  
+  #Check potential duplicate incubations created by the approach, code below.
+  if(sum(dim(duplicated_starts_picarro)[1],dim(duplicated_stops_picarro)[1])>0){
+    message(paste("CAUTION: picarro correction duplicates incubations, check duplicates and correct fieldsheet times"))
+    print(duplicated_starts_picarro$uniqID)
+  }else{
+    message(paste("All Picarro fieldsheet start-stop times are now corrected"))
+    rm(duplicated_starts_picarro, duplicated_stops_picarro)}
+  }
 
 ## ---- Correct LiCOR fieldsheets ----
 
