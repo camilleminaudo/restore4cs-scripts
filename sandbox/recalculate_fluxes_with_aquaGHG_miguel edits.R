@@ -150,6 +150,7 @@ CO2_flux.auto <- CH4dry_flux.auto <- CH4w_nosep_flux.auto <- CH4w_sep_flux.auto 
 CO2_df.no_measurements <- CH4dry_df.no_measurements <- CH4w_nosep_df.no_measurements <- CH4w_sep_df.no_measurements <- NULL
 
 #----CO2 loop (No plots)-----
+#this takes approx 10 min
 rm(k,i)
   #loop over uniqueID of full auxfile
   for (k in seq_along(co2_auxfile$UniqueID)){
@@ -199,6 +200,7 @@ save(list = c("CO2_flux.auto",
 
 
 #----CH4 dry loop (no plots)-------
+#This takes approx 6minutes
 rm(k,i)
 #loop over uniqueID of full auxfile
 for (k in seq_along(ch4_dry_auxfile$UniqueID)){
@@ -251,6 +253,7 @@ save(list = c("CH4dry_flux.auto",
 
 
 #----CH4 water no flux separation (no plots)-------
+#This takes approx 5minutes
 rm(k,i)
 #loop over uniqueID of full auxfile
 for (k in seq_along(ch4_water_auxfile$UniqueID)){
@@ -303,6 +306,7 @@ save(list = c("CH4w_nosep_flux.auto",
 
 
 #----CH4 water flux separation(with pdf plots)-----
+#This takes approx 26 minutes
 rm(subsite, k)
 for (subsite in unique(ch4_water_auxfile$subsite)){
   message(paste0("processing subsite",subsite))
