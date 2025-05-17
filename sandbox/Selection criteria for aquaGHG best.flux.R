@@ -109,6 +109,37 @@ ch4dry_discard<- full_auxfilech4 %>% filter(water_depth==0&ch4_decission=="disca
 
 #these incubations will be flagged as unreliable in the final dataset and will not influence the criteria decisions. 
 
+#Croped since last inspection (not needed to reinspect unless prompted by data-driven checks)
+croped_since_last<-c(
+"s1-ca-r2-8-v-t-10:25", #cropstart 65s DONE
+"s1-cu-r2-21-b-d-11:20", #cropstart 60s DONE
+"s1-da-a1-1-v-d-08:10",  #cropend 80s DONE
+"s1-da-a1-7-v-t-11:21", #cropstart 60s DONE
+"s1-du-r1-10-v-d-10:20", #cropstart 150s DONE
+"s1-du-r2-6-v-d-08:58", #crop end 125s DONE
+"s1-du-r2-7-v-d-09:23", #crop end 80s DONE
+"s1-ri-a1-6-b-d-11:37", #cropstart 60s DONE
+"s1-ri-a1-7-b-t-11:48", #crop end 85s DONE
+"s1-ri-p1-6-v-t-11:34", #cropstart 30s DONE
+"s1-ri-p2-3-v-t-10:06", #cropstart 30s DONE
+"s1-ri-p2-5-v-t-10:43",  #cropstart 20s DONE
+"s1-ri-p2-8-b-d-11:38", #cropstart 30s DONE
+"s1-ri-p2-9-v-d-12:05", #cropstart 80s DONE
+"s1-ri-p2-13-v-d-13:15", #crop end 70s DONE
+"s1-ri-r1-6-v-d-10:57", #cropstart 10s ,cropend 10s DONE
+"s1-ri-r1-10-v-d-12:05", #crop end 90s DONE
+"s1-va-p2-12-b-d-12:49", #cropstart 60s DONE
+"s1-va-r2-10-v-t-11:33", #cropstart60s DONE
+"s2-ca-a2-10-v-d-10:58", #cropstart 80s DONE
+"s2-ca-p1-6-v-d-10:13", #cropend 40s DONE
+"s2-ca-p2-5-v-d-10:07", #cropstart 25 DONE
+"s2-ca-p2-6-v-t-10:20", #cropstart 50s DONE
+"s1-ri-r1-15-v-d-13:35", #cropstart 20s DONE
+"s4-ri-r2-6-v-d-08:21", #cropstart 5s DONE
+"s2-cu-r2-3-b-t-08:34", #cropend 120s DONE
+"s3-du-r1-11-v-t-09:53" #un-croped DONE
+)
+
 #Criteria Hard.threshold checks
 
 ##Inspect mdf----
@@ -129,43 +160,55 @@ mdf_inspected<- c("s1-ca-p2-15-v-t-14:54","s1-ca-p2-4-v-d-11:24","s1-ca-p2-4-v-t
 ch4dry_mdf %>% filter(!UniqueID%in%mdf_inspected) %>% pull(UniqueID)
 
 
+##Inspect Kmax-----
+#Inspect HM.k>=k.max () to ensure that the LM flux is not influenced by artefacts
+#In kmax_inspected, incubations with k=kmax with good LM estimates:
+kmax_inspected<-c("s1-ca-p1-3-v-d-10:31","s1-ca-p2-3-v-d-10:59","s1-da-a1-4-v-t-09:15","s1-da-a1-4-v-d-09:22","s1-da-a1-7-v-d-11:35","s1-du-a1-10-v-t-12:29","s1-du-a2-4-v-t-07:53","s1-du-a2-4-v-d-08:01","s1-du-p1-9-v-t-11:30","s1-du-p1-13-v-t-12:47","s1-du-p1-15-v-t-13:27","s1-du-p1-15-v-d-13:33","s1-du-r1-9-v-d-10:00","s1-du-r2-1-v-t-07:23","s1-du-r2-6-v-t-08:51","s1-du-r2-10-v-t-10:57","s1-du-r2-11-v-d-11:22","s1-du-r2-12-v-d-11:40","s1-du-r2-15-v-t-12:50","s1-va-a1-8-b-d-12:46","s2-ca-a1-4-v-d-09:50","s2-ca-a2-7-v-t-09:40","s2-ca-r1-8-v-d-10:45","s2-du-p1-2-v-d-09:22","s2-du-p1-9-v-t-11:10","s2-du-p1-12-v-t-12:00","s2-du-p1-14-v-t-12:34","s2-du-r2-2-v-t-09:37","s2-du-r2-2-v-d-09:45","s2-du-r2-7-v-d-10:55","s2-du-r2-11-v-t-11:58","s2-du-r2-13-v-t-12:52","s2-ri-a2-7-b-d-10:00","s2-ri-p1-6-v-t-10:17","s2-ri-r2-12-v-t-12:35","s2-va-p1-2-v-d-09:21","s2-va-r2-1-b-t-09:44","s2-va-r2-1-b-d-09:52","s3-ca-a1-7-v-d-09:35","s3-ca-p2-1-v-d-07:49","s3-da-a1-2-v-d-07:25","s3-da-a1-4-v-d-08:12","s3-du-a2-3-v-t-07:43","s3-du-p1-6-v-d-08:51","s3-du-r1-1-v-t-07:15","s3-du-r1-9-v-t-09:18","s3-va-p1-12-b-d-11:38","s4-ca-r2-2-v-d-07:27","s4-cu-r1-2-b-d-07:13","s4-da-a1-4-v-t-08:16","s4-du-a2-7-v-d-10:19","s4-du-a2-15-v-d-13:04","s4-du-p1-4-v-d-08:45","s4-du-p1-11-b-d-10:30","s4-du-p2-8-v-d-10:04","s4-du-p2-14-v-d-12:08","s4-du-p2-15-v-d-12:25","s4-du-r2-2-v-d-08:36","s4-du-r2-10-v-t-10:26","s4-du-r2-11-v-d-10:56","s4-ri-a1-5-b-d-07:53","s4-ri-a2-7-v-d-07:58","s4-ri-p1-1-v-d-06:59","s4-ri-p1-4-v-t-07:38","s4-ri-p1-11-v-t-09:30","s4-va-p1-12-v-d-10:18","s4-va-p1-14-v-d-10:47","s4-va-p2-10-v-t-08:42","s4-va-p2-14-v-t-09:27","s4-va-r2-3-v-d-08:27","s4-va-r2-11-v-d-10:15")
+
+toreinspect<-c()
+
+CH4dry_flux.auto %>%  
+  filter(!UniqueID%in%ch4dry_discard) %>% #not in discard
+  filter(abs(LM.flux)>MDF.lim) %>% #not mdf
+  filter(HM.k==k.max) %>%  #K below max
+  filter(!UniqueID%in%c(kmax_inspected, toreinspect))  %>% #Not already inspected
+  select(UniqueID, g.fact, LM.flux, LM.r2) %>% head()
+
 
 #POr aqui------
 #Need to re-run goflux per-ghg-cropped to produce plots to be able to inspect final incubations (those with final cropping decissions)
 
 #check g.fact ------
 
-#Here we check that the hard-threshold for g.fact (i.e. if g.fact > 4 --> LM) does not cause any truly non-linear pattern to be lost (i.e. that there is no good HM of flux >4*LM)
+#lets see what is the highest g.fact of the best-performing HM models (best 80%)
+good_hm<-CH4dry_flux.auto %>%  
+  filter(!UniqueID%in%ch4dry_discard) %>% #not in discard
+  filter(abs(LM.flux)>MDF.lim) %>% #not mdf
+  filter(HM.k<k.max) %>% #K below max
+  mutate(HM.CV = HM.SE / (abs(HM.slope) + 1e-6)) %>% 
+  filter(HM.CV<=quantile(HM.CV, 0.40, na.rm=T))
 
-#These are All the incubations with unreasonably large g-fact (>4). They have all been visually inspected and LM is more representative for them. 
-ch4dry_gfact_inspected<- c("s1-ca-p1-8-v-t-12:12","s1-ca-p1-11-v-d-13:35","s1-ca-p1-14-v-d-14:49","s1-ca-p1-15-v-t-15:02","s1-ca-r1-3-v-d-09:33","s1-ca-r2-6-v-d-09:56","s1-du-p1-8-v-d-11:13","s1-du-r1-9-v-t-09:54","s1-ri-p2-1-v-d-09:37","s1-ri-r1-9-b-t-11:39","s1-ri-r1-10-v-t-11:56","s1-ri-r1-13-v-t-12:48","s1-va-a1-7-b-d-12:37","s1-va-p2-8-b-t-11:12","s2-ca-p1-6-v-t-10:06","s2-ca-p2-8-b-t-10:50","s2-ri-a1-1-b-t-08:50","s2-ri-a1-13-b-t-10:57","s2-ri-p2-3-v-d-09:15","s2-ri-p2-8-v-d-10:58","s3-cu-p1-2-v-d-06:50","s3-du-p1-9-v-d-09:38","s3-ri-r1-8-v-d-11:36","s3-ri-r1-14-v-t-14:12","s4-ca-a1-12-v-t-12:48","s4-ca-a1-12-v-d-12:55","s4-ca-p1-8-v-d-09:50","s4-ca-p2-10-v-t-12:50","s4-ca-r2-7-v-d-08:46","s4-du-a1-7-v-d-10:09","s4-du-a1-11-v-t-11:40","s4-du-a1-12-v-d-12:04","s4-du-a2-14-v-d-12:47","s4-du-p2-2-v-d-08:16","s4-ri-a1-10-b-d-08:40","s4-ri-r2-4-v-t-07:32","s4-va-p1-6-b-d-08:47","s4-va-p2-3-v-t-07:19")
+ggplot(good_hm, aes(x=HM.CV, y=g.fact))+
+  geom_point()+
+  geom_hline(yintercept = 3)
+
+good_hm%>% filter(g.fact>3) %>%arrange(HM.CV) %>%  select(UniqueID, HM.CV, HM.k, k.max, g.fact) %>% mutate(kratio=HM.k/k.max)
+
+ggplot(good_hm, aes(x=HM.CV, y=HM.k/k.max))+
+  geom_point()+
+  geom_hline(yintercept = 1)+
+  geom_label(data=. %>% filter(HM.k/k.max>0.5), aes(label=UniqueID))
 
 
+#Here we check that the hard-threshold for g.fact (i.e. if g.fact > 3 --> LM) does not cause any truly non-linear pattern to be lost (i.e. that there is no good HM of flux >3*LM)
 
-#To crop: 
-#s1-ca-r1-5-v-d-10:04 cropend 80 (co2&ch4) DONE
-#s1-du-r1-15-v-t-11:20 cropstart 40s DONE
-#s1-va-r2-5-v-t-10:15 cropstart 50s DONE
-#s1-da-a1-1-v-t-08:00 cropstart 70s DONE
-#s1-du-a1-7-b-t-10:41 cropstart 100s DONE
-#s1-ri-a2-5-b-d-10:56 cropstart 50s DONE
-#s1-ri-r1-1-b-d-09:44 cropstart 35s DONE
-#s2-cu-r2-3-b-t-08:34 cropstart 30s DONE
-#"s3-ri-p2-3-v-d-09:48" cropend 100s DONE
-#"s3-du-r1-11-v-t-09:53" cropstart 40s, cropend 30s DONE
-#"s3-du-r1-14-v-d-10:45" cropend45s DONE
-#"s3-cu-p1-2-v-t-06:41" cropstart 30s DONE
-#s4-ca-p1-15-v-d-12:21 cropend 20s DONE
-#s4-du-a1-15-v-t-12:53 cropstart 40s DONE
-#"s4-ri-r2-11-v-t-09:53" cropend 70s DONE
-#s4-va-a1-3-b-d-09:10 cropstart 20s, cropend 10s DONE
-#"s4-va-a2-3-v-d-07:44" cropend 80s DONE
-#s4-va-p2-13-v-t-09:11 cropend 90s DONE
+#These are All the incubations with unreasonably large g-fact (>3). They have all been visually inspected and LM is more representative for them. 
+ch4dry_gfact3_lmbetter<- c("s1-ca-p1-8-v-t-12:12","s1-ca-p1-11-v-d-13:35","s1-ca-p1-14-v-d-14:49","s1-ca-p1-15-v-t-15:02","s1-ca-r1-3-v-d-09:33","s1-ca-r2-6-v-d-09:56","s1-du-p1-8-v-d-11:13","s1-du-r1-9-v-t-09:54","s1-ri-p2-1-v-d-09:37","s1-ri-r1-9-b-t-11:39","s1-ri-r1-10-v-t-11:56","s1-ri-r1-13-v-t-12:48","s1-va-a1-7-b-d-12:37","s1-va-p2-8-b-t-11:12","s2-ca-p1-6-v-t-10:06","s2-ca-p2-8-b-t-10:50","s2-ri-a1-1-b-t-08:50","s2-ri-a1-13-b-t-10:57","s2-ri-p2-3-v-d-09:15","s2-ri-p2-8-v-d-10:58","s3-cu-p1-2-v-d-06:50","s3-du-p1-9-v-d-09:38","s3-ri-r1-8-v-d-11:36","s3-ri-r1-14-v-t-14:12","s4-ca-a1-12-v-t-12:48","s4-ca-a1-12-v-d-12:55","s4-ca-p1-8-v-d-09:50","s4-ca-p2-10-v-t-12:50","s4-ca-r2-7-v-d-08:46","s4-du-a1-7-v-d-10:09","s4-du-a1-11-v-t-11:40","s4-du-a1-12-v-d-12:04","s4-du-a2-14-v-d-12:47","s4-du-p2-2-v-d-08:16","s4-ri-a1-10-b-d-08:40","s4-ri-r2-4-v-t-07:32","s4-va-p1-6-b-d-08:47","s4-va-p2-3-v-t-07:19","s4-va-p2-13-v-t-09:11","s4-du-a1-15-v-t-12:53","s4-va-a1-3-b-d-09:10","s1-ca-r2-15-v-d-13:41","s1-du-p1-5-v-t-09:56","s1-du-p1-14-v-t-13:07","s1-ri-p2-11-v-d-12:44","s1-ri-r1-2-v-d-09:58","s1-ri-r1-3-v-t-10:06","s2-ca-p1-1-v-t-08:27","s2-ri-r1-7-v-t-11:59","s3-du-r2-11-v-d-11:30","s4-ca-p1-15-v-t-12:13","s4-ca-p2-11-v-t-13:08","s4-du-p1-6-v-t-09:11","s4-ri-a1-2-b-d-07:22","s4-ri-r1-5-v-t-08:11","s4-ri-r1-6-v-d-08:35","s4-va-p1-10-v-t-09:34","s1-ca-r2-15-v-t-13:34")
 
 
 
-
-toreinspect<- c("s1-ca-r1-5-v-d-10:04","s1-du-r1-15-v-t-11:20","s1-va-r2-5-v-t-10:15","s4-ca-p1-15-v-d-12:21","s4-va-p2-13-v-t-09:11","s1-da-a1-1-v-t-08:00","s1-du-a1-7-b-t-10:41","s1-ri-a2-5-b-d-10:56","s1-ri-r1-1-b-d-09:44","s2-cu-r2-3-b-t-08:34","s4-du-a1-15-v-t-12:53","s4-va-a1-3-b-d-09:10","s4-va-a2-3-v-d-07:44","s4-ri-r2-11-v-t-09:53","s3-ri-p2-3-v-d-09:48","s3-du-r1-11-v-t-09:53","s3-cu-p1-2-v-t-06:41")
+#To fix and re-inspect: 
+toreinspect<- c()
 
 
 #Incubations with ebullition-like dynamics but without water
@@ -173,27 +216,30 @@ ebullition_dry<- c("s2-ca-a2-6-b-d-09:31","s3-ca-a1-11-b-d-10:31",
                    "s3-cu-a1-7-v-t-08:04","s3-cu-a1-7-v-d-08:10",
                    "s3-da-a2-11-b-d-09:20","s3-du-r1-14-v-t-10:37","s4-ca-r2-6-v-d-08:29","s4-ca-r2-6-v-t-08:20","s4-ca-r2-7-v-t-08:40","s4-va-a1-8-v-d-11:06","s4-va-a1-8-v-t-10:58","s4-va-a2-8-b-d-09:14","s4-va-a2-15-v-t-11:05","s4-va-a2-15-v-d-11:12","s4-va-p2-1-b-d-07:02","s2-va-r2-11-v-d-12:18","s3-cu-a2-6-v-t-10:57","s4-ca-p2-12-v-t-13:26","s4-da-a2-15-b-d-09:29")
 
-#Extra 3< gfact< 4
-lmbetter<- c("s1-ca-r2-15-v-d-13:41","s1-du-p1-5-v-t-09:56","s1-du-p1-14-v-t-13:07","s1-ri-p2-11-v-d-12:44","s1-ri-r1-2-v-d-09:58","s1-ri-r1-3-v-t-10:06","s2-ca-p1-1-v-t-08:27","s2-ri-r1-7-v-t-11:59","s3-du-r2-11-v-d-11:30","s4-ca-p1-15-v-t-12:13","s4-ca-p2-11-v-t-13:08","s4-du-p1-6-v-t-09:11","s4-ri-a1-2-b-d-07:22","s4-ri-r1-5-v-t-08:11","s4-ri-r1-6-v-d-08:35","s4-va-p1-10-v-t-09:34","s1-ca-r2-15-v-t-13:34")
-
 unclearlmhm<- c()
 HMbetter<- c()
-#Any g.fact >4 to inspect?
+
+#Any g.fact >3 to inspect?
 CH4dry_flux.auto %>%  
   filter(!UniqueID%in%ch4dry_discard) %>% #not in discard
   filter(abs(LM.flux)>MDF.lim) %>% #not mdf
   filter(HM.k<k.max) %>% #K below max
   filter(g.fact>=3) %>% #gfact threshold
-  filter(!UniqueID%in%c(ch4dry_gfact_inspected,ebullition_dry,toreinspect,unclearlmhm,HMbetter,lmbetter))  %>% #Not already inspected
-  select(UniqueID, g.fact, LM.flux, HM.flux) %>% head()
+  filter(!UniqueID%in%c(ch4dry_gfact3_lmbetter,ebullition_dry,unclearlmhm,HMbetter,lmbetter, toreinspect))  %>% #Not already inspected
+  select(UniqueID, g.fact, LM.flux, HM.flux)
 
 
+#Check high K.ratio 
 CH4dry_flux.auto %>%  
   filter(!UniqueID%in%ch4dry_discard) %>% #not in discard
   filter(abs(LM.flux)>MDF.lim) %>% #not mdf
-  filter(HM.k<k.max) %>%
-  filter(g.fact<10) %>% 
-  ggplot(aes(x=HM.r2,y=LM.r2, col=g.fact<=2))+geom_point()
+  filter(HM.k<k.max) %>% #K below max
+  filter(!UniqueID%in%c(ch4dry_gfact3_lmbetter,ebullition_dry,unclearlmhm,HMbetter,lmbetter, toreinspect))  %>% #Not already inspected
+  mutate(k.ratio=HM.k/k.max) %>% 
+  filter(k.ratio>0.2) %>% 
+  select(UniqueID, g.fact, k.ratio,LM.flux, HM.flux) %>% 
+  arrange(desc(k.ratio))
+
 
 CH4dry_flux.auto %>%  
   filter(!UniqueID%in%ch4dry_discard) %>% #not in discard
@@ -202,6 +248,7 @@ CH4dry_flux.auto %>%
   mutate(gfactbelow3=g.fact<3) %>% 
   group_by(gfactbelow3) %>% 
   summarise(n=n())
+
 
 
 #Table TO decide----
@@ -218,8 +265,10 @@ ch4dry_todecide<- CH4dry_flux.auto %>%
   #Remove g.fact >4 (after our inspection, these will default to LM)
   filter(g.fact<3) %>% 
   #Remove MDF fluxes (after our inspection, these will default to LM)
-  filter(abs(LM.flux)>MDF.lim)
-
+  filter(abs(LM.flux)>MDF.lim) %>% 
+  
+  #Remove dry_ebullitive incubations and incubations to re-inspect
+  filter(!UniqueID%in%c(ebullition_dry, toreinspect))
 
 #Inspect AICc for selection criteria (using AICc weight)
 #Test criteria: using AICc weight (based on the relative difference in AICc, calculate the AICc weight metric, a probabilistic estimate of how likely it is that one model is better than the other). 
@@ -253,19 +302,41 @@ ch4dry_todecide %>%
   scale_x_continuous(name="AICc weight for HM, probability of HM being best")
 )
 
+
+#Inspect against k.ratio 
+ggMarginal(
+  ch4dry_todecide %>%
+    ggplot(aes(x=AICc_weight_HM,y=k.ratio, col=AICc_weight_HM>0.5))+
+    geom_point()+
+    # geom_hline(yintercept=1.25)+
+    labs(col=NULL)+
+    scale_x_continuous(name="AICc weight for HM, probability of HM being best")
+)
+
+
+
+
 #-----falta de adaptar----
 #falta de adaptar desde aqui hasta 2.classify ch4w incubations.
 
 #Inspect cases with non-clear separation (those within 0.25-0.9 AICc_weight_HM) and with relatively big differences in flux estimate (g.fact>1.25)
 
-co2_inspect<- co2_todecide %>% 
-  filter(between(AICc_weight_HM, 0.25,0.9)) %>% 
-  filter(g.fact>1.25)
+ch4dry_aictoinspect<- ch4dry_todecide %>% 
+  filter(between(AICc_weight_HM, 0.5,1)) %>% 
+  filter(g.fact>1.5|k.ratio>0.4)
 
 #The following cases have been inspected and the model choice resulting from the above criteria (based on AICc weight) has been deemed aproppriate
-co2_inspected_aicc<- c("s1-da-p1-11-o-d-10:46","s1-du-r2-5-b-d-08:32","s1-du-r2-8-v-d-09:51","s2-ca-r2-3-o-d-09:09","s2-cu-a1-14-o-d-10:48","s2-cu-a1-4-v-d-09:05","s2-cu-a1-7-o-d-09:37","s2-cu-a2-2-v-d-08:32","s2-cu-a2-3-v-t-08:47","s2-da-r1-11-o-d-11:15","s2-da-r1-9-v-d-10:56","s2-du-a2-10-b-d-12:03","s2-ri-a2-10-b-d-10:48","s2-ri-p1-6-v-t-10:17","s2-ri-p2-11-v-d-12:24","s2-va-a2-14-v-t-12:57","s2-va-r1-9-v-d-11:42","s2-va-r2-14-o-d-12:59","s2-va-r2-7-v-t-11:08","s3-ca-p2-1-v-t-07:40","s3-ca-p2-5-v-t-09:33","s3-da-a1-2-b-d-07:34","s3-da-a2-10-o-d-08:57","s3-ri-a2-2-b-d-09:06","s4-da-a1-8-v-t-09:40","s4-da-r1-2-v-d-09:03","s4-da-r2-8-o-d-08:12","s4-ri-a2-12-b-d-09:02","s4-ri-a2-9-b-d-08:27","s2-va-r2-3-v-t-10:19")
+goodchoice_aicc<- c("s1-ca-p1-15-v-d-15:09","s1-ca-r1-5-v-d-10:04","s1-ca-r2-3-b-d-09:05","s1-ca-r2-4-v-d-09:21","s1-ca-r2-9-v-d-10:56","s1-ca-r2-14-v-d-13:18","s1-cu-r2-19-b-d-11:02","s1-da-a1-3-b-d-08:56","s1-da-r2-14-b-t-12:26","s1-du-a1-6-b-t-10:30","s1-du-a2-9-v-d-11:00","s1-du-r1-15-v-t-11:20","s1-du-r1-15-v-d-11:27","s1-du-r2-14-v-d-12:40","s1-ri-a1-1-b-t-10:32","s1-ri-a1-1-b-d-10:40","s1-ri-a1-5-b-d-11:28","s1-ri-a1-9-b-t-12:24","s1-ri-a1-15-b-t-13:46","s1-ri-a2-4-v-t-10:44","s1-ri-p1-3-v-t-10:45","s1-ri-p1-5-v-d-11:26","s1-ri-p1-6-v-d-11:41","s1-ri-r1-8-v-t-11:24","s1-ri-r1-14-v-t-13:12","s1-ri-r1-14-v-d-13:20","s1-va-a1-6-v-t-12:03","s1-va-a1-15-b-d-15:54","s1-va-p1-1-b-d-08:51","s1-va-p1-2-v-t-09:02","s1-va-p1-2-v-d-09:10","s1-va-p2-6-v-d-10:39","s1-va-p2-11-v-t-11:56","s1-va-p2-13-v-t-12:59","s1-va-p2-14-b-d-13:13","s1-va-r2-5-v-t-10:15","s1-va-r2-9-v-t-11:18","s1-va-r2-11-b-d-12:01","s2-ca-a1-8-b-d-11:08","s2-ca-a1-13-v-t-12:31","s2-ca-a2-7-v-d-09:47","s2-ca-a2-10-v-t-10:50","s2-ca-p2-2-b-t-09:18","s2-ca-p2-6-v-d-10:26","s2-ca-p2-9-v-d-11:09")
 
-co2_inspect %>% select(UniqueID, LM.flux, HM.flux, g.fact, k.ratio,AICc_weight_HM) %>% filter(!UniqueID%in%co2_inspected_aicc)
+needscrop<- c(
+              )
+
+wrong_noise<- c("s1-du-p1-11-v-t-12:17","s2-ca-p2-12-v-t-12:36")
+discard_incub<- c("s1-du-r1-10-v-t-10:14","s1-ri-p1-10-v-t-12:59","s2-ca-a2-8-v-d-10:08")
+wrongchoice_dryebullition<-c("s1-ri-r2-4-b-d-10:01")
+
+ch4dry_aictoinspect %>% select(UniqueID, LM.flux, HM.flux, g.fact, k.ratio,AICc_weight_HM) %>% filter(!UniqueID%in%c(goodchoice_aicc,needscrop,wrong_noise,discard_incub,wrongchoice_dryebullition)) %>% head()
+
 
 
 #Final step CO2: 
