@@ -27,10 +27,13 @@
 #BUG: flux.plot fails when HM.flux is NA (breaking the loop): 
 #Error en flux.plot(flux.results = best.flux_auto, dataframe = mydata_auto, : 
 # 'HM.flux' in 'flux.results' must be of class numeric
-# Además: Aviso:
-  # Flux estimate is too close to zero to estimate HM flux in UniqueID s3-ca-a2-3-v-d-08:05. NAs produced. 
 
-#In addition, UniqueID not displayed in plots for co2. (UniqueID is displayed without issue for ch4 with fluxSeparation = T and method = "trust.it.all")
+#FIX: inside automaticflux(), force all outputs of HM model to numeric, even when they are NA.
+
+#IN ADDITION, UniqueID not displayed in plots without flux separation. 
+#Pseudofix: manually add plottitle in loop using grid::grid.text()
+#I've tried to add print(p + ggtitle) within automaticflux, but apparently p is not of class ggplot
+#With flux separation, plots are displayed without issue and with correct title.
 
 
 #ISSUE/DOUBT: How to modify the criteria for best flux using the wrapper of aquaGHG? (not essential can perform selection after the flux calculation run)
@@ -53,6 +56,11 @@ auxfile_path<- paste0(dropbox_root,"/GHG/Working data/Auxfiles_4aquaGHG/")
 
 #Set testing results_path
 results_path<- "C:/Users/Miguel/Dropbox/testing_aquaGHG/"
+
+plots_path<- paste0(results_path,"plots/")
+if (!dir.exists(plots_path)) {
+  dir.create(plots_path, recursive = TRUE)
+}
 
 # results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
@@ -145,163 +153,215 @@ ch4_water_auxfile<- ch4_auxfile %>% filter(water_depth>0)
 
 
 #-----Initialize objects----
-CO2_flux.auto <- CH4dry_flux.auto <- CH4w_nosep_flux.auto <- CH4w_sep_flux.auto <- NULL
+CO2_flux.auto <- CH4all_nosep_flux.auto <- CH4w_sep_flux.auto <- NULL
 
-CO2_df.no_measurements <- CH4dry_df.no_measurements <- CH4w_nosep_df.no_measurements <- CH4w_sep_df.no_measurements <- NULL
+CO2_df.no_measurements <- CH4all_nosep_df.no_measurements <-  CH4w_sep_df.no_measurements <- NULL
 
-#----CO2 loop (No plots)-----
-#this takes approx 10 min
-rm(k,i)
-  #loop over uniqueID of full auxfile
-  for (k in seq_along(co2_auxfile$UniqueID)){
+#----CO2 loop (pdf plots)-----
+#This takes approx X minutes
+rm(subsite, k)
+for (subsite in unique(co2_auxfile$subsite)){
+  message(paste0("processing subsite",subsite))
+  
+  #Start pdf for plots
+  pdf(file = paste0(plots_path,"CO2_",subsite,".pdf"))
+  
+  #loop over uniqueID of current subsite
+  for (k in seq_along(unique(co2_auxfile[which(co2_auxfile$subsite==subsite),]$UniqueID))){
     
     #Select uniqueID and display progress
-    i = co2_auxfile$UniqueID[k]
-    message(paste0("Processing CO2 incubation ",k, " of ",length(co2_auxfile$UniqueID)," (",round(100*k/length(co2_auxfile$UniqueID),0), " %)"))
+    i = co2_auxfile[which(co2_auxfile$subsite==subsite),]$UniqueID[k]
+    
+    incubnum<- which(co2_auxfile$UniqueID==i)
+    message(paste0("Processing CO2 incubation ",incubnum, " of ",length(co2_auxfile$UniqueID)," (",round(100*incubnum/length(co2_auxfile$UniqueID),0), " %)"))
     
     #Load auxfiles for UniqueID
     co2_auxfile_i <- co2_auxfile[which(co2_auxfile$UniqueID==i),]
     
-    #check that UniqueID has auxfile for co2
+    #check that UniqueID has auxfile
     if(dim(co2_auxfile_i)[1]==0){
       message(paste0("Could not find corresponding auxfile for ",i))
       CO2_df.no_measurements <- rbind(CO2_df.no_measurements,
-                                  data.frame(UniqueID=i,
-                                             message = "no auxfile co2"))
+                                           data.frame(UniqueID=i,
+                                                      message = "no auxfile"))
     } else {
-      #Load co2 data for UniqueID
+      #Load data for UniqueID
       mydata_co2 <- load_incubation(co2_auxfile_i, RData_path)
       
-      #Check that there is co2 data for UniqueID
+      #Check that there is data for UniqueID
       if(dim(mydata_co2)[1]==0){
         CO2_df.no_measurements <- rbind(CO2_df.no_measurements,
-                                    data.frame(UniqueID=i,
-                                               message = "no measurements for co2"))
+                                             data.frame(UniqueID=i,
+                                                        message = "no measurements"))
       } else {
-        #Calculate CO2 flux for UniqueID
+        #Calculate flux for UniqueID and plot    
         CO2_flux.auto_i <- automaticflux(dataframe = mydata_co2, myauxfile = co2_auxfile_i, shoulder = 0, gastype = "CO2dry_ppm", 
-                                         fluxSeparation = FALSE,
-                                         displayPlots = FALSE,
-                                         method = "trust.it.all")
+                                              fluxSeparation = F,
+                                              displayPlots = TRUE, 
+                                              method = "trust.it.all")
         
-        #Join flux to rest of CO2 dataset
+        #ADD the uniqueID to the displayed plot (to save it in pdf): 
+        grid::grid.text(as.character(i),
+                        x = 0.5, y = 0.975,
+                        gp = grid::gpar(fontsize = 14, fontface = "bold"))
+        
+        ##ADD full.total.flux------
+        #ADD full.total.flux with whole incubation period:
+        {
+          #Calculate total.flux and total.flux.SD for whole incubation. Using chunks copied from aquaGHG:
+          
+          #smoothing signal:
+          # smooth signal from incubation (whole duration)
+          mydf <- data.frame(POSIX.time = mydata_co2$POSIX.time,
+                             time = as.numeric(mydata_co2$POSIX.time-first(mydata_co2$POSIX.time)),
+                             conc = mydata_co2[["CO2dry_ppm"]])
+          
+          concsmooth <- smooth.spline(x = mydf$time, y = mydf$conc, nknots = round(length(mydf$time)/3), spar = 0.8)
+          mydf$concsmooth <- approx(concsmooth$x, concsmooth$y, xout = mydf$time, rule = 2)$y
+          
+          #get initial, final concentration and incubation time (whole duration)
+          t.win <- 30
+          C0 = min(mydf$concsmooth[mydf$time<t.win])
+          Cf = max(mydf$concsmooth[mydf$time>max(mydf$time)-t.win])
+          incubation_time = last(mydf$time)
+          #get deltaconcs
+          deltaconcs = Cf-C0
+          #Calculate SD for initial final and deltaconc
+          SD_C0 <- sd(mydf$conc[mydf$time<t.win])
+          SD_Cf <- sd(mydf$conc[mydf$time>max(mydf$time)-t.win])
+          SD_deltaconcs <- sqrt(SD_C0^2+SD_Cf^2)
+          
+          #Calculate full.total.flux aplying flux.term from aquaGHG
+          full.total.flux <- (deltaconcs)/incubation_time*CO2_flux.auto_i$flux.term # umol/m2/s
+          #Calculate SD of total flux
+          SD_full.total.flux <- abs(full.total.flux) * SD_deltaconcs/deltaconcs
+          
+          #ADD full.total.flux to flux.auto_i dataframe
+          CO2_flux.auto_i$full.total.flux<- full.total.flux
+          CO2_flux.auto_i$SD_full.total.flux<- SD_full.total.flux
+        }
+        
+        
+        #Join flux to rest of dataset
         CO2_flux.auto <- rbind(CO2_flux.auto, CO2_flux.auto_i)
       }
     }
+    
     #Remove auxfile for UniqueID (avoids re-usage, if next does not exist)
     rm(co2_auxfile_i)
-    
   }#End of UniqueID loop
-  
+  dev.off()
+}#end subsite loop
+
 
 # Save results to Rdata
 save(list = c("CO2_flux.auto",
-              "CO2_df.no_measurements"), file = paste0(results_path,"CO2_results_aquaGHG.Rdata"))
+              "CO2_df.no_measurements"), file = paste0(results_path,"CO2_aquaGHG.Rdata"))
 
 
-#----CH4 dry loop (no plots)-------
-#This takes approx 6minutes
-rm(k,i)
-#loop over uniqueID of full auxfile
-for (k in seq_along(ch4_dry_auxfile$UniqueID)){
+
+
+#----CH4all_nosep loop (pdf plots)-----
+#This takes approx X minutes
+rm(subsite, k)
+for (subsite in unique(ch4_auxfile$subsite)){
+  message(paste0("processing subsite",subsite))
   
-  #Select uniqueID and display progress
-  i = ch4_dry_auxfile$UniqueID[k]
-  message(paste0("Processing CH4dry incubation ",k, " of ",length(ch4_dry_auxfile$UniqueID)," (",round(100*k/length(ch4_dry_auxfile$UniqueID),0), " %)"))
+  #Start pdf for plots
+  pdf(file = paste0(plots_path,"CH4all_nosep_",subsite,".pdf"))
   
-  #Load auxfiles for UniqueID
-  ch4_dry_auxfile_i <- ch4_dry_auxfile[which(ch4_dry_auxfile$UniqueID==i),]
-  
-  #check that UniqueID has auxfile for ch4 dry
-  if(dim(ch4_dry_auxfile_i)[1]==0){
-    message(paste0("Could not find corresponding auxfile for ",i))
-    CH4dry_df.no_measurements <- rbind(CH4dry_df.no_measurements,
-                                data.frame(UniqueID=i,
-                                           message = "no auxfile ch4"))
-  } else {
-    #Load ch4 dry data for UniqueID
-    mydata_ch4_dry <- load_incubation(ch4_dry_auxfile_i, RData_path)
+  #loop over uniqueID of current subsite
+  for (k in seq_along(unique(ch4_auxfile[which(ch4_auxfile$subsite==subsite),]$UniqueID))){
     
-    #Check that there is co2 data for UniqueID
-    if(dim(mydata_ch4_dry)[1]==0){
-      CH4dry_df.no_measurements <- rbind(CH4dry_df.no_measurements,
-                                  data.frame(UniqueID=i,
-                                             message = "no measurements for ch4"))
+    #Select uniqueID and display progress
+    i = ch4_auxfile[which(ch4_auxfile$subsite==subsite),]$UniqueID[k]
+    
+    incubnum<- which(ch4_auxfile$UniqueID==i)
+    message(paste0("Processing CH4 incubation (all,no sep) ",incubnum, " of ",length(ch4_auxfile$UniqueID)," (",round(100*incubnum/length(ch4_auxfile$UniqueID),0), " %)"))
+    
+    #Load auxfiles for UniqueID
+    ch4_auxfile_i <- ch4_auxfile[which(ch4_auxfile$UniqueID==i),]
+    
+    #check that UniqueID has auxfile
+    if(dim(ch4_auxfile_i)[1]==0){
+      message(paste0("Could not find corresponding auxfile for ",i))
+      CH4all_nosep_df.no_measurements <- rbind(CH4all_nosep_df.no_measurements,
+                                      data.frame(UniqueID=i,
+                                                 message = "no auxfile"))
     } else {
-      #Calculate CH4 dry flux for UniqueID
-      CH4dry_flux.auto_i <- automaticflux(dataframe = mydata_ch4_dry, myauxfile = ch4_dry_auxfile_i, shoulder = 0, gastype = "CH4dry_ppb", 
-                                       fluxSeparation = FALSE,
-                                       displayPlots = FALSE,
-                                       method = "trust.it.all")
+      #Load data for UniqueID
+      mydata_ch4 <- load_incubation(ch4_auxfile_i, RData_path)
       
-      #Join flux to rest of CH4 dry dataset
-      CH4dry_flux.auto <- rbind(CH4dry_flux.auto, CH4dry_flux.auto_i)
+      #Check that there is data for UniqueID
+      if(dim(mydata_ch4)[1]==0){
+        CH4all_nosep_df.no_measurements <- rbind(CH4all_nosep_df.no_measurements,
+                                        data.frame(UniqueID=i,
+                                                   message = "no measurements"))
+      } else {
+        #Calculate flux for UniqueID and plot    
+        CH4all_nosep_flux.auto_i <- automaticflux(dataframe = mydata_ch4, myauxfile = ch4_auxfile_i, shoulder = 0, gastype = "CH4dry_ppb", 
+                                         fluxSeparation = F,
+                                         displayPlots = TRUE, 
+                                         method = "trust.it.all")
+        
+        #ADD the uniqueID to the displayed plot (to save it in pdf): 
+        grid::grid.text(as.character(i),
+                        x = 0.5, y = 0.975,
+                        gp = grid::gpar(fontsize = 14, fontface = "bold"))
+        
+        
+        ##ADD full.total.flux------
+        #ADD full.total.flux with whole incubation period:
+        {
+          #Calculate total.flux and total.flux.SD for whole incubation. Using chunks copied from aquaGHG:
+          
+          #smoothing signal:
+          # smooth signal from incubation (whole duration)
+          mydf <- data.frame(POSIX.time = mydata_ch4$POSIX.time,
+                             time = as.numeric(mydata_ch4$POSIX.time-first(mydata_ch4$POSIX.time)),
+                             conc = mydata_ch4[["CH4dry_ppb"]])
+          
+          concsmooth <- smooth.spline(x = mydf$time, y = mydf$conc, nknots = round(length(mydf$time)/3), spar = 0.8)
+          mydf$concsmooth <- approx(concsmooth$x, concsmooth$y, xout = mydf$time, rule = 2)$y
+          
+          #get initial, final concentration and incubation time (whole duration)
+          t.win <- 30
+          C0 = min(mydf$concsmooth[mydf$time<t.win])
+          Cf = max(mydf$concsmooth[mydf$time>max(mydf$time)-t.win])
+          incubation_time = last(mydf$time)
+          #get deltaconcs
+          deltaconcs = Cf-C0
+          #Calculate SD for initial final and deltaconc
+          SD_C0 <- sd(mydf$conc[mydf$time<t.win])
+          SD_Cf <- sd(mydf$conc[mydf$time>max(mydf$time)-t.win])
+          SD_deltaconcs <- sqrt(SD_C0^2+SD_Cf^2)
+          
+          #Calculate full.total.flux aplying flux.term from aquaGHG
+          full.total.flux <- (deltaconcs)/incubation_time*CH4all_nosep_flux.auto_i$flux.term # nmol/m2/s
+          #Calculate SD of total flux
+          SD_full.total.flux <- abs(full.total.flux) * SD_deltaconcs/deltaconcs
+          
+          #ADD full.total.flux to flux.auto_i dataframe
+          CH4all_nosep_flux.auto_i$full.total.flux<- full.total.flux
+          CH4all_nosep_flux.auto_i$SD_full.total.flux<- SD_full.total.flux
+        }
+        
+        
+        #Join flux to rest of dataset
+        CH4all_nosep_flux.auto <- rbind(CH4all_nosep_flux.auto, CH4all_nosep_flux.auto_i)
+      }
     }
-  }
-  #Remove auxfile for UniqueID (avoids re-usage, if next does not exist)
-  rm(ch4_dry_auxfile_i)
-  
-}#End of UniqueID loop
+    
+    #Remove auxfile for UniqueID (avoids re-usage, if next does not exist)
+    rm(ch4_auxfile_i)
+  }#End of UniqueID loop
+  dev.off()
+}#end subsite loop
 
 
 # Save results to Rdata
-save(list = c("CH4dry_flux.auto",
-              "CH4dry_df.no_measurements"), file = paste0(results_path,"CH4dry_results_aquaGHG.Rdata"))
-
-
-
-
-
-#----CH4 water no flux separation (no plots)-------
-#This takes approx 5minutes
-rm(k,i)
-#loop over uniqueID of full auxfile
-for (k in seq_along(ch4_water_auxfile$UniqueID)){
-  
-  #Select uniqueID and display progress
-  i = ch4_water_auxfile$UniqueID[k]
-  message(paste0("Processing CH4water No separation incubation ",k, " of ",length(ch4_water_auxfile$UniqueID)," (",round(100*k/length(ch4_water_auxfile$UniqueID),0), " %)"))
-  
-  #Load auxfiles for UniqueID
-  ch4_water_auxfile_i <- ch4_water_auxfile[which(ch4_water_auxfile$UniqueID==i),]
-  
-  #check that UniqueID has auxfile for ch4 water
-  if(dim(ch4_water_auxfile_i)[1]==0){
-    message(paste0("Could not find corresponding auxfile for ",i))
-    CH4w_nosep_df.no_measurements <- rbind(CH4w_nosep_df.no_measurements,
-                                       data.frame(UniqueID=i,
-                                                  message = "no auxfile ch4"))
-  } else {
-    #Load ch4 water data for UniqueID
-    mydata_ch4_water <- load_incubation(ch4_water_auxfile_i, RData_path)
-    
-    #Check that there is ch4 data for UniqueID
-    if(dim(mydata_ch4_water)[1]==0){
-      CH4w_nosep_df.no_measurements <- rbind(CH4w_nosep_df.no_measurements,
-                                         data.frame(UniqueID=i,
-                                                    message = "no measurements for ch4"))
-    } else {
-      #Calculate CH4 water flux for UniqueID (no flux separation, no plot)
-      CH4w_nosep_flux.auto_i <- automaticflux(dataframe = mydata_ch4_water, myauxfile = ch4_water_auxfile_i, shoulder = 0, gastype = "CH4dry_ppb", 
-                                          fluxSeparation = FALSE,
-                                          displayPlots = FALSE,
-                                          method = "trust.it.all")
-      
-      #Join flux to rest of CH4 water No sep dataset
-      CH4w_nosep_flux.auto <- rbind(CH4w_nosep_flux.auto, CH4w_nosep_flux.auto_i)
-    }
-  }
-  #Remove auxfile for UniqueID (avoids re-usage, if next does not exist)
-  rm(ch4_water_auxfile_i)
-  
-}#End of UniqueID loop
-
-
-# Save results to Rdata
-save(list = c("CH4w_nosep_flux.auto",
-              "CH4w_nosep_df.no_measurements"), file = paste0(results_path,"CH4w_nosep_results_aquaGHG.Rdata"))
-
-
+save(list = c("CH4all_nosep_flux.auto",
+              "CH4all_nosep_df.no_measurements"), file = paste0(results_path,"CH4all_nosep_aquaGHG.Rdata"))
 
 
 
@@ -312,7 +372,7 @@ for (subsite in unique(ch4_water_auxfile$subsite)){
   message(paste0("processing subsite",subsite))
   
   #Start pdf for plots
-  pdf(file = paste0(results_path,"CH4w_sep_",subsite,".pdf"))
+  pdf(file = paste0(plots_path,"CH4w_sep_",subsite,".pdf"))
   
   #loop over uniqueID of current subsite
   for (k in seq_along(unique(ch4_water_auxfile[which(ch4_water_auxfile$subsite==subsite),]$UniqueID))){
@@ -348,7 +408,7 @@ for (subsite in unique(ch4_water_auxfile$subsite)){
                                          displayPlots = TRUE, 
                                          method = "trust.it.all")
         
-        ##Fix full.total.flux------
+        ##full.total.flux & full.ebullition.flux------
         #ADD full.total.flux and full.ebullition.flux with whole incubation period:
         {
         #Calculate total.flux and total.flux.SD for whole incubation (to overwrite that coming from automaticflux, which only selects that after the start of identified difusion). Using chunks copied from aquaGHG:
@@ -412,13 +472,113 @@ save(list = c("CH4w_sep_flux.auto",
 
 
 #Ch4 water auxfile 4 review------
-#save ch4 auxfile to log mistakes that could be corrected (i.e. cases of obious ebullition from visual inspection) log in them sucess or miss (with short description)
+#save ch4 auxfile to log mistakes that could be corrected (i.e. cases of obious ebullition from visual inspection) log in them method_success (T/F) (with short description)
 
 write.csv(x = ch4_water_auxfile, file = paste0(results_path, "ch4_water_auxfile4inspection.csv"), row.names = F)
 
 
-
 #------_____________________----
+
+#---OLD LOOPs-----
+
+
+#----DONT RUN CH4 dry loop (no plots)-------
+#This takes approx 6minutes
+rm(k,i)
+#loop over uniqueID of full auxfile
+for (k in seq_along(ch4_dry_auxfile$UniqueID)){
+  
+  #Select uniqueID and display progress
+  i = ch4_dry_auxfile$UniqueID[k]
+  message(paste0("Processing CH4dry incubation ",k, " of ",length(ch4_dry_auxfile$UniqueID)," (",round(100*k/length(ch4_dry_auxfile$UniqueID),0), " %)"))
+  
+  #Load auxfiles for UniqueID
+  ch4_dry_auxfile_i <- ch4_dry_auxfile[which(ch4_dry_auxfile$UniqueID==i),]
+  
+  #check that UniqueID has auxfile for ch4 dry
+  if(dim(ch4_dry_auxfile_i)[1]==0){
+    message(paste0("Could not find corresponding auxfile for ",i))
+    CH4dry_df.no_measurements <- rbind(CH4dry_df.no_measurements,
+                                       data.frame(UniqueID=i,
+                                                  message = "no auxfile ch4"))
+  } else {
+    #Load ch4 dry data for UniqueID
+    mydata_ch4_dry <- load_incubation(ch4_dry_auxfile_i, RData_path)
+    
+    #Check that there is data for UniqueID
+    if(dim(mydata_ch4_dry)[1]==0){
+      CH4dry_df.no_measurements <- rbind(CH4dry_df.no_measurements,
+                                         data.frame(UniqueID=i,
+                                                    message = "no measurements for ch4"))
+    } else {
+      #Calculate CH4 dry flux for UniqueID
+      CH4dry_flux.auto_i <- automaticflux(dataframe = mydata_ch4_dry, myauxfile = ch4_dry_auxfile_i, shoulder = 0, gastype = "CH4dry_ppb", 
+                                          fluxSeparation = FALSE,
+                                          displayPlots = FALSE,
+                                          method = "trust.it.all")
+      
+      #Join flux to rest of CH4 dry dataset
+      CH4dry_flux.auto <- rbind(CH4dry_flux.auto, CH4dry_flux.auto_i)
+    }
+  }
+  #Remove auxfile for UniqueID (avoids re-usage, if next does not exist)
+  rm(ch4_dry_auxfile_i)
+  
+}#End of UniqueID loop
+
+
+# Save results to Rdata
+save(list = c("CH4dry_flux.auto",
+              "CH4dry_df.no_measurements"), file = paste0(results_path,"CH4dry_results_aquaGHG.Rdata"))
+
+
+
+#----DONT RUN CO2 loop (No plots)-----
+#this takes approx 10 min
+rm(k,i)
+#loop over uniqueID of full auxfile
+for (k in seq_along(co2_auxfile$UniqueID)){
+  
+  #Select uniqueID and display progress
+  i = co2_auxfile$UniqueID[k]
+  message(paste0("Processing CO2 incubation ",k, " of ",length(co2_auxfile$UniqueID)," (",round(100*k/length(co2_auxfile$UniqueID),0), " %)"))
+  
+  #Load auxfiles for UniqueID
+  co2_auxfile_i <- co2_auxfile[which(co2_auxfile$UniqueID==i),]
+  
+  #check that UniqueID has auxfile for co2
+  if(dim(co2_auxfile_i)[1]==0){
+    message(paste0("Could not find corresponding auxfile for ",i))
+    CO2_df.no_measurements <- rbind(CO2_df.no_measurements,
+                                    data.frame(UniqueID=i,
+                                               message = "no auxfile co2"))
+  } else {
+    #Load co2 data for UniqueID
+    mydata_co2 <- load_incubation(co2_auxfile_i, RData_path)
+    
+    #Check that there is co2 data for UniqueID
+    if(dim(mydata_co2)[1]==0){
+      CO2_df.no_measurements <- rbind(CO2_df.no_measurements,
+                                      data.frame(UniqueID=i,
+                                                 message = "no measurements for co2"))
+    } else {
+      #Calculate CO2 flux for UniqueID
+      CO2_flux.auto_i <- automaticflux(dataframe = mydata_co2, myauxfile = co2_auxfile_i, shoulder = 0, gastype = "CO2dry_ppm", 
+                                       fluxSeparation = FALSE,
+                                       displayPlots = FALSE,
+                                       method = "trust.it.all")
+      
+      #Join flux to rest of CO2 dataset
+      CO2_flux.auto <- rbind(CO2_flux.auto, CO2_flux.auto_i)
+    }
+  }
+  #Remove auxfile for UniqueID (avoids re-usage, if next does not exist)
+  rm(co2_auxfile_i)
+  
+}#End of UniqueID loop
+
+
+
 
 
 #----- DONT RUN CH4 loop (No plots)------
@@ -530,59 +690,74 @@ for (subsite in unique(co2_auxfile$subsite)){
 
 #Miscelanea-----
 
-#UniqueID s1-ca-r1-1-o-d had an artefact at the beginning first ~260 s with constant ch4, check that the actual data. 
-#There was an issue with an incomplete rawfile in the wrong folder that caused data to be incomplete for this UniqueID, wrong rawfile was deleted and rdata re-imported. Now this is fixed. 
+#Test aquaGHG automatic-flux (display plot, for incubations where HM.flux is NA)
 
-#WE will have to re-run alos the co2 loop to update the flux of this UniqueID. 
-ch4_auxfile %>% filter(grepl("s1-ca-r1-1-o-d", UniqueID))
-co2_auxfile %>% filter(grepl("s1-ca-r1-1-o-d", UniqueID))
-#Duration is 710 in both auxfiles, starting at 8:40:39
+#Load auxfile with a few measurements (that output both HM.flux and NA HM.flux)
+ch4test_auxfile<- ch4_auxfile %>% 
+  filter(UniqueID%in%c("s1-ca-p1-3-v-d-10:31","s1-ca-p1-3-v-t-10:24","s1-ca-p1-7-v-t-11:38","s1-ca-p1-7-v-d-11:46"))
 
-a<-load_incubation(auxfile_i = ch4_auxfile %>% filter(grepl("s1-ca-r1-1-o-d", UniqueID)), RData_path = RData_path)
-#when loaded, only 450 s of data. starting at 8:45:00
-a$POSIX.time[1]
-a %>% 
-  ggplot(aes(x=Etime, y=CO2dry_ppm))+
-  geom_point()
+#Initialize objects
 
-a %>% 
-  ggplot(aes(x=POSIX.time, y=CH4dry_ppb))+
-  geom_point()
+ch4test_df.no_measurements<- ch4test_flux.auto <- NULL
 
-#NO artefacts in loaded data
 
-#Check Rdata file: the Rdatafile starts at 8:45:00 
-load(file = paste0(RData_path, "/S1-CA-R1_LI-7810.RData"))
-first(mydata$POSIX.time) 
 
-start<- ch4_auxfile %>% filter(grepl("s1-ca-r1-1-o-d", UniqueID)) %>% pull(start.time)
-stop<- start+ ch4_auxfile %>% filter(grepl("s1-ca-r1-1-o-d", UniqueID)) %>% pull(duration)
+#THe error: display.plot failed when HM model returned NA, Fixed. 
 
-mydataauxfile<- mydata %>% 
-  filter(between(POSIX.time,start,stop ))
+#Error en flux.plot(flux.results = best.flux_auto, dataframe = mydata_auto, : 
+#'HM.flux' in 'flux.results' must be of class numeric
 
-rawdata<- read.delim(file=)
-#Check raw-data: raw data file has non-NA ghg data starting from 08:23:29 (more than 20 minutes before start of incubation). 
-#first non-NA POSIX.time in raw file: 2023-10-31	08:23:29, 
+#arises from the original goFlux flux.plot() function, the HM.flux in flux.results that is calculated inside automaticflux() must be of class numeric (even when it is NA). We try to force class numeric by manually setting it inside automaticflux() in line 159 of function script automaticflux.R: 
 
-#raw-data file has remark starting at 08:40:34 (start of incubation)
+#MIGUEL: When HM.flux results in NA, flux.plot functions fails (error: flux.plot(flux.results = best.flux_auto, dataframe = mydata_auto, :   #'HM.flux' in 'flux.results' must be of class numeric) )
+#MIGUEL: we work arround this by forcing as.numeric to the HM result columns that require numeric class: 
+# best.flux_auto<- best.flux_auto %>% 
+#   mutate(across(c(HM.flux, HM.C0,HM.Ci,HM.k,HM.MAE,HM.RMSE,HM.AICc,HM.se.rel,HM.SE,HM.r2,g.fact), as.numeric))
 
-#It seems the first part of rawdata file is not imported as Rdata  #WHY???!!
 
-#Check data in rawdata and Rdata is the same (match ghg concentrations and time?)
 
-#YES!! Same data in both,
-# 08:45:00	13898.349	  439.44772	  2034.1851 in rawfile
-# 08:45:00  13898.35  439.4477  2034.185 in Rdata 
- 
-#fieldsheet start.time: 8:41 
+rm(k,i)
+#loop over uniqueID of full auxfile
+for (k in seq_along(ch4test_auxfile$UniqueID)){
+  
+  #Select uniqueID and display progress
+  i = ch4test_auxfile$UniqueID[k]
+  message(paste0("Processing ch4test incubation ",k, " of ",length(ch4test_auxfile$UniqueID)," (",round(100*k/length(ch4test_auxfile$UniqueID),0), " %)"))
+  
+  #Load auxfiles for UniqueID
+  ch4test_auxfile_i <- ch4test_auxfile[which(ch4test_auxfile$UniqueID==i),]
+  
+  #check that UniqueID has auxfile for ch4 dry
+  if(dim(ch4test_auxfile_i)[1]==0){
+    message(paste0("Could not find corresponding auxfile for ",i))
+    ch4test_df.no_measurements <- rbind(ch4test_df.no_measurements,
+                                       data.frame(UniqueID=i,
+                                                  message = "no auxfile ch4"))
+  } else {
+    #Load ch4 dry data for UniqueID
+    mydata_ch4test <- load_incubation(ch4test_auxfile_i, RData_path)
+    
+    #Check that there is co2 data for UniqueID
+    if(dim(mydata_ch4test)[1]==0){
+      ch4test_df.no_measurements <- rbind(ch4test_df.no_measurements,
+                                         data.frame(UniqueID=i,
+                                                    message = "no measurements for ch4"))
+    } else {
+      #Calculate CH4 dry flux for UniqueID
+      ch4test_flux.auto_i <- automaticflux(dataframe = mydata_ch4test, myauxfile = ch4test_auxfile_i, shoulder = 0, gastype = "CH4dry_ppb", 
+                                          fluxSeparation = FALSE,
+                                          displayPlots = T,
+                                          method = "trust.it.all")
+      
+      #Join flux to rest of CH4 dry dataset
+      ch4test_flux.auto <- rbind(ch4test_flux.auto, ch4test_flux.auto_i)
+    }
+  }
+  #Remove auxfile for UniqueID (avoids re-usage, if next does not exist)
+  rm(ch4test_auxfile_i)
+  
+}#End of UniqueID loop
 
-#Only "filter" when harmonizing Rdata is removing duplicate Posixtimes
-#In data.raw (Rdata direct from raw-file) only 4 duplicated times, and not within incubation timeframe. 
 
-#different number of lines in data.raw (Rdata direct from rawfile)
 
-is_duplicate <- duplicated(data.raw$POSIX.time)
-data.raw_nodup <- data.raw[!is_duplicate,]
 
-#FOUND a different raw-file with same data,but starting at 8:45:00, in wrong folder that seems to override the data (deleted incomplete file of S1-ca-r1 day from folder S1-CU-DA-DU). 
