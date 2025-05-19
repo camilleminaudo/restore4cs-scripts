@@ -81,18 +81,60 @@ library(tidyverse)
 
 #1. Load results------
 
-#Load results for water incubations with flux separation: 
-load(paste0(results_path, "CH4w_sep_results_aquaGHG.Rdata"))
+#Load discard decissions from auxfile ch4
+full_auxfilech4<- read.csv(file = paste0(auxfile_path,"ch4_auxfile.csv"))
 
-#Load results for water incubations withOUT flux separation: 
-load(paste0(results_path, "CH4w_nosep_results_aquaGHG.Rdata"))
+#Load results for CH4 incubations with flux separation: 
+load(paste0(results_path, "CH4all_fluxsep_aquaGHG.Rdata"))
+
+#Load results for CH4 incubations withOUT flux separation: 
+load(paste0(results_path, "CH4all_nosep_aquaGHG.Rdata"))
+
+
+#2. Fluxsep inspection table----
+
+#Create a csv table with the results from fluxsep
+fluxsep_4inspection<- full_auxfilech4 %>% 
+  #add duration of nosep incubation
+  merge.data.frame(CH4all_nosep_flux.auto %>%  
+                     select(UniqueID, nb.obs, LM.r2) %>%
+                     rename(nosep_nb.obs=nb.obs), by="UniqueID") %>% 
+  #add basic results from fluxsep 
+  merge.data.frame(CH4all_fluxsep_flux.auto %>% 
+                     select(UniqueID, nb.obs, full.total.flux, full.ebullition.flux, diffusion.flux, diffusion.flux.SD) %>% 
+                     rename(dif_fluxsep_nb.obs=nb.obs), by="UniqueID") %>% 
+  #0. Is incubation correct? (i.e. is not marked for discard)
+  mutate(good_incubation=ch4_decission=="ok") %>% 
+  #1. Is ebullition detected? (use difference in nb.obs between nosep and sep results)
+  mutate(buble_detected=!(nosep_nb.obs==dif_fluxsep_nb.obs)) %>% 
+  #2. Is ebullition positive? i.e. diffusion below total flux? (diffusion.flux<full.total.flux)
+  mutate(positive_ebullition=diffusion.flux<full.total.flux) %>% 
+  #3. Is separation appropriate? (combination of detected and positive bubles)
+  mutate(good_separation=buble_detected&positive_ebullition) %>% 
+  #4. Is separation significant? (full.ebullition.flux > diffusion.flux +diffusion.flux.SD)
+  mutate(sig_separation=good_separation&(full.ebullition.flux> diffusion.flux+diffusion.flux.SD)) %>% 
+  #5. Is incubation very linear? (full incubation LM.r2>0.95)
+  mutate(good_fulllinearfit=LM.r2>0.95) %>% 
+  #Leave only logical flags and auxfile data
+  select(-c(nosep_nb.obs,dif_fluxsep_nb.obs,full.total.flux,full.ebullition.flux,diffusion.flux,diffusion.flux.SD,LM.r2)) %>% 
+  #Order
+  arrange(subsite, start.time)
+
+
+#Save csv for inspection
+write.csv(fluxsep_4inspection, file = paste0(results_path, "fluxsep_inspectiontable.csv"), row.names = F)
+
+#POR AQUI-----
 
 #Load visual inspection flags for CH4 water: 
 auxfile_inspected<- read.csv(paste0(results_path, "ch4_water_auxfile4inspection_filled.csv"))
 
 
-#Load discard decissions from auxfile ch4
-full_auxfilech4<- read.csv(file = paste0(auxfile_path,"ch4_auxfile.csv"))
+fluxsep_4inspectiontest<- fluxsep_4inspection %>% 
+  merge.data.frame(auxfile_inspected %>% select(UniqueID, duration,visual_ebullition,failure_description,Common_obs), by=c("UniqueID","duration"), all.x = T) %>% arrange(subsite,start.time)
+
+
+
 #Load results for ch4 dry incubations: 
 load(paste0(results_path, "CH4dry_results_aquaGHG.Rdata"))
 
