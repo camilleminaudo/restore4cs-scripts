@@ -450,13 +450,17 @@ for (subsite in subsites){
 
 
 
-#4. Add Discard decissions----
+#4. Discard decisions & round duration----
 #Add decissions logged in excell inspection file (discard/ok) to auxfiles for each GHG
 all_auxfile_co2<- all_auxfile_co2 %>% 
-  merge.data.frame(croping %>% select(UniqueID,co2_decission), by="UniqueID", all.x = T) %>% arrange(subsite,start.time)
+  merge.data.frame(croping %>% select(UniqueID,co2_decission), by="UniqueID", all.x = T) %>% 
+  mutate(duration=floor(duration)) %>% 
+  arrange(subsite,start.time)
 
 all_auxfile_ch4<- all_auxfile_ch4 %>% 
-  merge.data.frame(croping %>% select(UniqueID,ch4_decission), by="UniqueID", all.x = T)%>% arrange(subsite,start.time)
+  merge.data.frame(croping %>% select(UniqueID,ch4_decission), by="UniqueID", all.x = T)%>%
+  mutate(duration=floor(duration)) %>% 
+  arrange(subsite,start.time)
 
 #Check fiedlsheet not in auxfile
 mising<- fieldsheet %>% filter(!uniqID%in%all_auxfile_ch4$UniqueID)

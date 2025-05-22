@@ -462,15 +462,14 @@ save(list = c("CH4all_fluxsep_flux.auto",
 
 
 
-#Ch4auxfile 4 review------
-#save ch4 auxfile to log mistakes that could be corrected (i.e. cases of obious ebullition from visual inspection) log in them method_success (T/F) (with short description)
 
-write.csv(x = ch4_auxfile, file = paste0(results_path, "ch4_auxfile4inspection.csv"), row.names = F)
+
+# write.csv(x = ch4_auxfile, file = paste0(results_path, "ch4_auxfile4inspection.csv"), row.names = F)
 
 
 #------_____________________----
 
-#---OLD LOOPs-----
+#---OLD LOOPs (DONT RUN)-----
 
 
 #----DONT RUN CH4 dry loop (no plots)-------
