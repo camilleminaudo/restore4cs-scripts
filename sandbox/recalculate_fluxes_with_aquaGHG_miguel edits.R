@@ -356,7 +356,7 @@ save(list = c("CH4all_nosep_flux.auto",
 
 
 
-#----CH4all flux separation(with pdf plots)-----
+#----CH4all flux separation(pdf plots)-----
 #This takes approx XX minutes
 rm(subsite, k)
 for (subsite in unique(ch4_auxfile$subsite)){
@@ -460,11 +460,6 @@ for (subsite in unique(ch4_auxfile$subsite)){
 save(list = c("CH4all_fluxsep_flux.auto",
               "CH4all_fluxsep_df.no_measurements"), file = paste0(results_path,"CH4all_fluxsep_aquaGHG.Rdata"))
 
-
-
-
-
-# write.csv(x = ch4_auxfile, file = paste0(results_path, "ch4_auxfile4inspection.csv"), row.names = F)
 
 
 #------_____________________----
@@ -671,81 +666,6 @@ for (subsite in unique(co2_auxfile$subsite)){
   
   dev.off()
 }#end subsite loop
-
-
-
-
-
-#Miscelanea-----
-
-#Test aquaGHG automatic-flux (display plot, for incubations where HM.flux is NA)
-
-#Load auxfile with a few measurements (that output both HM.flux and NA HM.flux)
-ch4test_auxfile<- ch4_auxfile %>% 
-  filter(UniqueID%in%c("s1-ca-p1-3-v-d-10:31","s1-ca-p1-3-v-t-10:24","s1-ca-p1-7-v-t-11:38","s1-ca-p1-7-v-d-11:46"))
-
-#Initialize objects
-
-ch4test_df.no_measurements<- ch4test_flux.auto <- NULL
-
-
-
-#THe error: display.plot failed when HM model returned NA, Fixed. 
-
-#Error en flux.plot(flux.results = best.flux_auto, dataframe = mydata_auto, : 
-#'HM.flux' in 'flux.results' must be of class numeric
-
-#arises from the original goFlux flux.plot() function, the HM.flux in flux.results that is calculated inside automaticflux() must be of class numeric (even when it is NA). We try to force class numeric by manually setting it inside automaticflux() in line 159 of function script automaticflux.R: 
-
-#MIGUEL: When HM.flux results in NA, flux.plot functions fails (error: flux.plot(flux.results = best.flux_auto, dataframe = mydata_auto, :   #'HM.flux' in 'flux.results' must be of class numeric) )
-#MIGUEL: we work arround this by forcing as.numeric to the HM result columns that require numeric class: 
-# best.flux_auto<- best.flux_auto %>% 
-#   mutate(across(c(HM.flux, HM.C0,HM.Ci,HM.k,HM.MAE,HM.RMSE,HM.AICc,HM.se.rel,HM.SE,HM.r2,g.fact), as.numeric))
-
-
-
-rm(k,i)
-#loop over uniqueID of full auxfile
-for (k in seq_along(ch4test_auxfile$UniqueID)){
-  
-  #Select uniqueID and display progress
-  i = ch4test_auxfile$UniqueID[k]
-  message(paste0("Processing ch4test incubation ",k, " of ",length(ch4test_auxfile$UniqueID)," (",round(100*k/length(ch4test_auxfile$UniqueID),0), " %)"))
-  
-  #Load auxfiles for UniqueID
-  ch4test_auxfile_i <- ch4test_auxfile[which(ch4test_auxfile$UniqueID==i),]
-  
-  #check that UniqueID has auxfile for ch4 dry
-  if(dim(ch4test_auxfile_i)[1]==0){
-    message(paste0("Could not find corresponding auxfile for ",i))
-    ch4test_df.no_measurements <- rbind(ch4test_df.no_measurements,
-                                       data.frame(UniqueID=i,
-                                                  message = "no auxfile ch4"))
-  } else {
-    #Load ch4 dry data for UniqueID
-    mydata_ch4test <- load_incubation(ch4test_auxfile_i, RData_path)
-    
-    #Check that there is co2 data for UniqueID
-    if(dim(mydata_ch4test)[1]==0){
-      ch4test_df.no_measurements <- rbind(ch4test_df.no_measurements,
-                                         data.frame(UniqueID=i,
-                                                    message = "no measurements for ch4"))
-    } else {
-      #Calculate CH4 dry flux for UniqueID
-      ch4test_flux.auto_i <- automaticflux(dataframe = mydata_ch4test, myauxfile = ch4test_auxfile_i, shoulder = 0, gastype = "CH4dry_ppb", 
-                                          fluxSeparation = FALSE,
-                                          displayPlots = T,
-                                          method = "trust.it.all")
-      
-      #Join flux to rest of CH4 dry dataset
-      ch4test_flux.auto <- rbind(ch4test_flux.auto, ch4test_flux.auto_i)
-    }
-  }
-  #Remove auxfile for UniqueID (avoids re-usage, if next does not exist)
-  rm(ch4test_auxfile_i)
-  
-}#End of UniqueID loop
-
 
 
 

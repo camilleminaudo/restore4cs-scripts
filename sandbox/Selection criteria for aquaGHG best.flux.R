@@ -76,8 +76,8 @@ library(tidyverse)
 library(ggExtra)
 
 
-
-
+#______________----
+#CH4 Selection-----
 
 #1. Load results------
 
@@ -91,7 +91,7 @@ load(paste0(results_path, "CH4all_fluxsep_aquaGHG.Rdata"))
 load(paste0(results_path, "CH4all_nosep_aquaGHG.Rdata"))
 
 
-#2. Fluxsep inspection table----
+##1.1. Fluxsep inspection table----
 
 #Create a csv table with the results from fluxsep
 fluxsep_4inspection<- full_auxfilech4 %>% 
@@ -133,7 +133,7 @@ fluxsep_inspected<- fluxsep_4inspection %>%
 
 
 
-#2. Criteria for non-ebullition -----
+#2. Criteria for goflux -----
 
 #Filter results to decide goflux criteria:
 #To decide the goflux hard thresholds (i.e. g.fact) we discacrd incubations that match any of the following:
@@ -428,363 +428,437 @@ ggMarginal(
 #Threshold to chose LM over total.flux will be set at LM.r2 0.99, as below this threshold there are a lot of incubations whose linear flux deviates more than 10% from the total.flux
 
 
-#POR AQUI bien_____________-----
-
-#APPLY combined criteria (goflux+ebullition) for best.flux
-
-#IMPLEMENT flags and final format for CH4 bestflux
-
-#IMPLEMENT same goflux criteria (including MAE improvement for CO2), copy-paste and re-inspect thresholds (for cases not already done in testingbesflux criteria)
-
-#IMPLEMENT flags for ch4 flux separation.
-
-#QUality check: compare look which method is assigned to biggest fluxes (HM should not be present among the highest fluxes, as these most likely arise from ebullitive patterns)
+##3.2. Inpsect Non-detected----
 
 
-#4. CH4 flux selection-------
+#Check non-detected (visual ebullition, but no automatic buble detection)
+#Inspect those non-detected that have very good fit for LM or HM. Make sure totalflux is the most aproppriate for them. 
 
-#We apply the criteria above to select the best.flux in every case (ebullition or not).
-
-
-
-
-
-
-#5. Flux separation -----
-
-#Join and flag results from Flux separation process
-
-
-
-
-
-
-
-##3.1. Inspect LM vs total.flux-----
-
-linear_better<-c()
-totalflux_better<-c("s1-cu-a1-3-o-d-07:40")
-
-ch4_ebullitive %>% 
-  filter(prefered_model=="LM") %>% 
-  filter(!UniqueID%in%c(linear_better,totalflux_better)) %>% 
-  filter(!between(linear_total_ratio, 0.9,1.1)) %>% 
-  select(UniqueID,LM.r2, g.fact, linear_total_ratio) %>% 
-  arrange(desc(LM.r2))
-
-
-
-
-ch4_ebullitive %>% 
-  filter(prefered_model=="LM") %>% 
-  filter(!UniqueID%in%c(linear_better,totalflux_better)) %>% 
-  ggplot(aes(x=prefered_model, y=linear_total_ratio))+
-  geom_violin()+
-  geom_dotplot(binaxis = "y",
-               stackdir = "center",
-               dotsize = 0.5)
-
-
-##3.1. Inpsect Non-detected----
-# Add a flag ("Visual ebullition, HM not appropriate") and default to ebullition criteria (LM.r2>0.95-->LM, otherwise totalflux)
+#Once inspected, Add a flag ("Visual ebullition, HM not appropriate") and default to ebullition criteria (LM.r2>0.99-->LM, otherwise totalflux)
 
 ch4_non_detected<-CH4all_nosep_flux.auto %>% 
   filter(!UniqueID%in%incub_discard) %>% 
   filter(UniqueID%in%incub_ebu_visual) %>% #Contains visual ebullition
   filter(!UniqueID%in%incub_ebu_auto) %>% #Was not detected as ebullition
-  mutate(prefered_model=if_else(LM.r2>0.95,"LM","total.flux"),
+  mutate(prefered_model=if_else(LM.r2>0.99,"LM","total.flux"),
          linear_total_ratio=LM.flux/full.total.flux)
 
-#check linear to total.flux of non-detected incubations with
+#check non detected with very good fit (r2> 0.95 & MAE<10) for LM or HM:
+#All incubations clasified as non-detected, show ebullitive patterns that make goflux not appropriate. 
+goflux_correct<- c()
+
+ebullition_correct<- c("s1-ca-a2-13-o-d-13:17","s1-ca-r1-12-o-d-11:45","s1-ca-r2-14-v-t-13:11","s1-cu-r2-13-o-d-08:55","s1-va-a2-4-v-t-09:54","s1-va-a2-8-v-t-11:07","s1-va-r2-15-o-d-13:13",
+                       "s2-da-a2-1-o-d-07:32","s2-da-a2-2-o-d-07:52","s2-da-a2-3-o-d-08:04","s2-da-a2-4-o-d-08:16","s2-da-a2-5-o-d-08:26","s2-da-a2-6-o-d-08:36","s2-da-a2-8-o-d-09:02","s2-da-a2-9-o-d-09:17","s2-da-a2-15-o-d-10:46","s2-da-p2-5-o-d-10:34","s2-va-r1-1-o-d-09:18",
+                       "s3-da-a2-11-b-d-09:20","s3-ri-p1-15-o-d-13:00",
+                       "s4-cu-p1-3-v-t-07:14","s4-cu-p2-1-v-t-06:57","s4-va-a1-8-v-t-10:58","s4-va-a2-9-v-d-09:32")
+
 ch4_non_detected %>%
-  filter(prefered_model=="LM") %>% 
-  ggplot(aes(x=prefered_model, y=linear_total_ratio, col=prefered_model))+
-  geom_violin()+
-  geom_point()
+  filter((LM.r2>0.95&LM.MAE<10)|(HM.r2>0.95&HM.MAE<10)) %>% 
+  filter(!UniqueID%in%c(goflux_correct, ebullition_correct)) %>% 
+  select(UniqueID, g.fact, linear_total_ratio, prefered_model) %>% head()
 
-lm_correct<- c("s1-ca-a2-4-v-d-11:25","s1-ca-a2-9-o-d-12:27","s1-cu-r1-4-o-d-06:55","s1-da-p1-14-v-t-11:32","s2-cu-r2-14-o-d-11:55","s2-cu-r2-13-o-d-11:45","s2-da-a2-1-o-d-07:32","s2-da-a2-2-o-d-07:52","s2-da-a2-3-o-d-08:04","s2-da-a2-4-o-d-08:16","s2-da-a2-5-o-d-08:26","s2-da-a2-6-o-d-08:36","s2-da-a2-8-o-d-09:02","s2-da-a2-9-o-d-09:17","s2-da-a2-12-o-d-10:06","s2-da-a2-13-o-d-10:17","s2-da-a2-14-o-d-10:29","s2-da-a2-15-o-d-10:46","s2-da-p1-10-o-d-09:56","s2-da-p1-11-o-d-10:08","s3-ca-a2-17-o-d-11:08","s4-va-a2-9-v-t-09:24","s4-va-a2-9-v-d-09:32","s4-va-p1-5-b-d-08:19")
-
-totalflux_correct<- c("s1-ca-a2-4-v-t-11:19","s1-ca-a2-10-v-d-12:40","s1-ca-a2-13-o-d-13:17", "s1-ca-a2-15-o-d-13:43","s1-ca-r1-12-o-d-11:45", "s1-cu-p1-19-v-d-14:57", "s1-cu-r2-13-o-d-08:55", "s1-ri-r2-4-b-d-10:01", "s1-va-a2-4-v-t-09:54", "s1-va-a2-4-v-d-10:01", "s1-va-a2-8-v-t-11:07","s1-va-a2-12-v-d-12:40","s1-va-r2-15-o-d-13:13","s2-ca-a2-6-b-d-09:31","s2-cu-a2-8-o-d-10:04","s2-cu-p2-5-o-d-09:36","s2-da-a2-10-o-d-09:31","s2-da-a2-11-o-d-09:57","s2-va-r1-1-o-d-09:18","s3-da-a2-11-b-d-09:20","s3-da-r1-8-v-d-10:06","s3-da-r1-8-v-d-10:06","s4-ca-a2-15-v-d-10:54","s4-va-a1-8-v-t-10:58")
-
-reclasify<- c()
-
-#check
-ch4_non_detected %>% 
-  filter(prefered_model=="LM") %>%
-  filter(between(linear_total_ratio,0.95,1.05)) %>% 
-  select(UniqueID, g.fact, prefered_model) %>% 
-  filter(!UniqueID%in%c(lm_correct, totalflux_correct,reclasify)) %>% head()
+##
 
 
+#4. CH4 bestflux selection-------
+#We apply the criteria above to select the best_model in every case (ebullition or not) and add best_model_flags with flags detailing the reason for best model.
 
-
-##3.2. Inspect False-positives------
-#Some incubations were marked as ebullitive by the algorithm due to artefacts and noise, but they do not show bubbles (visual_ebullition==F), check what flux is assigned to them (LM vs total.flux).
-
-ch4_falsepositives<- CH4all_nosep_flux.auto %>% 
-  filter(!UniqueID%in%incub_discard) %>% #Not wrong incubations
-  filter(UniqueID%in%c(incub_ebu_auto)) %>% #Detected bubbles
-  filter(!UniqueID%in%c(incub_ebu_visual)) %>% #Not visual ebullition
-  mutate(prefered_model=if_else(LM.r2>0.95,"LM","total.flux"),
-         linear_total_ratio=LM.flux/full.total.flux)
-
-ch4_falsepositives %>% group_by(prefered_model) %>% 
-  summarise(numcases=n(),
-            avg_LMtotalratio=mean(linear_total_ratio))
-
-#Most flase-positives are assigned linear flux estimate, with good correspondence LM-to-totalflux
-ch4_falsepositives %>%
-  ggplot(aes(x=prefered_model, y=linear_total_ratio, col=prefered_model))+
-  geom_boxplot()+
-  geom_point()
-
-#Check the cases with total.flux assigned: total.flux is more appropriate than linear fit, flat-ish with a lot of noise in the middle
-falsepos_totalflux_inspected<- c("s2-cu-p1-5-o-d-08:30","s2-cu-p1-6-v-t-08:39","s2-ri-a2-13-o-d-11:24","s2-va-r2-3-v-d-10:26","s3-cu-p2-3-v-d-09:06","s3-du-r2-5-b-d-09:44","s4-ca-a1-8-v-t-10:52","s4-ca-a1-8-v-d-11:00","s4-ca-a1-12-v-t-12:48","s4-cu-p2-9-o-d-08:43","s4-cu-r1-2-b-d-07:13","s4-du-a2-13-b-d-12:30","s4-du-a2-14-v-t-12:41","s4-du-a2-14-v-d-12:47","s4-du-a2-15-v-d-13:04","s4-ri-p1-9-o-d-08:56","s4-ri-p1-10-v-d-09:15","s4-ri-p1-13-o-d-10:07","s4-va-p1-12-v-d-10:18","s4-va-r1-13-v-d-12:03")
-
-ch4_falsepositives %>%
-  filter(prefered_model=="total.flux") %>% 
-  filter(!UniqueID%in%falsepos_totalflux_inspected) %>% 
-  select(UniqueID)
-
-
-
-
-
-
-
-
-ch4_ebullitive<- CH4all_nosep_flux.auto %>% 
-  filter(!UniqueID%in%incub_discard) %>% #Not wrong incubations
-  filter(UniqueID%in%c(incub_ebu_visual,incub_ebu_auto)) %>% #Contains ebullition (auto or visual)
-  mutate(prefered_model=if_else(LM.r2>0.95,"LM","total.flux"),
-         linear_total_ratio=LM.flux/full.total.flux)
-
-
-ch4_ebullitive %>% 
-  filter(prefered_model=="LM") %>% 
-  ggplot(aes(x=LM.r2, y=linear_total_ratio, col=between(linear_total_ratio,0.9,1.1)))+
-  geom_point()
-
-#-----falta de adaptar----
+##4.1. Selection & flags----
+ch4_bestflux<- CH4all_nosep_flux.auto %>% 
+  #Create logical vectors for all cases, to be able to inspect (if any) cases where the best_model is overriden, due to errors in the order of the criteria. 
+  mutate(is_discard=UniqueID%in%incub_discard,
+         is_ebullition=UniqueID%in%c(incub_ebu_auto, incub_ebu_visual),
+         is_LMr2_99=LM.r2>=0.99,
+         is_NA_HM=is.na(HM.flux),
+         is_mdflinear=abs(LM.flux)<=MDF.lim,
+         is_kmax=HM.k>=k.max,
+         is_gfactexceed=g.fact>=3,
+         is_lowmaeimprove=((LM.MAE  - HM.MAE)  / LM.MAE)<0.05,
+         is_LMaiccbetter=LM.AICc<HM.AICc) %>% 
+  #The conditions are evaluated sequentially (if multiple conditions are met, only the first is used), if no condition is met, default to "HM"
+  mutate(best_model=case_when(is_discard~"None appropriate",
+                              is_ebullition&is_LMr2_99~"LM",
+                              is_ebullition&!is_LMr2_99~"total.flux",
+                              is_NA_HM~"LM",
+                              is_mdflinear~"LM",
+                              is_kmax~"LM",
+                              is_gfactexceed~"LM",
+                              is_lowmaeimprove~"LM",
+                              is_LMaiccbetter~"LM",
+                              TRUE~"HM"),
+         # Add quality flags (some override others)
+         best_model_flags = pmap_chr(
+           list(is_discard, is_ebullition, is_LMr2_99, is_NA_HM,
+                is_mdflinear, is_kmax, is_gfactexceed, is_lowmaeimprove, is_LMaiccbetter),
+           function(discard, ebu, lmr2, na_hm, mdf, kmax, gfact, lowmae, aicc) {
+             # Priority override
+             if (discard) return("Discard incubation, artefacts preclude flux estimate")
+             
+             # EBULLITION branch
+             if (ebu) {
+               ebullition_flags <- c("Ebullitive dynamics")
+               if (lmr2) ebullition_flags <- c(ebullition_flags, "LM.r2 >= 0.99")
+               if (!lmr2) ebullition_flags <- c(ebullition_flags, "LM.r2 < 0.99")
+               return(str_c(ebullition_flags, collapse = ", "))
+             }
+             
+             # NON-EBULLITION branch
+             other_flags <- c()
+             if (na_hm) other_flags <- c(other_flags, "HM.flux is NA")
+             if (mdf) other_flags <- c(other_flags, "MDF")
+             if (isTRUE(kmax)) other_flags <- c(other_flags, "HM.k exceeds maximum")
+             if (isTRUE(gfact)) other_flags <- c(other_flags, "g.fact >= 3")
+             if (isTRUE(lowmae)) other_flags <- c(other_flags, "HM does not improve MAE by > 5%")
+             if (isTRUE(aicc)) other_flags <- c(other_flags, "AICc of LM is best")
+             
+             if (length(other_flags) == 0) return("HM meets all criteria")
+             str_c(other_flags, collapse = "|")
+           }
+         )
+  )
 
 
 
+ch4_bestflux %>%
+  separate_rows(best_model_flags, sep = "\\|") %>%
+  count(best_model, best_model_flags)
 
-
-
-
-
-#Final step CO2: 
-#Check that AICc weight and AICc raw comparison output the same choice (to be able to simplify the criteria), then limit the use of AICc weight to inspection of doubts (already done)
-co2_todecide %>% 
-  mutate(aicc_weight_choice=if_else(AICc_weight_HM>0.5,"HM","LM"),
-         rawaicc_choice=if_else(LM.AICc>HM.AICc, "HM","LM")) %>% 
-  mutate(choice_agree=aicc_weight_choice==rawaicc_choice) %>% 
-  select(choice_agree) %>% distinct()
-
-
-
-#FINAL CO2 table----
-co2_final<-table_co2 %>% 
-  #Set prefered_model variable with current criteria (thresholds for MDF, Kappa and g.fact, plus best AICc as only criteria)
-  mutate(prefered_model=case_when(UniqueID%in%co2_discard~"discard",
-                                  is.na(HM.flux)~"LM",
-                                  abs(LM.flux)<=MDF.lim~"LM",
-                                  HM.k>=k.max~"LM",
-                                  g.fact>=4~"LM",
-                                  LM.AICc<HM.AICc~"LM",
-                                  LM.AICc>HM.AICc~"HM",
-                                  TRUE~"no selection"))
-
-#Any flux without selection
-unique(co2_final$prefered_model)
-
-
-
-
-
-
-
-#2. Classify CH4w incubations----
-
-  #make sure the order between the two datasets is the same and match UniqueIDs
-dataflags<- CH4w_nosep_flux.auto %>% 
-  select(UniqueID, nb.obs) %>%
-  rename(total_nb.obs=nb.obs) %>% 
-  merge.data.frame(CH4w_sep_flux.auto %>% 
-                     select(UniqueID, nb.obs, full.total.flux, full.ebullition.flux, diffusion.flux, diffusion.flux.SD) %>% 
-                     rename(difusion_nb.obs=nb.obs), by="UniqueID") %>% 
-  merge.data.frame(auxfile_inspected %>% select(UniqueID, ch4_decission), by="UniqueID") %>% 
-  #0. Is incubation correct? (i.e. is not marked for discard)
-  mutate(good_incubation=ch4_decission=="ok") %>% 
-  #1. Is ebullition detected? (use difference in nb.obs between nosep and sep results)
-  mutate(buble_detected=!(total_nb.obs==difusion_nb.obs)) %>% 
-  #2. Is ebullition positive? i.e. diffusion below total flux? (diffusion.flux<full.total.flux)
-  mutate(positive_ebullition=diffusion.flux<full.total.flux) %>% 
-  #3. Is separation_appropriate? (combination of detected and positive bubles)
-  mutate(good_separation=buble_detected&positive_ebullition) %>% 
-  #4. Is separation significant? (full.ebullition.flux > diffusion.flux +diffusion.flux.SD)
-  mutate(sig_separation=full.ebullition.flux> diffusion.flux+diffusion.flux.SD)
-
-
-#Separate UniqueIDs based on dataflags
-#Get wrong incubations (best.flux <- NA, quality.check<- "Wrong incubation, no reliable flux")
-wrong_incubations<- dataflags %>% filter(good_incubation==F) %>% pull(UniqueID) 
-
-#Get incubations to set goflux criteria for difusion only
-difusive_incubations <- dataflags %>% filter(good_incubation==T&buble_detected==F) %>% pull(UniqueID) 
-
-#Get incubations for which LM fit threshold is needed (those with non-significant separation and those with negative ebullition)
-lm_or_totalflux_incubations <- dataflags %>% filter(good_incubation==T&buble_detected==T & (sig_separation==F|positive_ebullition==F)) %>% pull(UniqueID)
-
-#Get incubations for which flux separation works ok (buble detected, buble positive, significant separation)
-ebullitive_incubations<- dataflags %>% filter(good_incubation==T&good_separation==T&sig_separation==T) %>% pull(UniqueID)
-
-
-#CHECKS: 
-#Check, any incubation not classified?
-dataflags %>% 
-  filter(!(UniqueID%in%c(wrong_incubations,difusive_incubations,lm_or_totalflux_incubations,ebullitive_incubations)))
-
-#Check any incubation in two classifications?
-anyDuplicated(c(wrong_incubations,difusive_incubations,lm_or_totalflux_incubations,ebullitive_incubations))
-
-
-#3. LM.R2 limit for buble-containing-----
-#Set the LM fit threshold for incubations contatined in lm_or_totalflux_incubations (those with wrong or non-significant separation)
-
-#Use visual inspection descriptions in auxfile_inspected
-
-ch4_lmortotal<- CH4w_nosep_flux.auto %>% 
-  filter(UniqueID%in%lm_or_totalflux_incubations) %>% 
-  merge.data.frame(auxfile_inspected %>% select(UniqueID, visual_ebullition, method_sucess, Common_obs), by="UniqueID") %>% 
-  #add full.total.flux estimate (to compare missmatch LM.flux vs full.total.flux)
-  merge.data.frame(CH4w_sep_flux.auto %>% select(UniqueID, full.total.flux, SD_full.total.flux), by="UniqueID") %>% 
-  mutate(visual_recommendation=case_when(grepl("linear fit", Common_obs)~"LM",
-                                         grepl("totalflux", Common_obs)~"total_flux",
-                                         TRUE~NA)) %>% 
-  #ratio_linear_total
-  mutate(ratio_linear_total=LM.flux/full.total.flux)
+ch4_bestflux %>% 
+  count(best_model)
   
 
-ch4_lmortotal %>% filter(!is.na(visual_recommendation)) %>% 
-  ggplot(aes(y=LM.r2, fill=visual_recommendation))+
-  geom_histogram()+
-  facet_wrap(~visual_recommendation)
+##4.2. Final format (to-do)----
 
-ch4_lmortotal %>% filter(!is.na(visual_recommendation)) %>% 
-  ggplot(aes(y=LM.AICc, fill=visual_recommendation))+
-  geom_histogram()+
-  facet_wrap(~visual_recommendation)
-
-ch4_lmortotal %>% filter(!is.na(visual_recommendation)) %>% 
-  ggplot(aes(x=LM.r2, fill=visual_recommendation))+
-  geom_histogram()+
-  geom_vline(xintercept = 0.95)+
-  facet_wrap(~visual_recommendation)
-
-ch4_lmortotal %>% filter(!is.na(visual_recommendation)) %>% 
-  ggplot(aes(x=LM.r2, y=ratio_linear_total, col=visual_recommendation))+
-  geom_point()
-
-
-#Any linear visual decissions with LMR2 < 0.95 and more than 10% difference in estimate (LM or total_flux)(would totalflux be apropriate?)
-ch4_lmortotal %>% filter(visual_recommendation=="LM"&LM.r2<0.95) %>%
-  select(UniqueID, LM.r2, ratio_linear_total, LM.flux, full.total.flux) %>% 
-  filter(abs(ratio_linear_total-1)>0.1)
-
-
-#Any ebullitive visual decissions with LMR2>=0.95 and more than 10% difference in estimate to inspect
-ch4_lmortotal %>% filter(visual_recommendation=="total_flux"&LM.r2>=0.95) %>%
-  select(UniqueID, LM.r2, ratio_linear_total, LM.flux, full.total.flux) %>% 
-  filter(abs(ratio_linear_total-1)>0.1)
-#s3-cu-p2-5-o-d-10:02 linear ok-ish
-#s4-cu-a1-9-o-d-09:48 linear ok-ish
-#s4-cu-p2-3-o-d-07:44 linear ok-ish
-#s4-cu-p2-7-o-d-08:17 linear ok-ish
-#all incubations could be represented well by a linear model
-
-
-#Re-check very high difference in estimates
-ch4_lmortotal %>% 
-  mutate(selection=if_else(LM.r2>=0.95, "LM","total_flux"),
-         agree_model=selection==visual_recommendation) %>% 
-  select(UniqueID, LM.r2, ratio_linear_total, LM.flux, full.total.flux,visual_recommendation, agree_model) %>%
-  filter(abs(ratio_linear_total-1)>0.5)
-#Re-Checked, visual inspection ok: all total flux, differences caused by leverage of bubles on LM, affecting slope.  
-
-
-#Decission: hard threshold to select LM or total_flux as best.flux is set to LM.r2 0.95: best.flux=if_else(LM.r2>=0.95, "LM","total_flux")
+#IMPLEMENTfinal format for CH4 bestflux
 
 
 
+#5. Flux separation (to-do)-----
 
+#Join and flag results from Flux separation process
 
-
-
-
-
-# 4.Criteria for diffusive water incubations: -----
-#Follow the same logic as CO2: 
-#Must have the exact same thresholds of dryCH4 incubations
-#1. Copy-paste approach from CO2 criteria, 
-#2. join dataset with ch4dry
-#3. Explore threshold options and implications, with special attention to not-detected ebullition cases: this should never be fitted with HM model (to avoid overestimation of fluxes, fitting a strong curve to a buble-flat type of incubation). Potentially, same approach than for dry-ebullitive patterns (High-curvature gfact > threshold --> LM or total-flux, depending on which provides less uncertainty. 
-
-difusivech4<- CH4w_nosep_flux.auto %>% 
-  filter(UniqueID%in%difusive_incubations) %>% 
-  #Add comments from visual inspection: 
-  merge.data.frame(auxfile_inspected %>% select(UniqueID, visual_ebullition, method_sucess, Common_obs), by="UniqueID") %>% 
-  #add full.total.flux estimate (to compare missmatch LM.flux vs full.total.flux)
-  merge.data.frame(CH4w_sep_flux.auto %>% select(UniqueID, full.total.flux, SD_full.total.flux), by="UniqueID") %>% 
-  mutate(visual_recommendation=case_when(grepl("linear fit", Common_obs)~"LM",
-                                         grepl("totalflux", Common_obs)~"total_flux",
-                                         TRUE~NA)) %>% 
-  #ratio_linear_total
-  mutate(ratio_linear_total=LM.flux/full.total.flux)
-
-
-#Check general parameters of method_sucess==F (non-detected ebullition) cases
-difusivech4 %>% 
-  filter(method_sucess==F) %>% 
-  ggplot(aes(x=LM.r2, y=HM.r2, col=Common_obs))+
-  geom_point()
-
-difusivech4 %>% 
-  filter(method_sucess==F) %>% 
-  ggplot(aes(x=g.fact, y=HM.r2, col=Common_obs))+
-  geom_point()+
-  geom_vline(xintercept = 4)
-
-
-
-unique(difusivech4$Common_obs)
-
-difusivech4 %>%
-  ggplot(aes(y=LM.r2, fill=Common_obs))+
-  geom_histogram()+
-  facet_wrap(~Common_obs)
-
-
-difusivech4 %>%
-  ggplot(aes(x=g.fact, y=ratio_linear_total, col=Common_obs))+
-  geom_point()
-
+#QUality check: compare look which method is assigned to biggest fluxes (HM should not be present among the highest fluxes, as these most likely arise from ebullitive patterns)
 
 
 #THINGS to decide:------
-#WHAT TO DO WITH NON-detected ebullition when LM and HM are not appropriate? 
-#Potentially, calculate total.flux for all CH4 incubations, and set thresholds for goflux fit under which we use define best flux as total flux
+#WHAT TO DO WITH NON-detected ebullition when LM and HM are not appropriate? --> totalflux 
+#IS there a data-driven way to detect all Non-detected ebullition cases (or at least most critical HM ones) logged in visual inspection?
+
 
 #Check plots and define when the above logic fails:
 
-#1. Cases of visual ebullition not detected algorithm (buble_detected==F) for which LM/HM are not appropriate. 
-
 #2. Cases with good_separation==T but non-reliable diffusion (difusion contains buble), including those with significant separation. 
 
-#What to do with negative ebullition cases: either LM or full.total.flux  
 
-#Save to inspect missmatches and define errors.  
-write.csv(inspection_table, paste0(results_path,"Inspection_table_criteria.csv"),row.names = F)
+
+
+
+
+#______________----
+
+rm(list=ls())
+#Directories---------
+#dropbox root path: You have to make sure this is pointing to the write folder on your local machine:
+dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data"
+
+#Path to Co2 and Ch4 auxfiles with corrected start.time and duration and with discard decissions:
+auxfile_path<- paste0(dropbox_root,"/GHG/Working data/Auxfiles_4aquaGHG/") 
+
+#Path to results from aquaGHG:
+results_path<- "C:/Users/Miguel/Dropbox/testing_aquaGHG/"
+
+
+
+
+#Packages and functions----------
+library(tidyverse)
+library(ggExtra)
+
+
+#CO2 Selection-----
+
+#IMPLEMENT same goflux criteria (including MAE improvement for CO2), copy-paste and re-inspect thresholds (for cases not already done in testingbesflux criteria)
+
+
+
+#1. Load results------
+
+#Load discard decissions from auxfile co2
+full_auxfileco2<- read.csv(file = paste0(auxfile_path,"co2_auxfile.csv"))
+
+#Load results for CH4 incubations withOUT flux separation: 
+load(paste0(results_path, "CO2_aquaGHG.Rdata"))
+
+
+#2. Criteria for goflux -----
+
+#Filter results to decide goflux criteria:
+#To decide the goflux hard thresholds (i.e. g.fact) we discacrd incubations that match any of the following:
+#Wrong incubations (those marked due to strong artefact, backflush after ebullition or wrong manipulation)
+
+incub_discard<- full_auxfileco2 %>% filter(co2_decission=="discard") %>% pull(UniqueID)
+
+co2_4gofluxcriteria<- CO2_flux.auto %>% 
+  filter(!UniqueID%in%c(incub_discard))
+
+
+
+##2.1. Inspect mdf----
+#We want to make sure MDF fluxes do not arise from artefacts, all MDF incubations will default to LM 
+co2_mdf_LM<- co2_4gofluxcriteria %>%  
+  filter(abs(LM.flux)<=MDF.lim)
+
+#MDFs CO2 inspected: true below detection flat-ish white noise incubations
+mdf_inspected<- c("s1-ca-a2-1-v-d-10:44","s1-du-p2-12-b-d-11:01","s1-ri-p1-1-v-d-10:19","s1-ri-p1-3-v-d-10:51","s1-ri-r2-4-b-d-10:01","s2-du-a1-15-v-t-13:29","s2-du-a2-1-o-d-08:54","s3-du-p2-7-b-d-10:26","s3-va-p1-13-v-t-11:48","s1-ca-a2-13-o-d-13:17","s1-ca-a2-4-v-d-11:25","s1-ca-a2-5-o-d-11:33","s1-ca-a2-6-v-d-11:49","s1-ca-a2-8-o-d-12:12","s1-ca-r1-4-o-d-09:45","s1-ca-r1-6-o-d-10:17","s1-cu-a1-14-v-d-11:14","s1-cu-a2-14-o-d-11:32","s1-cu-a2-16-o-d-11:58","s1-cu-a2-4-o-d-07:53","s1-cu-a2-6-o-d-08:12","s1-cu-p2-9-o-d-10:56","s1-cu-r2-18-v-d-10:36","s1-cu-r2-21-b-d-11:20","s1-da-p1-3-o-d-09:11","s1-da-p1-5-o-d-09:33","s1-da-p1-8-o-d-10:05","s1-da-p1-9-o-d-10:17","s1-du-a1-2-o-d-09:26","s1-du-a1-3-o-d-09:38","s1-du-a1-4-o-d-09:50","s1-du-p2-5-b-t-08:39","s1-du-p2-6-v-t-08:52","s1-du-r2-8-v-t-09:44","s1-ri-a2-10-b-d-11:50","s1-ri-a2-12-b-d-12:05","s1-ri-a2-5-b-d-10:56","s1-ri-a2-6-b-d-11:01","s1-ri-p1-10-v-t-12:59","s1-ri-p1-4-v-d-11:11","s1-ri-r2-6-v-d-10:39","s1-ri-r2-7-b-d-10:50","s1-va-a2-1-o-d-09:02","s1-va-a2-4-v-d-10:01","s1-va-a2-6-o-d-10:35","s1-va-p1-13-v-t-12:41","s1-va-r2-13-o-d-12:34","s1-va-r2-14-o-d-12:53","s1-va-r2-15-o-d-13:13","s1-va-r2-8-b-d-11:08",
+                  "s2-ca-a1-3-v-t-09:12","s2-ca-a1-8-b-d-11:08","s2-ca-a2-1-v-d-08:15","s2-ca-a2-10-v-d-10:58","s2-ca-a2-7-v-d-09:47","s2-ca-a2-5-v-t-09:15","s2-ca-a2-2-v-d-08:33","s2-ca-a2-9-v-d-10:31","s2-ca-r1-14-v-d-12:21","s2-cu-a1-4-v-t-08:59","s2-cu-a2-2-v-t-08:25","s2-cu-a2-11-o-d-10:30","s2-cu-a2-14-o-d-11:03","s2-cu-a2-15-o-d-11:11","s2-cu-a2-3-v-d-08:54","s2-cu-a2-6-o-d-09:42","s2-cu-a2-7-o-d-09:50","s2-cu-a2-8-o-d-10:04","s2-cu-a2-9-o-d-10:13","s2-cu-p1-2-v-t-07:51","s2-cu-p2-1-v-d-08:26","s2-cu-p2-1-v-t-08:18","s2-cu-p2-10-o-d-10:52","s2-cu-p2-11-o-d-11:08","s2-cu-p2-13-o-d-11:23","s2-cu-p2-14-o-d-11:31","s2-cu-p2-15-o-d-11:39","s2-cu-p2-2-v-d-08:46","s2-cu-p2-2-v-t-08:38","s2-cu-p2-3-v-d-09:08","s2-cu-p2-3-v-t-09:00","s2-cu-p2-9-o-d-10:45","s2-cu-r1-4-v-t-08:40","s2-cu-r2-1-b-d-08:08","s2-cu-r2-1-b-t-08:01","s2-cu-r2-10-o-d-11:10","s2-cu-r2-11-o-d-11:23","s2-cu-r2-12-o-d-11:37","s2-cu-r2-3-b-d-08:41","s2-cu-r2-4-v-d-09:02","s2-cu-r2-4-v-t-08:55","s2-cu-r2-5-v-d-09:23","s2-cu-r2-5-v-t-09:14","s2-cu-r2-6-v-t-09:40","s2-cu-r2-9-o-d-11:00","s2-da-a1-1-o-d-08:17","s2-da-a1-3-o-d-08:43","s2-da-a2-1-o-d-07:32","s2-da-a2-10-o-d-09:31","s2-da-a2-11-o-d-09:57","s2-da-a2-12-o-d-10:06","s2-da-a2-13-o-d-10:17","s2-da-a2-15-o-d-10:46","s2-da-a2-2-o-d-07:52","s2-da-a2-3-o-d-08:04","s2-da-a2-4-o-d-08:16","s2-da-a2-5-o-d-08:26","s2-da-a2-6-o-d-08:36","s2-da-a2-7-o-d-08:47","s2-da-p1-1-o-d-08:10","s2-da-p2-2-v-t-09:58","s2-da-r2-2-v-d-07:46","s2-du-a1-1-o-d-09:21","s2-du-a1-2-o-d-09:36","s2-du-a1-3-o-d-09:48","s2-du-a2-12-v-d-12:36","s2-du-a2-14-b-d-13:04","s2-du-p2-1-o-d-09:17","s2-du-p2-3-o-d-10:11","s2-du-r1-9-v-d-11:22","s2-ri-a2-1-b-d-08:35","s2-ri-a2-16-o-d-12:08","s2-ri-a2-2-b-d-08:51","s2-ri-a2-7-b-d-10:00","s2-ri-a2-8-b-d-10:10","s2-ri-p1-13-o-d-12:52","s2-ri-p1-14-o-d-13:19","s2-ri-p1-15-o-d-13:41","s2-ri-p1-2-v-d-09:11","s2-ri-p1-3-v-d-09:31","s2-ri-p1-4-v-d-09:54","s2-ri-p1-5-v-d-10:08","s2-ri-p1-7-o-d-10:36","s2-ri-r2-12-v-d-12:40","s2-ri-r2-2-o-d-12:47","s2-ri-r2-3-o-d-13:26","s2-va-a1-2-o-d-10:21","s2-va-a1-4-v-d-11:06","s2-va-a1-4-v-t-10:57","s2-va-a1-6-b-d-11:34","s2-va-a1-7-v-t-11:57","s2-va-p2-12-v-t-11:44","s2-va-p2-13-v-d-12:14","s2-va-p2-15-v-t-12:49","s2-va-p2-5-o-d-10:05","s2-va-p2-6-o-d-10:18","s2-va-p2-7-o-d-10:35","s2-va-p2-9-b-d-11:07","s2-va-r1-1-o-d-09:18","s2-va-r1-11-v-d-12:46","s2-va-r1-11-v-t-12:36","s2-va-r1-9-v-d-11:42","s2-va-r1-12-v-d-13:13","s2-va-r1-12-v-t-13:03","s2-va-r1-5-o-d-10:22","s2-va-r1-8-o-d-11:15",
+                  "s3-ca-a2-10-o-d-09:29","s3-ca-a2-12-o-d-09:56","s3-ca-a2-14-o-d-10:25","s3-ca-a2-15-v-d-10:39","s3-ca-a2-16-v-d-10:57","s3-ca-a2-2-o-d-07:43","s3-ca-a2-3-v-d-08:05","s3-ca-a2-4-o-d-08:13","s3-ca-a2-5-v-d-08:27","s3-ca-a2-5-v-t-08:20","s3-ca-a2-6-o-d-08:36","s3-ca-a2-7-v-d-08:50","s3-da-a2-1-o-d-06:06","s3-da-a2-4-o-d-07:00","s3-du-a1-6-b-d-09:19","s3-du-a2-11-b-d-10:55","s3-du-a2-3-v-t-07:43","s3-du-p2-5-o-d-09:38","s3-du-r1-9-v-t-09:18","s3-ri-a2-11-b-d-10:58","s3-ri-a2-13-b-d-11:20","s3-ri-a2-14-b-d-11:30","s3-ri-a2-16-o-d-12:03","s3-ri-a2-17-o-d-12:23","s3-ri-a2-6-b-d-09:51","s3-ri-a2-8-b-d-10:21","s3-ri-a2-9-b-d-10:29","s3-ri-r1-13-b-d-14:04","s3-va-r2-1-o-d-08:29","s3-va-r2-3-v-d-09:10","s3-va-r2-3-v-t-09:04",
+                  "s4-cu-a2-11-o-d-10:31","s4-cu-r2-12-o-d-10:10","s4-da-a2-4-o-d-07:21","s4-da-a2-12-o-d-08:51","s4-da-p1-12-o-d-09:55","s4-ri-a2-6-b-d-07:41","s4-ri-p1-5-o-d-07:54")
+
+
+
+#any MDF flux not inspected?
+co2_mdf_LM %>% filter(!UniqueID%in%mdf_inspected) %>% pull(UniqueID)
+
+#any mdf_inspected that shouldnt?
+mdf_inspected[!mdf_inspected%in%co2_mdf_LM$UniqueID]
+
+
+##2.2. Inspect Kmax-----
+#Inspect HM.k>=k.max () to ensure that the LM flux is not influenced by artefacts
+co2_kmax<- co2_4gofluxcriteria %>%
+  filter(!UniqueID%in%mdf_inspected) %>% #Already inspected (due to MDF)
+  filter(HM.k>=k.max)
+
+#In kmax_inspected, incubations with k=kmax with good LM estimates:
+kmax_inspected<-c("s1-cu-a2-8-o-d-08:33","s1-da-r2-15-b-t-12:35","s1-ri-p1-2-v-d-10:33","s1-ri-p1-6-v-d-11:41","s1-va-a2-4-v-t-09:54","s1-va-p1-15-v-t-13:05","s2-ca-a2-2-v-t-08:25","s2-cu-a1-9-o-d-10:00","s2-cu-a1-10-o-d-10:09","s2-cu-a1-15-v-d-11:02","s2-cu-a2-12-o-d-10:40","s2-cu-a2-13-o-d-10:54","s2-cu-r2-3-b-t-08:34","s2-da-p2-9-o-d-11:15","s2-du-r2-4-b-d-10:07","s2-ri-a2-3-b-d-08:59","s2-ri-a2-11-b-d-10:55","s2-ri-r2-1-o-d-12:32","s2-va-a2-14-v-d-13:06","s3-ca-a1-7-v-t-09:28","s3-cu-p2-7-o-d-10:36","s3-da-a1-1-b-d-07:07","s3-du-a1-7-b-d-09:35","s3-ri-p1-17-o-d-13:28","s4-ca-a1-8-v-t-10:52","s4-cu-a1-4-v-t-08:22","s4-cu-a1-10-o-d-09:59","s4-cu-r2-13-o-d-10:17","s4-cu-r2-14-o-d-10:25")
+
+
+tocropand_reinspect<- c() 
+
+
+#Any kmax not inspected?
+co2_kmax %>% filter(!UniqueID%in%c(kmax_inspected,tocropand_reinspect)) %>% pull(UniqueID)
+
+#Any kmax_inspected that shouldnt?
+kmax_inspected[!kmax_inspected%in%co2_kmax$UniqueID]
+
+
+
+##2.3. Inspect g.fact ------
+
+#Filter the dataset to remove already inspected incubations (mdf, kappamax, tocrop)
+co2_gfact<-co2_4gofluxcriteria %>%
+  filter(!UniqueID%in%c(mdf_inspected,kmax_inspected,tocropand_reinspect)) 
+
+#lets see what is the highest g.fact of the best-performing HM models (best 50%)
+co2_gfact %>% 
+  filter(HM.r2>quantile(HM.r2, 0.1, na.rm=T)) %>%
+  ggplot( aes(x=HM.r2, y=g.fact))+
+  geom_point()+
+  geom_hline(yintercept = 4)
+
+
+#Here we check that the hard-threshold chosen for g.fact (i.e. if g.fact > threshold --> LM as best flux) does not cause any truly non-linear pattern to be lost.
+
+#Based on the g.fact distribution above, we will start the inspection with g.fact=4 as threshold and progressively lower it until clear and clean non-linear patterns appear.
+
+#These are All the incubations with unreasonably large g-fact. They have all been visually inspected and LM is more representative for them. 
+co2_gfact_inspected<- c("s3-va-r1-1-v-d-08:47","s4-ri-p2-6-o-d-08:28","s4-da-p2-5-o-d-09:34","s1-ca-p2-3-v-t-10:53","s4-da-r2-7-o-d-08:01","s4-du-a1-14-b-d-12:34","s1-va-r1-13-v-d-12:55","s1-ca-p1-14-v-d-14:49","s2-cu-p1-13-o-d-10:11","s2-cu-p1-11-v-t-09:50","s4-ri-p1-14-o-d-11:04","s1-cu-p1-17-v-t-14:01","s1-da-p2-11-o-d-12:38","s3-da-p2-3-v-d-09:45","s4-da-p2-1-v-t-08:45","s2-da-p2-1-o-d-09:44","s4-ca-p2-1-v-d-08:01","s2-du-p1-15-v-d-13:01","s4-ri-p1-7-o-d-08:26","s4-du-r2-10-v-t-10:26","s1-da-p2-8-o-d-12:04","s2-da-p2-12-v-d-11:57","s4-ri-a1-11-b-d-08:50")#gfact>4
+                        
+                        
+
+
+
+
+#To fix and re-inspect: too long incubations, aproaching asyntotic concentration
+toreinspect_gfact<- c()
+                      
+
+#Any g.fact to inspect?
+co2_gfact %>% 
+  filter(!UniqueID%in%c(co2_gfact_inspected,toreinspect_gfact)) %>% #already inspected
+  filter(g.fact>=4) %>% 
+  select(UniqueID, g.fact) %>% arrange(desc(g.fact))
+
+#any gfact_inspected that shouldnt?
+co2_gfact_inspected[!co2_gfact_inspected%in%(co2_gfact %>% filter(g.fact>=4))$UniqueID]
+
+
+#g.fact threshold of 4 is the optimal solution, many true non-linear with g.fact >3.5
+
+
+##2.4. AICc & MAE improvement-----
+
+#To decide for the remaining incubations (those non-mdf, non-kmax, non-gfact>3), we will use a combination of AICc weight (probability 0-1 of HM model being best) and relative improvement on MAE with HM.
+#Compare distributions for each criteria, inspect critical decissions. 
+
+
+#After checking that g.fact and mdf criteria are appropriate, subset dataset that needs a decision between LM and HM:
+co2_todecide<- co2_4gofluxcriteria %>% #Non-wrong
+  filter(!is.na(HM.flux)) %>% #Non-NA HM (nothing to decide in those cases, default LM)
+  filter(abs(LM.flux)>MDF.lim) %>% #Non-mdf
+  filter(HM.k<k.max) %>% #Non-kmax
+  filter(g.fact<4) #Non-gfact>4
+
+
+#Inspect AICc for selection criteria (using AICc weight)
+#Test criteria: using AICc weight (based on the relative difference in AICc, calculate the AICc weight metric, a probabilistic estimate of how likely it is that one model is better than the other). 
+#ADD relative improvement in MAE as additional threshold criteria (for HM to be selected, it has to reduce model error by more than 5%).
+
+co2_todecide <- co2_todecide %>%
+  mutate(
+    delta_AICc_LM = LM.AICc - pmin(LM.AICc, HM.AICc),  # Compare to the best AICc (min AICc)
+    delta_AICc_HM = HM.AICc - pmin(LM.AICc, HM.AICc),
+    # Calculate the Akaike weight for HM: AICc_weight_HM, how likely is that HM is better (0-1)?
+    AICc_weight_HM = exp(-0.5 * delta_AICc_HM) / (exp(-0.5 * delta_AICc_LM) + exp(-0.5 * delta_AICc_HM)),
+    # Calculate relative improvement in MAE using HM
+    rel_reduct_MAE_HM  = (LM.MAE  - HM.MAE)  / LM.MAE,
+    k.ratio=HM.k/k.max
+  )
+
+#Inspect AICc_weight_HM
+co2_todecide %>%
+  ggplot(aes(x=AICc_weight_HM, fill=AICc_weight_HM>0.5))+
+  geom_histogram(bins=100)+
+  scale_x_continuous(name="AICc weight for HM, probability of HM being best")
+#Most cases have very clear separation. 
+
+#Inspect against LM r2 (rel_reduction in MAE as a guide)
+co2_todecide %>%
+  ggplot(aes(x=AICc_weight_HM, y=LM.r2,col=rel_reduct_MAE_HM>0.05))+
+  geom_point()+
+  scale_x_continuous(name="AICc weight for HM, probability of HM being best")
+#Many incubations that win with AICc weight, have poor LM r2 (indicating noise) and do not improve MAE by more than 5%
+
+
+#Inspect rel_reduct_MAE_HM
+co2_todecide %>%
+  ggplot(aes(x=rel_reduct_MAE_HM, fill=AICc_weight_HM>0.5))+
+  geom_histogram(bins=100)+
+  scale_x_continuous(name="Relative reduction in MAE with HM")
+
+co2_todecide %>%
+  ggplot(aes(x=rel_reduct_MAE_HM, y=LM.r2,col=AICc_weight_HM>0.5))+
+  geom_point()+
+  geom_vline(xintercept=0.025)+
+  scale_x_continuous(name="Relative reduction in MAE with HM")
+
+
+#Inspect against k.ratio 
+ggMarginal(
+  co2_todecide %>%
+    ggplot(aes(x=AICc_weight_HM,y=k.ratio, col=rel_reduct_MAE_HM>0.05))+
+    geom_point()+
+    # geom_hline(yintercept=1.25)+
+    labs(col=NULL)+
+    scale_x_continuous(name="AICc weight for HM, probability of HM being best")
+)
+
+
+
+#Inpsect cases with better AICc for HM, but low reduction in MAE (<5%) and with relatively big differences in flux (gfact>1.5)
+
+#Inspect to decide 
+co2_lowMAEimprovement<-co2_todecide %>% 
+  filter(AICc_weight_HM>0.5) %>% 
+  filter(rel_reduct_MAE_HM<0.05) %>% 
+  filter(g.fact>1.5)
+
+#This cases have been inspected: tipical behaviour is linear with a few artefacts forcing a curve in the model. 
+bestLM<- c("s1-cu-a1-14-v-t-11:07","s1-cu-p2-8-o-d-10:42","s1-cu-r2-6-o-d-07:07","s1-da-p1-10-o-d-10:34","s1-da-p2-9-o-d-12:13","s1-da-p2-13-o-d-12:59","s1-du-r1-9-v-d-10:00","s1-du-r2-4-b-d-08:20","s1-ri-a1-8-b-d-12:16","s1-ri-p2-15-o-d-13:37","s1-va-a2-7-v-d-10:53","s1-va-p2-16-b-t-13:56","s1-va-p2-16-b-d-14:02","s1-va-r1-5-o-d-10:04","s2-ca-p1-3-v-t-09:06","s2-ca-p1-4-v-t-09:26","s2-ca-r2-3-o-d-09:09","s2-cu-a1-4-v-d-09:05","s2-cu-a1-5-o-d-09:12","s2-cu-a1-8-o-d-09:52","s2-cu-a1-13-o-d-10:34","s2-cu-p1-14-o-d-10:20","s2-cu-p2-5-o-d-09:36","s2-da-a2-8-o-d-09:02","s2-da-p1-8-o-d-09:36","s2-da-p1-14-v-t-11:04","s2-da-r2-2-v-t-07:39","s2-da-r2-13-o-d-09:46","s2-da-r2-14-v-t-10:13","s2-du-p1-13-v-d-12:23","s2-du-p2-7-v-d-11:31","s2-du-r2-10-v-t-11:41","s2-du-r2-14-v-t-13:09","s2-ri-a1-2-b-t-09:08","s2-ri-a2-10-b-d-10:48","s2-ri-p2-11-v-d-12:24","s2-va-a2-13-v-d-12:45","s2-va-p1-14-v-d-12:51","s2-va-r1-10-v-d-12:14","s2-va-r2-7-v-t-11:08","s3-ca-a2-11-v-d-09:44","s3-cu-r1-5-b-d-07:52","s3-du-r1-6-o-d-08:30","s3-ri-a2-2-b-d-09:06","s3-ri-a2-4-v-d-09:35","s3-ri-p2-14-o-d-13:53","s4-ca-p1-5-v-t-08:24","s4-ca-p2-10-v-t-12:50","s4-cu-a1-3-o-d-08:09","s4-cu-r1-12-o-d-09:49","s4-da-a2-13-o-d-09:09","s4-da-p2-11-v-t-10:40","s4-da-r1-3-v-d-09:32","s4-da-r2-6-v-d-07:53","s4-du-a2-15-v-t-12:59","s4-du-r1-4-o-d-09:05","s4-ri-a2-12-b-d-09:02","s4-ri-p1-6-v-d-08:15","s4-va-r2-14-v-d-10:46")
+
+noclear<- c("s1-ca-r1-11-o-d-11:34","s1-da-p1-13-v-t-11:16","s2-du-r1-2-v-d-09:42","s3-da-p1-8-v-d-09:49")
+
+bestHM<-c()
+
+discard_artefacts<-c()
+
+crop_reinspect<- c()
+
+
+#Any to inspect?
+co2_lowMAEimprovement %>% 
+  filter(!UniqueID%in%c(bestLM,bestHM,noclear,discard_artefacts,crop_reinspect)) %>%
+  select(UniqueID, g.fact,k.ratio, rel_reduct_MAE_HM) %>% head()
+
+#Any inspected that shouldnt?
+c(bestLM,noclear)[!c(bestLM,noclear)%in%co2_lowMAEimprovement$UniqueID]
+
+
+#These criteria work well for all, a few-low g.fact HM unclear, but overall very good. 
+
+#quality check: inspect k.ratio of selected HM and inspect visually.
+k_final_good<-c("s1-ca-a1-3-v-t-09:10","s1-ca-a1-12-v-t-11:41","s1-du-a1-13-v-t-14:07","s2-ca-a1-1-o-d-08:47","s2-du-p2-9-b-d-11:59","s2-va-a1-10-v-t-13:21","s2-va-p2-1-o-d-09:04","s3-cu-r2-2-b-d-07:07","s3-da-a2-14-v-t-10:08","s3-cu-r2-14-o-d-12:19")
+
+co2_todecide %>% 
+  filter(AICc_weight_HM>0.5) %>% 
+  filter(rel_reduct_MAE_HM>=0.05) %>% 
+  filter(k.ratio>0.5) %>% 
+  filter(!UniqueID%in%c(crop_reinspect, k_final_good)) %>% 
+  select(UniqueID,g.fact,k.ratio)
+
+
+
+#3. CO2 bestflux selection  -------
+
+##3.1. Selection and flags------
+
+co2_bestflux<- CO2_flux.auto %>% 
+  #Create logical vectors for all cases, to be able to inspect (if any) cases where the best_model is overriden, due to errors in the order of the criteria. 
+  mutate(is_discard=UniqueID%in%incub_discard,
+         is_NA_HM=is.na(HM.flux),
+         is_mdflinear=abs(LM.flux)<=MDF.lim,
+         is_kmax=HM.k>=k.max,
+         is_gfactexceed=g.fact>=4,
+         is_lowmaeimprove=((LM.MAE  - HM.MAE)  / LM.MAE)<0.05,
+         is_LMaiccbetter=LM.AICc<HM.AICc) %>% 
+  #The conditions are evaluated sequentially (if multiple conditions are met, only the first is used), if no condition is met, default to "HM"
+  mutate(best_model=case_when(is_discard~"None appropriate",
+                              is_NA_HM~"LM",
+                              is_mdflinear~"LM",
+                              is_kmax~"LM",
+                              is_gfactexceed~"LM",
+                              is_lowmaeimprove~"LM",
+                              is_LMaiccbetter~"LM",
+                              TRUE~"HM"),
+         # Add quality flags (some override others)
+         best_model_flags = pmap_chr(
+           list(is_discard, is_NA_HM,
+                is_mdflinear, is_kmax, is_gfactexceed, is_lowmaeimprove, is_LMaiccbetter),
+           function(discard, na_hm, mdf, kmax, gfact, lowmae, aicc) {
+             # Priority override
+             if (discard) return("Discard incubation, artefacts preclude flux estimate")
+             
+             # Goflux branch
+             other_flags <- c()
+             if (na_hm) other_flags <- c(other_flags, "HM.flux is NA")
+             if (mdf) other_flags <- c(other_flags, "MDF")
+             if (isTRUE(kmax)) other_flags <- c(other_flags, "HM.k exceeds maximum")
+             if (isTRUE(gfact)) other_flags <- c(other_flags, "g.fact >= 4")
+             if (isTRUE(lowmae)) other_flags <- c(other_flags, "HM does not improve MAE by > 5%")
+             if (isTRUE(aicc)) other_flags <- c(other_flags, "AICc of LM is best")
+             
+             if (length(other_flags) == 0) return("HM meets all criteria")
+             str_c(other_flags, collapse = "|")
+           }
+         )
+  )
+
+
+co2_bestflux %>%
+  separate_rows(best_model_flags, sep = "\\|") %>%
+  count(best_model, best_model_flags)
+
+co2_bestflux %>% 
+  count(best_model)
+
+
+
+##3.2. Final format (to-do) ------
+
+
+
+
+
 
 
