@@ -90,8 +90,9 @@ complete_list %>%
   filter(!is.na(pilot_site))  %>% 
   group_by(subsite_code) %>% 
   summarise(number_ofcores=sum(type=="core")) %>% 
-  filter(number_ofcores==0)
-  
+  filter(number_ofcores==0) %>% 
+  filter(!subsite_code%in%c("S3-DA-R2","S4-DA-R2"))#NO cores were obtained in DA-R2
+
 
 #Samples with missing values (other than comments)
 incomplete_details<- core_list[!complete.cases(core_list[,!names(core_list) %in% "comments"]),] %>% filter(!is.na(pilot_site)) 
@@ -108,10 +109,14 @@ if(length(unique(inconsistencies_core_id$sample_id))>0){message(paste("The follo
 
 
 #Suspect units for water-depth (suposed to be in cm)
+
+checked_waterdepth<- c("S1-VA-R2","S2-CA-P2","S2-CU-R2","S2-RI-P2","S3-RI-P1","S4-DU-R1","S4-VA-A2")
+
 complete_list %>% 
   filter(water_depth<=2) %>% 
   filter(water_depth!=0) %>% 
-  select(subsite_code, water_depth, comments) %>% 
+  select(subsite_code, water_depth, comments) %>%
+  filter(!subsite_code%in%checked_waterdepth) %>% 
   distinct()
 
 #S1-VA-R2. water depth of 2cm are ok, checked
@@ -122,7 +127,7 @@ complete_list %>%
 #S4-DU-R1 water depths of <2cm are ok, checked
 #S4-VA-A2 water depths of 2 cm are ok, checked
 
-
+#S2-DU-R1 sediment sample with 1cm in plot 8 (no water in GHG plot 8), not important. 
 
 #Format sampleID to be consistent:
 core_list_formated<- core_list %>% 
@@ -132,10 +137,24 @@ core_list_formated<- core_list %>%
          sample_id=paste0(core_season,"-",core_site,"-", core_subsite,"-C",corenum),
          subsite_code=paste0(core_season,"-",core_site,"-", core_subsite)) %>%
   rename(sampling_date=date, latitude=`gps latitude`,longitude=`gps longitude`, sampling_time_utc=sampling_time) %>% 
-  select(pilot_site,subsite_code,sampling_date, sampling_time_utc, latitude, longitude, person_sampling, strata, water_depth, sample_id, comments,filename)
-
+  select(pilot_site,subsite_code,sampling_date, sampling_time_utc, latitude, longitude, person_sampling, strata, water_depth, sample_id, comments,filename) %>% 
+  #Harmonize naming of strata (small inconsistencies found in fieldsheets)
+  mutate(strata=case_when(strata=="vegetation"~"vegetated",
+                          strata%in%c("open","Open water")~"open water",
+                          strata=="soil"~"bare",
+                          TRUE~strata))
 
 
 #Save core-fieldsheet compilation:
 write.csv(core_list_formated, file = paste0(cores_folder, "Core_fieldsheet_compilation.csv"), row.names = F)
 
+
+#Subset variables for Repository:
+all_core_sampling_details<- core_list_formated %>% 
+  rename(core_id=sample_id, water_depth_cm=water_depth) %>% 
+  select(core_id, pilot_site, subsite_code, sampling_date, latitude, longitude, water_depth_cm)
+
+
+
+#Save repository sampling details
+write.csv(all_core_sampling_details, file = paste0(cores_folder,"/Cores_flux/All_core_sampling_details.csv"),row.names = F)
