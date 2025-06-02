@@ -1,63 +1,41 @@
-#Selection criteria for CH4 water (aquaGHG)
-
-#Description: this script is used to flag errors in flux separation of CH4 water and to chose the best.flux in each case. 
-
-#IMPORTANT: all goflux-outputs of aquaHG with flux-separation==T refer to cropped incubations based on diffusion detection algorithm. 
+#Selection criteria for best.flux (aquaGHG approach)
 
 
+# ---
+# Authors: Miguel Cabrera
+# Project: "RESTORE4Cs"
+# date: "June 2025"
+
+# ---
+
+# --- Description----
+#Description: this script is used set the selection criteria to chose the best.flux for CH4 and CO2 incubations (criteria below). 
+#Additionally, for CH4 fluxes derived from incubations showing ebullitive patterns, flux will be separated whenever possible into diffusion and ebullition.
 
 #Chosing best flux will follow this logic: 
 
-#0. If incubation is wrong (disard due to artefacts or wrong manipulation), no flux estimate is provided as best NA and quality flag is added to discard. 
+#0. If incubation is wrong (disard due to artefacts or wrong manipulation), no flux estimate is provided as best.flux and quality flag is added to discard. 
+#2. IF No bubles are found (Visual inspection) --> GOflux criteria
+#3. IF Bubles are found (visual inspection) and LM.r2 <0.99 --> use total.flux
+#4. IF Bubles are found (visual inspection) and LM.r2 > 0.99--> use LM
 
-#1. If there is water, flux separator method will be calculated
+#Goflux criteria: For HM to be chosen as best flux, all criteria below must be met.
+#HM.flux must exist to be chosen (is.na(HM.flux)--> LM)
+#MDF fluxes are always LM (LM.flux<=MDF.lim --> LM)
+#Kappa must be below maximum (HM.k>=k.max   --> LM)
+#g.fact must be below threshold (CO2.g.fact<4, CH4.g.fact<3, otherwise ---> LM)
+#HM.MAE must be at least 5% better than LM.MAE (otherwise default to LM)
+#HM.AICc of must be below LM.AICc (otherwise default to LM)
 
-#2. IF No bubles are found (i.e. length difusion = total length-1)--> GOflux criteria (to determine, similar logic to CO2 criteria, after inspection for hard thresholds for g.fact)
-
-#3. IF Bubles are found (difusion length < total length - 1): 
-
-  #IF ebullition is significant (based on flux +- SD of total flux, difusive flux, ebullitive flux): Use total flux as best flux 
-
-  #IF ebullition is non-significant, or method fails (difusion > total flux):
-
-      #Check Goflux LM quality, if above threshold (to determine), best flux is taken from LM
-          #IF LM quality is below threshold, best flux is total flux 
-
-
-#STEPS: 
-  #1. First of all, total flux must be calculated for the whole period of the incubation (now it seems it is only calculated from first point of detected difusive chunk)
-
-  #2. Inpsect scripts aquaGHG to determine significance of ebullition
-
-  #3. Determine g.fact threshold for goflux when no bubles are detected
-
-  #4. Determine LM quality thresholds for LM vs total.flux for non-significant ebullition. 
-
-#Things to check------
-#Find out or ask Camille
-
-#Why the nb.obs and obs.length_diffusion are sometimes different (>1 diference) in CH4w_sep_flux?? 
-
-#How is significance of ebullition calculated for aquaGHG warnings?:
-
-# warnings in aquaGHG:
-# if( mybest.flux$ebullition.flux < abs(mybest.flux$diffusion.flux+SD_diffusion.flux)){
-#   warning(paste0("for ",id, ", ebullition term is within range of uncertainty of diffusion."))
-#   mybest.flux$quality.check <- "ebullition too low to be trusted"
-# }
-# 
-# if( mybest.flux$ebullition.flux < 0){
-#   warning(paste0("for ",id, ", negative ebullition term. It was forced to 0."))
-#   mybest.flux$ebullition.flux <- 0
-# }
-# 
-# if( mybest.flux$diffusion.flux > mybest.flux$total.flux){
-#   warning(paste0("for ",id, ", diffusion term is larger than total flux estimated."))
-#   mybest.flux$quality.check <- "diffusion > total flux"
-# }
+#to-do Flux separation----
+#Extra criteria for Flux separation: for incubations with bubles (visual inspection), flux separation will be attempted and results will be flagged based on criteria to be defined. 
+#Steps: 
+  #1. Improve ebullition detection (difusive flux)
+  #2. Set criteria to keep separated flux and quality flags (wrong separation, non-siginficant separation).
 
 
 rm(list=ls())
+
 #Directories---------
 #dropbox root path: You have to make sure this is pointing to the write folder on your local machine:
 dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data"
@@ -66,8 +44,10 @@ dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data"
 auxfile_path<- paste0(dropbox_root,"/GHG/Working data/Auxfiles_4aquaGHG/") 
 
 #Path to results from aquaGHG:
-results_path<- "C:/Users/Miguel/Dropbox/testing_aquaGHG/"
+results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
+#export path for best flux
+export_path<- paste0(dropbox_root, "/GHG/Processed data/computed_flux/Updated_bestflux_aquaGHG/")
 
 
 
@@ -114,7 +94,7 @@ fluxsep_4inspection<- full_auxfilech4 %>%
   #4. Is separation significant? (full.ebullition.flux > diffusion.flux +diffusion.flux.SD)
   mutate(sig_separation=good_separation&(full.ebullition.flux> diffusion.flux+diffusion.flux.SD)) %>% 
   #5. Is incubation very linear? (full incubation LM.r2>0.95)
-  mutate(good_fulllinearfit=LM.r2>0.95) %>% 
+  mutate(good_fulllinearfit=LM.r2>0.99) %>% 
   #Leave only logical flags and auxfile data
   select(-c(nosep_nb.obs,dif_fluxsep_nb.obs,full.total.flux,full.ebullition.flux,diffusion.flux,diffusion.flux.SD,LM.r2)) %>% 
   #Order
@@ -125,6 +105,8 @@ fluxsep_4inspection<- full_auxfilech4 %>%
 write.csv(fluxsep_4inspection, file = paste0(results_path, "fluxsep_inspectiontable.csv"), row.names = F)
 
 
+
+#Manually fill visual inspection flags
 #Load visual inspection flags for CH4 and add them to the data-driven ones: 
 fluxsep_inspected<- fluxsep_4inspection %>% 
   merge.data.frame(read.csv(paste0(results_path, "fluxsep_inspectiontable_filled.csv")) %>% select(UniqueID, visual_ebullition,failure_description,common_obs,extra_obs,recheck), by="UniqueID")%>% 
@@ -309,7 +291,7 @@ ch4_lowMAEimprovement<-ch4_todecide %>%
   filter(g.fact>1.5)
 
 #This cases have been inspected: tipical behaviour is linear with a few artefacts forcing a curve in the model. 
-bestLM<- c("s1-ca-p1-4-v-t-10:43","s1-ca-p1-9-v-t-12:32","s1-ca-p1-15-v-d-15:09","s1-ca-r2-8-v-t-10:25","s1-da-p2-3-v-d-11:07","s1-da-r2-14-b-t-12:26","s1-du-p1-11-v-t-12:17","s2-ca-p1-4-v-t-09:26","s2-ca-p1-10-o-d-12:22","s2-ca-p1-11-v-d-12:44","s2-ca-p2-12-v-t-12:36","s2-ca-r1-8-v-t-10:39","s2-ca-r2-10-v-t-11:07","s2-cu-r2-4-v-d-09:02","s2-du-r1-3-v-t-09:52","s2-du-r1-15-v-d-13:01","s2-du-r2-7-v-t-10:49","s2-du-r2-9-o-d-11:25","s2-ri-a1-2-b-d-09:15","s2-ri-a1-10-b-t-10:30","s2-ri-p2-4-v-t-09:27","s2-ri-p2-10-v-d-12:08","s2-ri-p2-11-v-t-12:17","s2-ri-r1-2-v-t-10:21","s2-ri-r1-3-v-d-10:51","s2-ri-r1-4-v-d-11:12","s2-ri-r1-5-v-t-11:20","s2-ri-r1-5-v-d-11:30","s2-ri-r1-6-v-d-11:47","s2-va-r2-4-o-d-10:34","s3-ca-p1-3-v-t-08:00","s3-da-a1-5-v-t-08:40","s3-du-r1-12-v-d-10:16","s3-du-r2-2-v-t-09:04","s3-du-r2-9-v-t-10:46","s3-ri-p2-2-v-t-09:18","s3-ri-r1-6-v-t-10:41","s3-ri-r1-6-b-d-11:04","s3-va-a1-2-v-t-09:01","s4-ca-a1-13-v-d-13:31","s4-ca-p1-15-v-d-12:21","s4-ca-p2-8-b-d-12:16","s4-ca-p2-9-v-t-12:29","s4-du-a1-6-b-d-09:38","s4-du-p1-1-b-d-07:55","s4-du-p1-8-b-d-09:43","s4-du-p2-12-b-d-11:28","s4-du-p2-13-v-t-11:40","s4-du-r1-3-v-t-08:52","s4-ri-a2-4-v-t-07:19","s4-ri-a2-4-v-d-07:25","s4-ri-a2-10-v-t-08:40","s4-ri-p1-7-o-d-08:26","s4-ri-p1-12-v-t-09:44","s4-ri-p1-12-v-d-09:49","s4-ri-p2-1-v-d-07:09","s4-ri-p2-8-v-t-09:04","s4-ri-p2-10-v-t-09:38","s4-ri-r1-1-v-d-07:11","s4-ri-r1-9-v-d-10:13","s4-ri-r2-12-v-t-10:12","s4-va-a2-11-b-d-10:18","s4-va-p2-5-v-t-07:42","s4-va-p2-14-v-d-09:34","s4-va-r2-3-v-t-08:19","s4-va-r2-4-v-d-08:42","s1-ri-p2-4-v-t-10:24","s1-ri-p2-12-o-d-12:51","s1-ri-r1-8-v-t-11:24","s2-du-p1-4-v-d-09:57","s2-ri-r1-8-v-t-12:16","s2-ri-r1-10-v-t-12:51","s3-da-a1-5-v-d-08:47","s3-du-r2-9-v-d-10:53","s3-va-r2-3-v-d-09:10","s4-ca-p1-10-v-t-10:44","s4-cu-r1-1-b-d-07:06","s4-du-a2-10-v-t-11:12","s4-du-p2-4-o-d-08:47","s4-ri-a1-3-b-d-07:32","s4-ri-a1-4-b-d-07:42","s4-ri-p2-4-o-d-07:55","s4-ri-p2-11-v-t-10:06","s4-ri-r1-5-v-d-08:19","s4-ri-r1-8-v-t-09:22","s4-ri-r2-10-v-t-09:40")
+bestLM<- c("s1-ca-p1-4-v-t-10:43","s1-ca-p1-9-v-t-12:32","s1-ca-p1-15-v-d-15:09","s1-ca-r2-8-v-t-10:25","s1-da-p2-3-v-d-11:07","s1-da-r2-14-b-t-12:26","s1-du-p1-11-v-t-12:17","s2-ca-p1-4-v-t-09:26","s2-ca-p1-10-o-d-12:22","s2-ca-p1-11-v-d-12:44","s2-ca-p2-12-v-t-12:36","s2-ca-r1-8-v-t-10:39","s2-ca-r2-10-v-t-11:07","s2-du-r1-3-v-t-09:52","s2-du-r1-15-v-d-13:01","s2-du-r2-7-v-t-10:49","s2-du-r2-9-o-d-11:25","s2-ri-a1-2-b-d-09:15","s2-ri-a1-10-b-t-10:30","s2-ri-p2-4-v-t-09:27","s2-ri-p2-10-v-d-12:08","s2-ri-p2-11-v-t-12:17","s2-ri-r1-2-v-t-10:21","s2-ri-r1-3-v-d-10:51","s2-ri-r1-4-v-d-11:12","s2-ri-r1-5-v-t-11:20","s2-ri-r1-5-v-d-11:30","s2-ri-r1-6-v-d-11:47","s2-va-r2-4-o-d-10:34","s3-ca-p1-3-v-t-08:00","s3-da-a1-5-v-t-08:40","s3-du-r1-12-v-d-10:16","s3-du-r2-2-v-t-09:04","s3-du-r2-9-v-t-10:46","s3-ri-p2-2-v-t-09:18","s3-ri-r1-6-v-t-10:41","s3-ri-r1-6-b-d-11:04","s3-va-a1-2-v-t-09:01","s4-ca-a1-13-v-d-13:31","s4-ca-p1-15-v-d-12:21","s4-ca-p2-8-b-d-12:16","s4-ca-p2-9-v-t-12:29","s4-du-a1-6-b-d-09:38","s4-du-p1-1-b-d-07:55","s4-du-p1-8-b-d-09:43","s4-du-p2-12-b-d-11:28","s4-du-p2-13-v-t-11:40","s4-du-r1-3-v-t-08:52","s4-ri-a2-4-v-t-07:19","s4-ri-a2-4-v-d-07:25","s4-ri-a2-10-v-t-08:40","s4-ri-p1-7-o-d-08:26","s4-ri-p1-12-v-t-09:44","s4-ri-p1-12-v-d-09:49","s4-ri-p2-1-v-d-07:09","s4-ri-p2-8-v-t-09:04","s4-ri-p2-10-v-t-09:38","s4-ri-r1-1-v-d-07:11","s4-ri-r1-9-v-d-10:13","s4-ri-r2-12-v-t-10:12","s4-va-a2-11-b-d-10:18","s4-va-p2-5-v-t-07:42","s4-va-p2-14-v-d-09:34","s4-va-r2-3-v-t-08:19","s4-va-r2-4-v-d-08:42","s1-ri-p2-4-v-t-10:24","s1-ri-p2-12-o-d-12:51","s1-ri-r1-8-v-t-11:24","s2-du-p1-4-v-d-09:57","s2-ri-r1-8-v-t-12:16","s2-ri-r1-10-v-t-12:51","s3-da-a1-5-v-d-08:47","s3-du-r2-9-v-d-10:53","s3-va-r2-3-v-d-09:10","s4-ca-p1-10-v-t-10:44","s4-cu-r1-1-b-d-07:06","s4-du-a2-10-v-t-11:12","s4-du-p2-4-o-d-08:47","s4-ri-a1-3-b-d-07:32","s4-ri-a1-4-b-d-07:42","s4-ri-p2-4-o-d-07:55","s4-ri-p2-11-v-t-10:06","s4-ri-r1-5-v-d-08:19","s4-ri-r1-8-v-t-09:22","s4-ri-r2-10-v-t-09:40")
 
 noclear<- c("s1-cu-r1-15-v-d-09:44","s1-du-a1-6-b-t-10:30","s1-ri-r1-14-v-d-13:20","s2-ca-p1-9-o-d-12:12","s2-cu-p1-11-v-t-09:50","s2-va-p1-8-o-d-11:07","s3-ri-a1-1-b-t-09:30","s3-ri-p2-7-v-t-10:58","s3-ri-r1-13-b-d-14:04","s3-ri-r1-14-v-d-14:19","s3-va-r2-4-b-d-09:18","s3-va-r2-5-v-t-09:27","s4-ri-p1-10-v-t-09:10","s4-ri-p2-2-o-d-07:17","s4-ri-r2-11-v-t-09:53","s4-ri-r2-11-v-d-10:01","s1-ca-p1-13-o-d-14:13","s1-cu-r1-13-v-d-09:02","s1-ri-r1-14-v-t-13:12","s2-ca-r2-7-v-d-10:19","s2-va-r2-9-v-d-11:47")
 
@@ -344,6 +326,11 @@ ch4_todecide %>%
 
 #quality check: inspect MAE distribution of selected HM and LM. Visually review worse incubations. 
 
+hm_apropriate<- c("s2-ca-p2-15-b-t-13:23","s4-cu-a2-3-o-d-08:08","s2-ri-r2-2-o-d-12:47","s4-cu-a2-2-v-d-07:54","s3-va-r2-7-b-d-10:02","s4-va-a2-1-b-d-07:13","s4-va-a2-2-o-d-07:21","s2-cu-r1-9-o-d-10:03","s4-cu-a2-2-v-t-07:45","s2-da-r1-1-o-d-09:00")
+non_detected_ebullition<-c()
+
+
+lm_apropriate<-c("s1-ri-r2-3-o-d-14:05","s3-ca-a1-2-v-d-07:56","s1-ca-a2-12-v-d-13:07")
 #HM chosen: check high MAE, worse-scenario is ebullitive dynamics and HM chosen.
 ch4_todecide %>% 
   filter(AICc_weight_HM>0.5) %>% 
@@ -355,11 +342,7 @@ ch4_todecide %>%
   select(UniqueID, HM.MAE, g.fact, k.ratio)%>% 
   filter(!UniqueID%in%c(hm_apropriate,lm_apropriate,non_detected_ebullition)) %>% head()
 
-hm_apropriate<- c("s2-ca-p2-15-b-t-13:23","s4-cu-a2-3-o-d-08:08","s2-ri-r2-2-o-d-12:47","s4-cu-a2-2-v-d-07:54","s3-va-r2-7-b-d-10:02","s4-va-a2-1-b-d-07:13","s4-va-a2-2-o-d-07:21","s2-cu-r1-9-o-d-10:03","s4-cu-a2-2-v-t-07:45","s2-da-r1-1-o-d-09:00")
-non_detected_ebullition<-c()
 
-
-lm_apropriate<-c("s1-ri-r2-3-o-d-14:05","s3-ca-a1-2-v-d-07:56","s1-ca-a2-12-v-d-13:07")
 
 
 ch4_todecide %>% 
@@ -377,28 +360,57 @@ ch4_todecide %>%
   ggplot(aes(x=LM.MAE))+
   geom_histogram()
 
-ch4_todecide %>% 
-  filter(rel_reduct_MAE_HM<0.05) %>% 
-  filter(LM.flux>5) %>% 
-  filter(!UniqueID%in%c(non_detected_ebullition,lm_apropriate)) %>%
-  ggplot(aes(x=LM.MAE,y=LM.flux/full.total.flux))+
-  geom_point()+
-  geom_hline(yintercept = 1)
 
-non_detected_ebullition<-c()
+#Quality check LM. inspect ratio between total flux and LM to detect ebullitive patterns that are concave (exponential curve) for which HM is never selected, but LM is also not appropriate. Re-classify to ebullition after visual inspection. 
+non_detected_ebullition<-c(
+                           )
 
-lm_apropriate<- c("s1-ri-a1-16-o-d-14:00","s1-va-r1-7-o-d-10:38")
+lm_apropriate<- c("s1-cu-r1-15-v-d-09:44","s1-ri-a1-16-o-d-14:00","s1-va-r1-7-o-d-10:38","s1-ca-r1-10-v-t-11:15","s1-cu-a1-15-v-d-11:47","s1-cu-r1-13-v-d-09:02","s1-da-p2-1-v-d-10:30","s1-du-r1-10-v-d-10:20","s1-du-r2-7-v-t-09:16","s1-va-a1-10-v-t-13:03","s1-va-r1-13-v-d-12:55","s2-da-p2-3-v-d-10:19","s2-da-p2-4-o-d-10:26","s2-da-r1-9-v-d-10:56","s2-va-a2-9-v-d-11:33","s3-cu-r1-11-o-d-09:28","s3-va-a1-8-v-d-11:44","s4-ca-a1-11-v-t-12:14","s4-cu-r1-9-v-d-09:10","s4-da-r1-3-v-t-09:25","s4-du-a1-4-v-d-09:05","s4-du-a2-4-v-t-08:34","s4-du-a2-4-v-d-08:43","s4-va-a1-12-v-d-12:25","s4-va-a2-7-v-d-09:05","s4-va-p2-3-v-d-07:25","s4-va-p2-14-v-d-09:34","s4-va-r1-12-v-t-11:28","s4-va-r1-12-v-d-11:39","s4-va-r2-9-v-t-09:44","s1-va-r1-15-v-d-13:44","s2-da-p2-12-v-d-11:57","s3-du-r1-8-v-t-09:00","s4-ca-p1-9-v-d-10:33")
+
+review_cropORdiscard<-c()
 
 
 ch4_todecide %>% 
   filter(rel_reduct_MAE_HM<0.05) %>% 
-  filter(LM.MAE>10) %>% 
-  filter(LM.flux>5) %>% 
-  arrange(desc(LM.MAE)) %>% 
-  filter(!UniqueID%in%c(non_detected_ebullition,lm_apropriate)) %>% 
-  mutate(lmtotalratio=LM.flux/full.total.flux) %>% 
-  filter(!between(lmtotalratio,0.9,1.1)) %>% 
+  filter(LM.flux>2) %>% 
+  mutate(lmtotalratio=LM.flux/mean.total.flux) %>% 
+  filter(!between(lmtotalratio,0.925,1.075)) %>% 
+  filter(!UniqueID%in%c(non_detected_ebullition,lm_apropriate,review_cropORdiscard)) %>% 
   select(UniqueID,LM.MAE, g.fact,LM.r2,lmtotalratio) %>% head()
+
+ch4_todecide %>% 
+  filter(rel_reduct_MAE_HM<0.05) %>% 
+  filter(LM.flux>2) %>% 
+  filter(between(LM.flux/mean.total.flux,0.5,1.5)) %>% 
+  filter(!UniqueID%in%c(non_detected_ebullition,lm_apropriate)) %>%
+  ggplot(aes(x=LM.MAE,y=LM.flux/mean.total.flux))+
+  geom_point()+
+  geom_hline(yintercept = 1.1)+
+  geom_hline(yintercept = 0.9)
+
+
+
+
+#Extra: check distribution of LM vs mean.total.flux for very good LM, inspect biass in mean.total.flux
+ch4_todecide %>% 
+  filter(rel_reduct_MAE_HM<0.05) %>% 
+  filter(LM.flux>2) %>% 
+  ggplot(aes(x=LM.flux, y=mean.total.flux, col=between(LM.flux/mean.total.flux, 0.90,1.1)))+
+  geom_point()+
+  scale_x_log10()+
+  scale_y_log10()
+
+#Similar SE for both approaches. 
+ch4_todecide %>% 
+  filter(LM.r2>0.85) %>% 
+  ggplot(aes(x=abs(mean.total.flux.SE), y=abs(LM.SE)))+
+  geom_point()
+  
+ch4_todecide %>% 
+  filter(LM.r2>0.99) %>% 
+  ggplot(aes(x=LM.flux/full.total.flux))+
+  geom_histogram()
+
 
 
 
@@ -416,13 +428,14 @@ ch4_todecide %>%
 ch4_ebullitive<- CH4all_nosep_flux.auto %>% 
   filter(!UniqueID%in%incub_discard) %>% #Not wrong incubations
   filter(UniqueID%in%c(incub_ebu_visual,incub_ebu_auto)) %>% #Contains ebullition (auto or visual)
-  mutate(linear_total_ratio=LM.flux/full.total.flux)
+  mutate(linear_total_ratio=LM.flux/mean.total.flux)
 
 ggMarginal(
   ch4_ebullitive %>% 
     filter(LM.r2>0.95) %>% 
     ggplot(aes(x=LM.r2, y=linear_total_ratio))+
-    geom_point()
+    geom_point()+
+    geom_vline(xintercept = 0.99)
 )
 
 #Threshold to chose LM over total.flux will be set at LM.r2 0.99, as below this threshold there are a lot of incubations whose linear flux deviates more than 10% from the total.flux
@@ -441,16 +454,16 @@ ch4_non_detected<-CH4all_nosep_flux.auto %>%
   filter(UniqueID%in%incub_ebu_visual) %>% #Contains visual ebullition
   filter(!UniqueID%in%incub_ebu_auto) %>% #Was not detected as ebullition
   mutate(prefered_model=if_else(LM.r2>0.99,"LM","total.flux"),
-         linear_total_ratio=LM.flux/full.total.flux)
+         linear_total_ratio=LM.flux/mean.total.flux)
 
 #check non detected with very good fit (r2> 0.95 & MAE<10) for LM or HM:
 #All incubations clasified as non-detected, show ebullitive patterns that make goflux not appropriate. 
 goflux_correct<- c()
 
-ebullition_correct<- c("s1-ca-a2-13-o-d-13:17","s1-ca-r1-12-o-d-11:45","s1-ca-r2-14-v-t-13:11","s1-cu-r2-13-o-d-08:55","s1-va-a2-4-v-t-09:54","s1-va-a2-8-v-t-11:07","s1-va-r2-15-o-d-13:13",
-                       "s2-da-a2-1-o-d-07:32","s2-da-a2-2-o-d-07:52","s2-da-a2-3-o-d-08:04","s2-da-a2-4-o-d-08:16","s2-da-a2-5-o-d-08:26","s2-da-a2-6-o-d-08:36","s2-da-a2-8-o-d-09:02","s2-da-a2-9-o-d-09:17","s2-da-a2-15-o-d-10:46","s2-da-p2-5-o-d-10:34","s2-va-r1-1-o-d-09:18",
-                       "s3-da-a2-11-b-d-09:20","s3-ri-p1-15-o-d-13:00",
-                       "s4-cu-p1-3-v-t-07:14","s4-cu-p2-1-v-t-06:57","s4-va-a1-8-v-t-10:58","s4-va-a2-9-v-d-09:32")
+ebullition_correct<- c("s1-ca-a1-3-v-t-09:10","s1-ca-a1-3-v-d-09:16","s1-ca-a1-7-v-t-10:26","s1-ca-a1-10-v-t-11:13","s1-ca-a2-13-o-d-13:17","s1-ca-r1-12-o-d-11:45","s1-ca-r2-14-v-t-13:11","s1-cu-p2-10-o-d-11:56","s1-cu-r2-13-o-d-08:55","s1-va-a2-4-v-t-09:54","s1-va-a2-8-v-t-11:07","s1-va-r2-9-v-t-11:18","s1-va-r2-9-v-d-11:25","s1-va-r2-15-o-d-13:13",
+                       "s2-cu-p1-9-o-d-09:19","s2-cu-p2-1-v-d-08:26","s2-cu-r2-4-v-t-08:55","s2-da-a2-1-o-d-07:32","s2-da-a2-2-o-d-07:52","s2-da-a2-3-o-d-08:04","s2-da-a2-4-o-d-08:16","s2-da-a2-5-o-d-08:26","s2-da-a2-6-o-d-08:36","s2-da-a2-8-o-d-09:02","s2-da-a2-9-o-d-09:17","s2-da-a2-15-o-d-10:46","s2-da-p2-5-o-d-10:34","s2-da-p1-6-o-d-09:08","s2-da-r2-14-v-t-10:13","s2-va-r1-1-o-d-09:18","s2-va-a1-12-b-d-13:48",
+                       "s3-ca-a1-3-v-d-08:16","s3-ca-a2-11-v-d-09:44","s3-ca-a2-16-v-t-10:50","s3-ca-a2-16-v-d-10:57","s3-ca-r1-6-v-d-09:00","s3-cu-r2-12-v-t-11:39","s3-cu-r2-12-v-d-11:46","s3-da-a2-11-b-d-09:20","s3-da-r1-6-v-d-09:31","s3-du-r1-8-v-d-09:07","s3-ri-p1-15-o-d-13:00","s3-va-a2-4-v-d-08:59",
+                       "s4-ca-a2-8-v-t-09:20","s4-ca-a2-8-v-d-09:26","s4-ca-r2-14-v-d-10:26","s4-cu-p1-3-v-t-07:14","s4-cu-p2-1-v-t-06:57","s4-va-a1-8-v-t-10:58","s4-va-a2-3-v-d-07:44","s4-va-a2-4-v-d-08:02","s4-va-a2-9-v-d-09:32","s4-va-a2-15-v-d-11:12","s4-va-r1-11-v-d-11:02")
 
 ch4_non_detected %>%
   filter((LM.r2>0.95&LM.MAE<10)|(HM.r2>0.95&HM.MAE<10)) %>% 
@@ -512,35 +525,105 @@ ch4_bestflux<- CH4all_nosep_flux.auto %>%
              if (isTRUE(aicc)) other_flags <- c(other_flags, "AICc of LM is best")
              
              if (length(other_flags) == 0) return("HM meets all criteria")
-             str_c(other_flags, collapse = "|")
+             str_c(other_flags, collapse = " | ")
            }
          )
-  )
+  ) %>% 
+  mutate(best.flux=case_when(best_model=="LM"~LM.flux,
+                             best_model=="HM"~HM.flux,
+                             best_model=="total.flux"~mean.total.flux,
+                             best_model=="None appropriate"~NA_real_))
 
 
 
 ch4_bestflux %>%
-  separate_rows(best_model_flags, sep = "\\|") %>%
+  separate_rows(best_model_flags, sep = " \\| ") %>%
   count(best_model, best_model_flags)
 
 ch4_bestflux %>% 
   count(best_model)
+
   
 
-##4.2. Final format (to-do)----
 
-#IMPLEMENTfinal format for CH4 bestflux
+#QUality check: compare which method is assigned to biggest fluxes (HM should not be present among the highest fluxes, as these most likely arise from ebullitive patterns)
+
+#Check CH4 flux distribution according to models
+ch4_bestflux %>% 
+  filter(!is.na(best.flux)) %>% 
+  ggplot(aes( x=abs(best.flux), fill=best_model))+
+  geom_histogram(bins = 100)+
+  scale_x_log10()+
+  geom_vline(xintercept=25)+
+  facet_wrap(~best_model, nrow=3)
+
+#Check HM models highest relative uncertainty (make sure we are not assigning HM when there is ebullition). 
+checked_HM_correct<- c("s2-ca-p2-15-b-t-13:23","s1-ca-a2-12-v-t-13:01","s4-va-a2-2-o-d-07:21","s1-va-r2-12-v-t-12:12","s2-da-r2-5-o-d-08:25","s2-va-a2-13-v-t-12:38","s4-va-a2-1-b-d-07:13","s3-cu-p1-2-v-t-06:41",                "s4-ca-r2-11-v-t-09:36","s4-du-r2-11-v-t-10:49","s1-cu-p1-18-v-d-14:35","s1-da-p2-3-v-t-10:58","s1-da-p2-1-v-t-10:22","s3-du-p1-13-v-t-10:46"
+                       )
+
+ebullition<- c(
+               )
+
+ch4_bestflux %>%
+  filter(best_model=="HM") %>% 
+  filter(abs(best.flux)>5) %>% 
+  filter(HM.se.rel>5) %>% 
+  filter(g.fact>1.1) %>% 
+  filter(!UniqueID%in%c(checked_HM_correct,ebullition)) %>%
+  arrange(desc(HM.se.rel)) %>% 
+  select(UniqueID, best.flux, g.fact, best_model, HM.MAE,HM.se.rel)
+  
+
+
+##4.2. Final format ----
+names(ch4_bestflux)
+#provisionally, only best.flux to be able to work with the data. 
+ch4_bestflux_formated<- ch4_bestflux %>% 
+  #general
+  select(UniqueID, nb.obs,flux.term,MDF.lim,
+         #totalflux results
+         mean.C0, mean.C0.SD,mean.Cf,mean.Cf.SD,mean.total.flux, mean.total.flux.SE, 
+         #LM results
+         LM.flux, LM.SE, LM.MAE, LM.RMSE, LM.AICc, LM.r2, LM.p.val,
+         #HM.results
+         HM.flux, HM.SE, HM.MAE, HM.RMSE, HM.AICc, HM.r2, HM.k, k.max,
+         #Fluxchoice results
+         g.fact, best_model, best_model_flags,
+         ) %>% 
+  rename(duration=nb.obs,
+         C0.10s=mean.C0, C0.10s.sd=mean.C0.SD, Cf.10s=mean.Cf, Cf.10s.sd=mean.Cf.SD,
+         total.flux=mean.total.flux, total.flux.se=mean.total.flux.SE,
+         LM.flux.se=LM.SE,
+         HM.flux.se=HM.SE,
+         best.model=best_model, best.model.flags=best_model_flags)
+
+names(ch4_bestflux_formated)
+
+#save ch4_bestflux
+write.csv(ch4_bestflux_formated, file = paste0(results_path, "ch4_bestflux.csv"),row.names = F)
 
 
 
-#5. Flux separation (to-do)-----
+
+#Quality check: inspect highest incubations with highest uncertainty for Linear estimate.
+
+crop<- c(
+)
+ok<- c("s1-cu-r1-14-v-t-09:15","s3-cu-p1-8-v-t-07:59","s3-cu-p2-4-v-t-09:20","s3-cu-p2-4-v-d-09:33","s3-cu-r2-11-v-d-11:28","s3-da-p1-3-v-t-07:46","s3-da-p1-3-v-d-07:57","s3-da-r1-8-v-t-09:59","s4-cu-a1-2-v-t-07:51","s4-cu-a1-4-v-d-08:28","s4-cu-r2-8-v-d-08:40","s4-va-p2-4-b-d-07:33")
+
+ch4_bestflux_formated %>%  filter(best.model%in%c("HM","LM")) %>% filter(LM.flux.se>quantile(LM.flux.se, 0.995)) %>% 
+  filter(!UniqueID%in%c(ok,crop)) %>% 
+  select(UniqueID, LM.flux.se,g.fact, best.model,best.model.flags)
+
+
+
+
+
+
+#TO-DO :5. Flux separation -----
 
 #Join and flag results from Flux separation process
 
-#QUality check: compare look which method is assigned to biggest fluxes (HM should not be present among the highest fluxes, as these most likely arise from ebullitive patterns)
-
-
-#THINGS to decide:------
 #WHAT TO DO WITH NON-detected ebullition when LM and HM are not appropriate? --> totalflux 
 #IS there a data-driven way to detect all Non-detected ebullition cases (or at least most critical HM ones) logged in visual inspection?
 
@@ -549,12 +632,31 @@ ch4_bestflux %>%
 
 #2. Cases with good_separation==T but non-reliable diffusion (difusion contains buble), including those with significant separation. 
 
+#IMPORTANT: all goflux-outputs of aquaHG with flux-separation==T refer to cropped incubations based on diffusion detection algorithm. 
 
+#How is significance of ebullition calculated for aquaGHG warnings?:
+
+# warnings in aquaGHG:
+# if( mybest.flux$ebullition.flux < abs(mybest.flux$diffusion.flux+SD_diffusion.flux)){
+#   warning(paste0("for ",id, ", ebullition term is within range of uncertainty of diffusion."))
+#   mybest.flux$quality.check <- "ebullition too low to be trusted"
+# }
+# 
+# if( mybest.flux$ebullition.flux < 0){
+#   warning(paste0("for ",id, ", negative ebullition term. It was forced to 0."))
+#   mybest.flux$ebullition.flux <- 0
+# }
+# 
+# if( mybest.flux$diffusion.flux > mybest.flux$total.flux){
+#   warning(paste0("for ",id, ", diffusion term is larger than total flux estimated."))
+#   mybest.flux$quality.check <- "diffusion > total flux"
+# }
 
 
 
 
 #______________----
+#CO2 Selection-----
 
 rm(list=ls())
 #Directories---------
@@ -565,7 +667,10 @@ dropbox_root <- "C:/Users/Miguel/Dropbox/RESTORE4Cs - Fieldwork/Data"
 auxfile_path<- paste0(dropbox_root,"/GHG/Working data/Auxfiles_4aquaGHG/") 
 
 #Path to results from aquaGHG:
-results_path<- "C:/Users/Miguel/Dropbox/testing_aquaGHG/"
+
+results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
+
+
 
 
 
@@ -839,14 +944,18 @@ co2_bestflux<- CO2_flux.auto %>%
              if (isTRUE(aicc)) other_flags <- c(other_flags, "AICc of LM is best")
              
              if (length(other_flags) == 0) return("HM meets all criteria")
-             str_c(other_flags, collapse = "|")
+             str_c(other_flags, collapse = " | ")
            }
          )
-  )
+  ) %>% 
+  mutate(best.flux=case_when(best_model=="LM"~LM.flux,
+                             best_model=="HM"~HM.flux,
+                             best_model=="total.flux"~mean.total.flux,
+                             best_model=="None appropriate"~NA_real_))
 
 
 co2_bestflux %>%
-  separate_rows(best_model_flags, sep = "\\|") %>%
+  separate_rows(best_model_flags, sep = " \\| ") %>%
   count(best_model, best_model_flags)
 
 co2_bestflux %>% 
@@ -854,11 +963,66 @@ co2_bestflux %>%
 
 
 
-##3.2. Final format (to-do) ------
+##3.2. Final format ------
+names(co2_bestflux)
+#provisionally, only best.flux to be able to work with the data. 
+co2_bestflux_formated<- co2_bestflux %>% 
+  #general
+  select(UniqueID, nb.obs,flux.term,MDF.lim,
+         #totalflux results
+         mean.C0, mean.C0.SD,mean.Cf,mean.Cf.SD,mean.total.flux, mean.total.flux.SE, 
+         #LM results
+         LM.flux, LM.SE, LM.MAE, LM.RMSE, LM.AICc, LM.r2, LM.p.val,
+         #HM.results
+         HM.flux, HM.SE, HM.MAE, HM.RMSE, HM.AICc, HM.r2, HM.k, k.max,
+         #Fluxchoice results
+         g.fact, best_model, best_model_flags,
+  ) %>% 
+  rename(duration=nb.obs,
+         C0.10s=mean.C0, C0.10s.sd=mean.C0.SD, Cf.10s=mean.Cf, Cf.10s.sd=mean.Cf.SD,
+         total.flux=mean.total.flux, total.flux.se=mean.total.flux.SE,
+         LM.flux.se=LM.SE,
+         HM.flux.se=HM.SE,
+         best.model=best_model, best.model.flags=best_model_flags)
+
+names(co2_bestflux_formated)
+
+#save co2_bestflux_formated
+write.csv(co2_bestflux_formated, file = paste0(results_path, "co2_bestflux.csv"),row.names = F)
 
 
+#Check CO2 flux distribution according to models
+co2_bestflux %>% 
+  filter(!is.na(best.flux)) %>% 
+  ggplot(aes( x=abs(best.flux), fill=best_model))+
+  geom_histogram(bins = 100)+
+  scale_x_log10()+
+  geom_vline(xintercept=25)+
+  facet_wrap(~best_model, nrow=3)
+
+co2_bestflux %>% 
+  filter(abs(best.flux)<1) %>% 
+  filter(!is.na(best.flux)) %>% 
+  ggplot(aes( x=(best.flux), fill=best_model))+
+  geom_histogram(bins = 100)+
+  # scale_x_log10()+
+  # geom_vline(xintercept=25)+
+  facet_wrap(~best_model, nrow=2, scales="free_y")
+
+co2_bestflux_formated %>% 
+  filter(best.model!="None appropriate") %>% 
+  ggplot(aes(x=LM.flux.se, col=best.model))+
+  geom_histogram()
 
 
+#Quality check: inspect highest incubations with highest uncertainty for estimate
 
+error_incub<- c()
+ok<- c("s1-cu-r2-16-v-t-09:36","s1-da-p1-14-v-t-11:32","s1-da-p1-14-v-d-11:36","s3-cu-r2-11-v-d-11:28","s3-cu-r2-12-v-t-11:39","s3-da-p1-10-v-d-10:30","s4-da-a1-7-v-t-09:22","s4-du-a2-4-v-t-08:34","s4-du-r2-9-v-t-10:09","s4-du-r2-10-v-t-10:26","s1-da-p1-13-v-t-11:16","s3-cu-p1-2-v-t-06:41","s3-da-p1-14-v-t-11:49","s4-da-r2-4-v-t-07:21","s1-da-p1-13-v-d-11:22")
 
+co2_bestflux_formated %>%   
+  filter(best.model%in%c("HM","LM")) %>% 
+  filter(LM.flux.se>quantile(LM.flux.se, 0.995)) %>% 
+  filter(!UniqueID%in%c(ok,error_incub)) %>% 
+  select(UniqueID, LM.flux.se,g.fact, best.model,best.model.flags)
 

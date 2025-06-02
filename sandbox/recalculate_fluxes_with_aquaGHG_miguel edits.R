@@ -1,20 +1,29 @@
 # ---
-# Authors: Camille Minaudo, MIGUEL edits 
+# Authors: Camille Minaudo, Miguel Cabrera
 # Project: "RESTORE4Cs"
-# date: "Avril 2025"
+# date: "June 2025"
 
 # ---
 
 # --- Description----
 #this script uses the functions from aquaGHG to calculate CO2 and CH4 fluxes for all incubations separately. Takes auxfiles created with script Create_CO2andCH4_auxfiles_4aquaGHG.R and Rdata updated with script Harmonize_GHG_raw2Rdata.R (accurate timezones and correct units, last update 6/5/2025)
 
-#separate loops for CO2 and CH4 (each can have different start.time and duration for a given UniqueID)
+#separated loops for CO2 and CH4 (each can have different start.time and duration for a given UniqueID)
 
 #Needs for restore4cs: 
 #CO2: no need to calulate fluxes with aquaGHG, all results have been correctly produced and model chosen with previous raw2flux scripts. Done here for consistency and to test. 
 
-#CH4: We separate dry and water incubations. For dry, no flux separation. For water, calculate both no flux separation and flux separation. we need to use aquaGHG to be able to separate difusion and ebullition and decide on method to produce final estimates ("best.flux"). full.total.flux and full.ebullition.flux are calculated within this script (section Fix full.total.flux). Plots produced by this script give aquaGHG results directly. 
+#CH4: We run independent aquaGHG loops (with and W/O flux separation), irrespective of water presence (there are ebullitive dynamics without water). Improvements needed for flux separation algorithm.
 
+#3 methods for each incubation: LM, HM, total.flux. 
+#total.flux has been modified to be calcualted using the mean concentration difference (first vs last 10s, and the elapsed time between these means). THIS ensures an accurate & appropriate estimate (albeit slightly underestimated when linear patterns in windows) associated with a reliable uncertainty estimate propagated SE (need to use SE to be comparable with uncertainties of LM/HM derived flux SE estimates). For deltaconc use Cf - C0 propagate SE, for deltatime use elapsed time between center of initial and final time-windows (duration - 10s).
+
+
+#TO-DO------
+#Improve flux separation: 
+  #1. Improve ebullition detection
+  #2. Improve selection of difusive chunk
+  #3. Set criteria for quality of separation
 
 
 #BUGs and issues------
@@ -35,7 +44,6 @@
 #I've tried to add print(p + ggtitle) within automaticflux, but apparently p is not of class ggplot
 #With flux separation, plots are displayed without issue and with correct title.
 
-
 #ISSUE/DOUBT: How to modify the criteria for best flux using the wrapper of aquaGHG? (not essential can perform selection after the flux calculation run)
 
 
@@ -54,15 +62,13 @@ RData_path <- paste0(dropbox_root, "/GHG/Processed data/RData")
 #Path to Co2 and Ch4 auxfiles with corrected start.time and duration (cropping implemented)
 auxfile_path<- paste0(dropbox_root,"/GHG/Working data/Auxfiles_4aquaGHG/") 
 
-#Set testing results_path
-results_path<- "C:/Users/Miguel/Dropbox/testing_aquaGHG/"
+#Set results_path Within R4Cs dropbox
+results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
-plots_path<- paste0(results_path,"plots/")
+plots_path<- paste0(results_path,"aquaGHG_incubation_plots/")
 if (!dir.exists(plots_path)) {
   dir.create(plots_path, recursive = TRUE)
 }
-
-# results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
 
 #Load PKGs and functions-----
@@ -197,7 +203,7 @@ for (subsite in unique(co2_auxfile$subsite)){
                         gp = grid::gpar(fontsize = 14, fontface = "bold"))
         
         ##ADD full.total.flux------
-        #ADD full.total.flux with whole incubation period:
+        #ADD full.total.flux with whole incubation period: 
         {
           #Calculate total.flux and total.flux.SD for whole incubation. Using chunks copied from aquaGHG:
           
@@ -209,6 +215,7 @@ for (subsite in unique(co2_auxfile$subsite)){
           
           concsmooth <- smooth.spline(x = mydf$time, y = mydf$conc, nknots = round(length(mydf$time)/3), spar = 0.8)
           mydf$concsmooth <- approx(concsmooth$x, concsmooth$y, xout = mydf$time, rule = 2)$y
+          
           
           #get initial, final concentration and incubation time (whole duration)
           t.win <- 30
@@ -232,6 +239,44 @@ for (subsite in unique(co2_auxfile$subsite)){
           CO2_flux.auto_i$SD_full.total.flux<- SD_full.total.flux
         }
         
+        #ADD mean.total.flux------
+        {
+          #calculate mean.C0, mean.C0.sd, mean.Cf, mean.Cf.sd, mean.total.flux, mean.total.flux.SD, mean.total.flux.SE
+          #THe approach used in aquaGHG (smoothing--> minmax difference) cannot be properly assigned to an uncertainty measure and its a bit too complex to provide a clear definition to readers/reviewers. Here we calculate instead the mean.total.flux (along mean.C0 and mean.Cf),using a 10s time window and raw concentrations. Uncertainty is easily propagated onto SD and SE (SE needed for consistency with LM.flux and HM.flux)
+          
+          #get average initial, final concentration and incubation time (whole duration, time-window 10s)
+          t.win <- 10
+          mean.C0 <- mean(mydf$conc[mydf$time<t.win])
+          mean.Cf <- mean(mydf$conc[mydf$time>max(mydf$time)-t.win])
+          #Correct incubation_time to be calcualted between central distribution of initial and final time windows. (avoids underestimation when we have), duration-(2*(t.win/2))= duration-t.win
+          mean.incubation_time <- max(mydf$time)-t.win
+          #get deltaconcs using mean C0 and Cf
+          mean.deltaconcs <- mean.Cf-mean.C0
+          
+          #Calculate SDs for initial final and deltaconc
+          mean.C0.SD <- sd(mydf$conc[mydf$time<t.win])
+          mean.Cf.SD <- sd(mydf$conc[mydf$time>max(mydf$time)-t.win])
+          mean.deltaconcs.SD <- sqrt(mean.C0.SD^2+mean.Cf.SD^2)
+          # Calculate SE for mean.deltaconc (using t.win as n for each mean conc)
+          mean.deltaconcs.SE <- sqrt((mean.C0.SD^2 / t.win) + (mean.Cf.SD^2 / t.win))
+          
+          #Calculate mean.total.flux (and associated uncertainties) by aplying flux.term from aquaGHG
+          mean.total.flux <- (mean.deltaconcs)/mean.incubation_time*CO2_flux.auto_i$flux.term # umol/m2/s
+          #Calculate SD of mean total flux
+          mean.total.flux.SD <- abs(mean.total.flux) * mean.deltaconcs.SD/mean.deltaconcs
+          # Calculate SE of mean total flux (error propagation)
+          mean.total.flux.SE <- (CO2_flux.auto_i$flux.term / mean.incubation_time) * mean.deltaconcs.SE
+          
+          #ADD mean.XX variables to flux.auto_i dataframe
+          CO2_flux.auto_i$mean.C0<- mean.C0
+          CO2_flux.auto_i$mean.C0.SD<- mean.C0.SD
+          CO2_flux.auto_i$mean.Cf<- mean.Cf
+          CO2_flux.auto_i$mean.Cf.SD<- mean.Cf.SD
+          
+          CO2_flux.auto_i$mean.total.flux <- mean.total.flux
+          CO2_flux.auto_i$mean.total.flux.SD <- mean.total.flux.SD
+          CO2_flux.auto_i$mean.total.flux.SE <- mean.total.flux.SE
+          }
         
         #Join flux to rest of dataset
         CO2_flux.auto <- rbind(CO2_flux.auto, CO2_flux.auto_i)
@@ -335,6 +380,45 @@ for (subsite in unique(ch4_auxfile$subsite)){
           #ADD full.total.flux to flux.auto_i dataframe
           CH4all_nosep_flux.auto_i$full.total.flux<- full.total.flux
           CH4all_nosep_flux.auto_i$SD_full.total.flux<- SD_full.total.flux
+        }
+        
+        #ADD mean.total.flux------
+        {
+          #calculate mean.C0, mean.C0.sd, mean.Cf, mean.Cf.sd, mean.total.flux, mean.total.flux.SD, mean.total.flux.SE
+          #THe approach used in aquaGHG (smoothing--> minmax difference) cannot be properly assigned to an uncertainty measure and its a bit too complex to provide a clear definition to readers/reviewers. Here we calculate instead the mean.total.flux (along mean.C0 and mean.Cf),using a 10s time window and raw concentrations. Uncertainty is easily propagated onto SD and SE (SE needed for consistency with LM.flux and HM.flux)
+          
+          #get average initial, final concentration and incubation time (whole duration, time-window 10s)
+          t.win <- 10
+          mean.C0 <- mean(mydf$conc[mydf$time<t.win])
+          mean.Cf <- mean(mydf$conc[mydf$time>max(mydf$time)-t.win])
+          #Correct incubation_time to be calcualted between central distribution of initial and final time windows. (avoids underestimation when we have), duration-(2*(t.win/2))= duration-t.win
+          mean.incubation_time <- max(mydf$time)-t.win
+          #get deltaconcs using mean C0 and Cf
+          mean.deltaconcs <- mean.Cf-mean.C0
+          
+          #Calculate SDs for initial final and deltaconc
+          mean.C0.SD <- sd(mydf$conc[mydf$time<t.win])
+          mean.Cf.SD <- sd(mydf$conc[mydf$time>max(mydf$time)-t.win])
+          mean.deltaconcs.SD <- sqrt(mean.C0.SD^2+mean.Cf.SD^2)
+          # Calculate SE for mean.deltaconc (using t.win as n for each mean conc)
+          mean.deltaconcs.SE <- sqrt((mean.C0.SD^2 / t.win) + (mean.Cf.SD^2 / t.win))
+          
+          #Calculate mean.total.flux (and associated uncertainties) by aplying flux.term from aquaGHG
+          mean.total.flux <- (mean.deltaconcs)/mean.incubation_time*CH4all_nosep_flux.auto_i$flux.term # umol/m2/s
+          #Calculate SD of mean total flux
+          mean.total.flux.SD <- abs(mean.total.flux) * mean.deltaconcs.SD/mean.deltaconcs
+          # Calculate SE of mean total flux (error propagation)
+          mean.total.flux.SE <- (CH4all_nosep_flux.auto_i$flux.term / mean.incubation_time) * mean.deltaconcs.SE
+          
+          #ADD mean.XX variables to flux.auto_i dataframe
+          CH4all_nosep_flux.auto_i$mean.C0<- mean.C0
+          CH4all_nosep_flux.auto_i$mean.C0.SD<- mean.C0.SD
+          CH4all_nosep_flux.auto_i$mean.Cf<- mean.Cf
+          CH4all_nosep_flux.auto_i$mean.Cf.SD<- mean.Cf.SD
+          
+          CH4all_nosep_flux.auto_i$mean.total.flux <- mean.total.flux
+          CH4all_nosep_flux.auto_i$mean.total.flux.SD <- mean.total.flux.SD
+          CH4all_nosep_flux.auto_i$mean.total.flux.SE <- mean.total.flux.SE
         }
         
         
