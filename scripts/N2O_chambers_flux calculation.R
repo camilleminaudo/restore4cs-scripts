@@ -252,9 +252,9 @@ mutate(
 
 # ---- 3. N2O flux filtering-------
 
-
-#Add significance and clean up table (remove unncecessary variables), keep SE of flux and pvalue
+#Filter fluxes arising from unreliable tf concentrations (tf_cv>0.05)
 #FILTER also fluxes of which we did not ventilate the chamber (unclear or incomplete ventilation between transparent and dark incubation logged after inspection of CO2 and CH4 timeseries)
+#Add significance and clean up table (remove unncecessary variables), keep SE of flux and pvalue
 
 #Load ventilation check: 
 vent_check<- read_xlsx(paste0(results_path, "/Dark_incubation_ventilationcheck.xlsx"),col_types = c("text","numeric","logical"))
@@ -273,8 +273,10 @@ n2o_flux_simple<- n2o_flux %>%
   rename(N2Oflux_nmol_per_second_per_m2=nmol_n2o_per_second_m2,
          N2Oflux_se=SE_nmol_n2o_per_second_m2,
          N2Oflux_pvalue=p_value) %>% 
-  select(UniqueID_notime, sampling, pilotsite, subsite, siteID, start.time, duration, water_depth, strata, chamberType,lightCondition, 
-         N2Oflux_nmol_per_second_per_m2, N2Oflux_se, N2Oflux_pvalue)
+  mutate(N2Oflux_qualityflag=case_when(tf_cv>0.05~"Unreliable flux: imprecise final concentration",
+                                TRUE~"Reliable flux")) %>% 
+  select(UniqueID_notime,  
+         N2Oflux_nmol_per_second_per_m2, N2Oflux_se, N2Oflux_pvalue,N2Oflux_qualityflag)
   
 
 
@@ -285,6 +287,9 @@ message(paste("All Fluxes: Out of ", dim(n2o_flux)[1]), " N2O fluxes, we have ",
 
 message(paste("Only reliable fluxes (clear ventilation): Out of ", dim(n2o_flux_simple)[1]), " reliable N2O incubations, we have ", sum(n2o_flux_simple$N2Oflux_pvalue<0.05), " significant fluxes (",  round(sum(n2o_flux_simple$N2Oflux_pvalue<0.05)/dim(n2o_flux_simple)[1]*100,2), "%), at the p<0.05 level")
 
+
+ggplot(n2o_flux_simple, aes(x=N2Oflux_se,y=abs(N2Oflux_nmol_per_second_per_m2),col=N2Oflux_qualityflag))+
+  geom_point()
 
 #__________________####
 
