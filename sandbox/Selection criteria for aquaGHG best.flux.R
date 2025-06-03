@@ -46,8 +46,6 @@ auxfile_path<- paste0(dropbox_root,"/GHG/Working data/Auxfiles_4aquaGHG/")
 #Path to results from aquaGHG:
 results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 
-#export path for best flux
-export_path<- paste0(dropbox_root, "/GHG/Processed data/computed_flux/Updated_bestflux_aquaGHG/")
 
 
 
