@@ -40,48 +40,161 @@ auxfile_path<- paste0(dropbox_root,"/GHG/Working data/Auxfiles_4aquaGHG/")
 results_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/")
 #Path to save plots from exploration: 
 plots_path <- paste0(dropbox_root,"/GHG/Processed data/computed_flux/plots")
+#Path with fieldsheets:
+fieldsheet_path <- paste0(dropbox_root,"/GHG/Fieldsheets")
+#Path with vegetation data: 
+vegetation_path<- paste0(dropbox_root, "/Vegetation/")
 
 
-#----Import data-----
+#----Import fluxes-----
 #1. Import bestflux results
 co2_best<- read.csv(paste0(results_path,"co2_bestflux.csv"))
 ch4_best<- read.csv(paste0(results_path,"ch4_bestflux.csv"))
 
-#2. Import auxfile details (remove duration, already present in besflux results)
-co2_aux<- read.csv(paste0(auxfile_path,"co2_auxfile.csv")) %>% select(-duration)
-ch4_aux<- read.csv(paste0(auxfile_path,"ch4_auxfile.csv")) %>% select(-duration)
 
-#3. Join data
 
-table_co2<- merge.data.frame(co2_best,co2_aux, by="UniqueID") %>% 
-  #remove wrong incubations
-  filter(co2_decission=="ok") %>% 
+#Import meta-data------
+#Read all GHGfieldsheets (using function from Camille)
+fieldsheets<- list.files(path= fieldsheet_path, recursive = T, pattern = "GHG.xlsx",full.names = T)
+field<- read_GHG_fieldsheets(fieldsheets)
+
+#Import harmnonized vegetation
+veg_data<- read.csv(paste0(vegetation_path,"RESTORE4Cs_finalvegetation_ABG_biomass_description.csv"))
+
+#Join and keep only relevant info:
+field_veg<- field %>% 
+  rename(UniqueID=uniqID) %>% 
+  separate(UniqueID, into = c("c1","c2","c3","c4","c5","c6","c7"), sep = "-", remove = F) %>% 
+  mutate(plotcode=toupper(paste(c1,c2,c3,c4,sep = "-"))) %>% 
+  merge.data.frame(veg_data %>% select(plotcode, vegetation_description), by="plotcode", all=T) %>% 
+  select(UniqueID,pilot_site,subsite,plot_id,plotcode,strata,transparent_dark,water_depth,comments, vegetation_description) %>% 
+  rename(sampling=subsite, og_strata=strata) %>% 
+  mutate(season=substr(sampling, 1,2), 
+         subsite=substr(sampling,4,8),
+         strata=case_when(og_strata=="vegetated"&water_depth>0~"vegetated water",
+                          og_strata=="vegetated"&water_depth<=0~"vegetated dry",
+                          TRUE~og_strata)) %>% 
+  select(UniqueID, pilot_site, subsite, sampling, plot_id, plotcode, og_strata, strata, water_depth, transparent_dark,vegetation_description, comments)
+
+
+
+
+#Join data-----
+
+table_co2<- merge.data.frame(co2_best,field_veg, by="UniqueID", all.x = T) %>% 
+  #Remove Unreliable fluxes 
+  filter(!grepl("Discard", best.model.flags)) %>% 
   #Add column best.flux
   mutate(best.flux=case_when(best.model=="LM"~LM.flux,
                              best.model=="HM"~HM.flux),
+         best.flux.se=case_when(best.model=="LM"~LM.flux.se,
+                                best.model=="HM"~HM.flux.se),
          best.model.MAE=case_when(best.model=="LM"~LM.MAE,
-                                  best.model=="HM"~HM.MAE),
-         sampling=substr(UniqueID,1,2),
-         pilotsite=substr(UniqueID,4,5),
-         subsite=substr(UniqueID, 7,8),
-         siteID=substr(UniqueID, 4,8)
+                                  best.model=="HM"~HM.MAE)
          )
 
-table_ch4<- merge.data.frame(ch4_best,ch4_aux, by="UniqueID")%>% 
-  #remove wrong incubations
-  filter(ch4_decission=="ok") %>% 
+table_ch4<- merge.data.frame(ch4_best,field_veg, by="UniqueID", all.x = T) %>% 
+  #Remove Unreliable fluxes 
+  filter(!grepl("Discard", best.model.flags)) %>% 
   #Add column best.flux
   mutate(best.flux=case_when(best.model=="LM"~LM.flux,
                              best.model=="HM"~HM.flux,
                              best.model=="total.flux"~total.flux),
-         sampling=substr(UniqueID,1,2),
-         pilotsite=substr(UniqueID,4,5),
-         subsite=substr(UniqueID, 7,8),
-         siteID=substr(UniqueID, 4,8))
+         best.flux.se=case_when(best.model=="LM"~LM.flux.se,
+                                best.model=="HM"~HM.flux.se,
+                                best.model=="total.flux"~total.flux.se))
 
+
+#Separate ch4 from difusive incubations
 table_ch4_difusive<- table_ch4 %>% filter(!grepl("Ebullitive", best.model.flags)) %>% 
   mutate( best.model.MAE=case_when(best.model=="LM"~LM.MAE,
                                    best.model=="HM"~HM.MAE))
+
+
+#Inspect C0.10s-----
+
+#Inpect and flag incubations that start with high CH4 concentrations (unreliable fluxes)
+#Fluxes are expected to be under-estimated when incubation starts with very high concentrations (due to lack of ventilation) this pattern should presumably only affect HM/LM fluxes in a relevant way. Fluxes driven by ebullition, should not suffer this under-estimation too much. 
+
+table_ch4_difusive %>% 
+  ggplot(aes(x=best.flux, y=C0.10s, col=best.model))+
+  geom_point()+
+  geom_errorbar(aes(ymax = C0.10s+C0.10s.sd, ymin=C0.10s-C0.10s.sd))
+
+
+table_ch4_difusive %>% 
+  filter(C0.10s<3000) %>% 
+  ggplot(aes(x=C0.10s))+
+  geom_histogram(bins = 100)+
+  scale_x_continuous(breaks = seq(1500,12000,by=100))
+
+#A few fluxes with starting CH4 concentration above 2500: make sure they do not come from cropped incubations: 
+
+cropdecissions<- read_xlsx(paste0(dropbox_root,"/GHG/Working data/Incubation_quality/Inspection_table_allincubations_tocrop_perGHG.xlsx")) %>% select(UniqueID,co2_start_crop_s,ch4_start_crop_s, ch4_end_crop_s)
+####FINAL CHECKS and RE-calculations-----
+
+#ALL re-calculated
+uncrop<- c()
+           
+
+#artefacts cropped, start high ok
+ok<- c("s1-va-a2-15-v-d-13:46", "s1-va-a2-8-v-d-11:13", "s2-ca-a2-2-v-d-08:33",  "s2-ca-a2-2-v-t-08:25","s2-ca-p2-15-b-t-13:23", "s2-ca-p2-14-b-t-13:13", "s2-ri-r2-12-v-d-12:40", "s2-va-a2-8-v-d-11:13", "s3-va-a2-12-o-d-11:05","s3-va-a2-5-v-d-09:17", "s3-va-p1-9-v-t-10:42", "s4-da-a2-1-o-d-06:31","s4-va-a1-1-o-d-08:30","s4-va-a2-2-o-d-07:21", "s4-va-p2-2-b-d-07:12","s1-ca-a2-7-v-t-11:58","s1-ri-p1-1-v-d-10:19","s2-du-a2-3-v-t-09:34","s2-du-a2-4-v-d-09:57","s2-du-a2-5-v-d-10:24","s2-du-a2-5-v-t-10:16","s2-ri-a2-2-b-d-08:51","s2-ri-r2-4-v-t-09:15","s3-va-a2-5-v-t-09:09","s4-ca-a2-6-v-t-08:55","s4-va-a2-1-b-d-07:13","s1-du-a2-15-b-t-13:05","s2-ca-a1-1-o-d-08:47","s2-ca-a1-2-o-d-08:59","s2-ca-a2-10-v-d-10:58","s2-ca-a2-4-b-d-09:01","s2-ca-r2-5-o-d-09:42","s2-du-a2-6-v-d-10:40","s2-du-r1-3-v-d-09:59","s2-du-r1-4-o-d-10:07","s2-du-r1-5-o-d-10:23","s2-du-r1-7-v-t-10:41","s2-du-r1-9-v-t-11:15","s2-ri-a2-14-o-d-11:39","s3-du-p2-1-o-d-08:05","s3-va-a2-13-v-t-11:22","s4-ca-a2-4-v-t-08:25","s4-da-r1-3-v-t-09:25","s1-cu-p2-13-o-d-12:37","s1-du-p1-3-o-d-08:43","s2-du-a2-9-v-d-11:46","s2-du-r1-14-b-d-12:46","s2-du-r1-15-v-d-13:01","s2-ri-p2-3-v-d-09:15","s2-ri-p2-7-v-d-10:29"
+       )
+
+table_ch4_difusive %>% 
+  filter(C0.10s>2250) %>% 
+  merge.data.frame(cropdecissions, by="UniqueID", all.x = T) %>% 
+  mutate(croped=if_else(!is.na(ch4_start_crop_s),T,F)) %>% 
+  filter(croped) %>% 
+  filter(!UniqueID%in%c(uncrop, ok)) %>% 
+  filter(co2_start_crop_s!=ch4_start_crop_s) %>% 
+  select(UniqueID, C0.10s, best.model, g.fact,ch4_start_crop_s,ch4_end_crop_s) %>% head()
+
+
+
+
+table_ch4 %>% 
+  ggplot(aes(x=C0.10s, y=Cf.10s, col=best.model))+
+  geom_point()+
+  geom_abline(slope=1, intercept = 0)+
+  facet_wrap(~C0.10s>5000,scales="free")
+
+
+  ggplot(aes(x=C0.10s, y=total.flux.se/total.flux, col=best.model))+
+  geom_point()+
+  geom_abline(slope=1, intercept = 0)+
+  facet_wrap(~C0.10s>5000,scales="free")
+
+
+table_ch4 %>% 
+  ggplot(aes(x=C0.10s, y=C0.10s.sd/C0.10s, col=best.model))+
+  geom_point()+
+  facet_wrap(~C0.10s>3000,scales="free")
+
+
+#How many plots will be left without any CH4flux at different thresholds of max C0.10s?
+
+# Define thresholds
+thresholds <- seq(2500, 10000, by = 500)
+
+# Apply logic for each threshold, keeping full data
+annotated <- lapply(thresholds, function(thresh) {
+  table_ch4 %>%
+    group_by(plotcode) %>%
+    mutate(all_above = all(C0.10s > thresh)) %>%
+    ungroup() %>%
+    mutate(threshold = thresh)
+}) %>%
+  bind_rows()
+
+annotated %>% 
+  group_by(threshold) %>% 
+  summarise(count=sum(all_above)) %>% 
+  ggplot(aes(x=threshold, y=count))+
+  geom_point()
+
+
+  
 
 
 
@@ -92,9 +205,9 @@ ind_lm <- which(table_co2$best.model=="LM")
 in_hm <- which(table_co2$best.model=="HM")
 
 message("CO2 Fluxes calculated for ",n, " different incubations.")
-message(" --- ",dim(table_co2[table_co2$strata=="bare",])[1] ," in bare ")
-message(" --- ",dim(table_co2[table_co2$strata=="open water",])[1] ," in open water ")
-message(" --- ",dim(table_co2[table_co2$strata=="vegetated",])[1] ," in vegetated")
+message(" --- ",dim(table_co2[table_co2$og_strata=="bare",])[1] ," in bare ")
+message(" --- ",dim(table_co2[table_co2$og_strata=="open water",])[1] ," in open water ")
+message(" --- ",dim(table_co2[table_co2$og_strata=="vegetated",])[1] ," in vegetated")
 
 
 message("CO2 Best model is non-linear for ",round(length(in_hm)/n*100*100)/100,"% of the measurements")
