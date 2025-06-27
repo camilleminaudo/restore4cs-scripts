@@ -24,6 +24,7 @@ library(readxl)
 library(lubridate)
 library(zoo)
 library(ggplot2)
+library(ggpubr)
 library(grid)
 library(egg)
 require(dplyr)
@@ -56,7 +57,7 @@ vegetation_path<- paste0(dropbox_root, "/Vegetation/")
 co2_best<- read.csv(paste0(results_path,"co2_bestflux.csv"))
 ch4_best<- read.csv(paste0(results_path,"ch4_bestflux.csv"))
 
-
+# n2o_best<- read.csv(paste0())
 
 #Import meta-data------
 
@@ -119,6 +120,7 @@ after_veg_cut_IDs<- field_veg2 %>% filter(grepl(pattern = "after vegetation remo
 #we need to decide on a way to include the relevant observations, Harmonizing comments into general observations not related to vegetation: Check what would those be:
 
   #"Rising tide (x-xcm depth)/Receding tide. water_depth==avg(min-max cm): DONE
+  #"after vegetation removal": DONE
   #"Submerged vegetation" (no further especification): DONE
   #"water_depth is lower estimate": DONE
   #"Tidal pool": DONE
@@ -142,11 +144,26 @@ tides<-field_veg2 %>%
   
 #Any non-tide with info captured in tide-behaviour or depth range?
   tides %>% filter(!tide_presence) %>% filter(!is.na(tide_behaviour)) %>% select(harmonized_tide_obs) %>% distinct()
-  tides %>% filter(!tide_presence) %>% filter(!is.na(depth_range))%>% select(harmonized_tide_obs) %>% distinct()
 
   #Check unique combinations of tide_obs
   tides %>% filter(tide_presence) %>% select(harmonized_tide_obs) %>% distinct()  
 
+#After vegetation removal obs harmonization: 
+  veg.cut<- field_veg2 %>% 
+    filter(strata=="bare") %>% 
+    filter(!is.na(comments)) %>% 
+    select(UniqueID, comments) %>% 
+    mutate(harmonized_vegcut_obs=if_else(grepl("after vegetation removal",comments, ignore.case = T), "After vegetation removal",""))
+  
+  
+  #Check, any non-bare with "after vegetation removal"?
+  field_veg2 %>% 
+    mutate(harmonized_vegcut_obs=if_else(grepl("after vegetation removal",comments, ignore.case = T), "After vegetation removal","")) %>% 
+    filter(strata!="bare") %>% 
+    filter(harmonized_vegcut_obs!="")
+  
+  
+  
   
 #Submerged vegetation obs harmonization: 
 sub.veg<- field_veg2 %>% 
@@ -227,17 +244,19 @@ meta_harm_uniqueID<-field_veg2 %>%
   mutate(obs_subveg=if_else(grepl("submerged",comments, ignore.case = T), "submerged vegetation","")) %>% 
   #Tidal-pools obs:
   mutate(obs_tidalpool=if_else(grepl("Tidal-pool",comments, ignore.case = T), "tidal-pool","")) %>% 
+  #Vegetation-cut obs: 
+  mutate(obs_vegcut=if_else(grepl("after vegetation removal",comments, ignore.case = T), "bare after vegetation removal","")) %>%
   #Wet sediment & pressence of microbial mat obs: 
     mutate(obs_moisture=str_extract(pattern = "wet soil|dry soil|dry sediment|wet sediment|wet sand|dry sand", comments),
            obs_moisture=if_else(is.na(obs_moisture),"",obs_moisture),
            obs_biofilm=if_else(grepl(pattern = "Biofilm|biofilm|phyto|microbial",comments),"microbial/algae mat visible","")) %>% 
   #COMBINE harmonized obs into a single string: either obs_combined or ""
   rowwise() %>% 
-  mutate(obs_combined = paste(c_across(c(obs_tide_behaviour,obs_depth_range,obs_tidalpool, obs_lager_depth, obs_subveg,obs_moisture, obs_biofilm))[c_across(c(obs_tide_behaviour,obs_depth_range,obs_tidalpool, obs_lager_depth, obs_subveg,obs_moisture, obs_biofilm)) != ""], collapse = "; ")) %>%
+  mutate(obs_combined = paste(c_across(c(obs_tide_behaviour,obs_depth_range,obs_tidalpool, obs_lager_depth, obs_subveg,obs_vegcut,obs_moisture, obs_biofilm))[c_across(c(obs_tide_behaviour,obs_depth_range,obs_tidalpool, obs_lager_depth, obs_subveg,obs_vegcut,obs_moisture, obs_biofilm)) != ""], collapse = "; ")) %>%
   ungroup() %>% 
   mutate(obs_combined = sub("^; ", "", obs_combined)) %>% 
   #Remove individual obs: 
-  select(-c(obs_tide_behaviour,obs_depth_range,obs_tidalpool, obs_lager_depth, obs_subveg,obs_moisture, obs_biofilm)) %>% 
+  select(-c(obs_tide_behaviour,obs_depth_range,obs_tidalpool, obs_lager_depth, obs_subveg,obs_vegcut,obs_moisture, obs_biofilm)) %>% 
   #ADAPT vegetation data: for non-vegetated plots: AGB=0, aboveground_vegetation_description="none"
   mutate(ABG_veg_description=if_else(strata=="vegetated",vegetation_description,"no aboveground vegetation"),
          ABG_veg_biomass_gpersquaremeter=if_else(ABG_veg_description=="no aboveground vegetation",0,ABG_biomass_gpersquaremeter)) %>% 
@@ -253,10 +272,15 @@ combine_to_review<- meta_harm_uniqueID %>%
 uniqueIDs_harmonized_field_obs<- meta_harm_uniqueID %>% 
   #Rename plot_num and field_observations
   rename(plot_num=plot_id, field_observations=obs_combined) %>% 
-  select(UniqueID, plotcode, sampling, plot_num, date, start_time, latitude,longitude, 
+  #Recover season, casepilot, subsite
+  mutate(season=substr(sampling, 1,2),
+         casepilot=substr(sampling,4,5),
+         subsite=substr(sampling, 4,8)) %>% 
+  #reorder variables
+  select(UniqueID, plotcode,season,casepilot,subsite, sampling, plot_num, date, start_time, latitude,longitude, 
          gas_analyzer, strata, water_depth, field_observations, ABG_veg_description, ABG_veg_biomass_gpersquaremeter,transparent_dark)
 
-
+head(uniqueIDs_harmonized_field_obs)
 
 ##Details per plotcode-----
 
@@ -312,12 +336,16 @@ plotcode_harmonized_field_obs<- meta_harm_uniqueID %>%
   #Combine transparent_dark with UniqueID: migrate UniqueID identifier to transparent_UniqueID or dark_UniqueID
   pivot_wider(names_from = transparent_dark, values_from = UniqueID) %>% 
   rename(plot_num=plot_id, dark_UniqueID=dark, transparent_UniqueID=transparent, field_observations=obs_combined) %>% 
+  #Recover season, casepilot, subsite
+  mutate(season=substr(sampling, 1,2),
+         casepilot=substr(sampling,4,5),
+         subsite=substr(sampling, 4,8)) %>% 
   #Reorder variables
-  select(plotcode, sampling, plot_num, date, plot_start_time, latitude, longitude, gas_analyzer, strata, water_depth, field_observations, ABG_veg_description, ABG_veg_biomass_gpersquaremeter,dark_UniqueID,transparent_UniqueID) %>% 
+  select(plotcode,season,casepilot,subsite, sampling, plot_num, date, plot_start_time, latitude, longitude, gas_analyzer, strata, water_depth, field_observations, ABG_veg_description, ABG_veg_biomass_gpersquaremeter,dark_UniqueID,transparent_UniqueID) %>% 
   #arrange obs
   arrange(sampling, plot_num)
   
-
+head(plotcode_harmonized_field_obs)
 
 #Save fielddetails:
   #Per UniqueID
@@ -347,7 +375,7 @@ field_veg2 %>%
 #Channel sampled in all seasons, it is the only water-incubation for S4. 
 #Without channel, S1, S2 and S3, have >4 open water incubations. 
 
-#DECISSION: fluxes from peripheral channel are not representative of subsite conditions, temporary water-bodies in seasons with water presence are well represented without including the channel samples. We will exclude these from paper (and database)
+#DECISSION: Carlos says channel is one of main sources of alreration: it needs to be included
 
 peripheral_channel_IDs<- field_veg2 %>% filter(grepl("VA-A1", sampling)) %>% filter(strata=="open water") %>% filter(grepl("Peripheral channel", comments)) %>% pull(UniqueID)
 
@@ -447,7 +475,9 @@ bare_lightdark<- field_veg2 %>%
   select(-c(co2_model, co2_LM.flux,co2_HM.flux,
             ch4_model, ch4_LM.flux,ch4_HM.flux, ch4_total.flux)) %>% 
   #filter out incubations without any useful flux
-  filter(!(is.na(co2_bestflux*ch4_bestflux)))
+  filter(!(is.na(co2_bestflux)&is.na(ch4_bestflux))) %>% 
+  mutate(season=substr(sampling,1,2),
+         subsite=sub(pattern = "S[0-9]{1}-","", x = sampling))
 
 
 #FIRST ISSUE: S2-RI-A1: only 3 bare-dark for 100% bare subsite
@@ -457,7 +487,8 @@ bare_lightdark %>%
   filter(grepl("RI-A",sampling)) %>%  
   ggplot(aes(x=factor(plot_id), y=co2_bestflux, col=transparent_dark))+
   geom_point()+
-  facet_wrap(~sampling)
+  facet_grid(season~subsite,scales="free")+
+  ggtitle("CO2 fluxes")
 #S2-RI-A1: strong & consistent difference bare-transparent vs bare-dark for CO2. Use only dark despite of very low n (still net negative flux for most samplings)
 
 
@@ -466,7 +497,8 @@ bare_lightdark %>%
   filter(grepl("RI-A",sampling)) %>%  
   ggplot(aes(x=factor(plot_id), y=ch4_bestflux, col=transparent_dark))+
   geom_point()+
-  facet_wrap(~sampling)
+  facet_grid(season~subsite,scales="free")+
+  ggtitle("CH4 fluxes")
 #S2-RI-A1: Consistent but not too strong effect due to light. Decision to include or exclude bare-transparent not critical. 
 
 
@@ -479,20 +511,21 @@ bare_lightdark %>%
 
 #Comparison transparent/dark CO2 
 bare_lightdark %>% 
-  filter(grepl("CA-P2",sampling)) %>%  
+  filter(grepl("S2-CA-P2",sampling)) %>%  
   ggplot(aes(x=factor(plot_id), y=co2_bestflux, col=transparent_dark))+
   geom_point()+
-  geom_boxplot(aes(x=7))+
-  facet_wrap(~sampling)
+  facet_wrap(~sampling)+
+  ggtitle("CO2 fluxes")
 #S2-CA-P2: no apparent effect of light on bare-CO2 fluxes. 3 last plots with near cero emissions (wet sediment, no light-dependent)
 
 #Comparison transparent/dark CH4 
 bare_lightdark %>% 
-  filter(grepl("CA-P2",sampling)) %>%  
+  filter(grepl("S2-CA-P2",sampling)) %>%  
   ggplot(aes(x=factor(plot_id), y=ch4_bestflux, col=transparent_dark))+
   geom_point()+
-  geom_boxplot(aes(x=7))+
-  facet_wrap(~sampling)
+  geom_point(data=. %>% filter(transparent_dark=="dark"))+
+  facet_wrap(~sampling)+
+  ggtitle("CH4 fluxes")
 #S2-CA-P2: no apparent effect of light on bare-CH4.  3 last plots with very-high fluxes  (wet sediment, no light-dependent). 
 
 
@@ -505,21 +538,285 @@ bare_lightdark %>%
 #WHAT TO DO: 1 subsite losses all bare-representativity if we only use dark incubations. 
 
 bare_lightdark %>% 
-  filter(grepl("DU-", sampling))%>%  
+  filter(grepl("S1-DU-A1|S1-DU-A2|S1-DU-P2", sampling))%>%  
   ggplot(aes(x=factor(plot_id), y=co2_bestflux, col=transparent_dark))+
   geom_point()+
-  facet_wrap(~sampling)
+  facet_wrap(~sampling)+
+  ggtitle("CO2 flux")
 #S1-DU-A1: similar values for bare-light and bare-transparent, no obvious difference
 #S1-DU-A2: Only bare transparent nothing else that could be used. 1 emits, 2 drawdown
 #s1-DU-P2: 1 bare-transparent with strong uptake, 2 transparent and 1 dark near cero flux with similar values. 
 
 bare_lightdark %>% 
-  filter(grepl("DU-", sampling))%>%  
+  filter(grepl("S1-DU-A1|S1-DU-A2|S1-DU-P2", sampling))%>%  
   # filter(!grepl("S4-DU-P2", sampling)) %>% 
   ggplot(aes(x=factor(plot_id), y=ch4_bestflux, col=transparent_dark))+
   geom_point()+
-  facet_wrap(~sampling)
+  geom_point(data=. %>% filter(transparent_dark=="dark"))+
+  facet_wrap(~sampling)+
+  ggtitle("CH4 flux")
 #No differences light-dark for CH4
 
 #DECISSION BARE-TRANSPARENT: only 1 subsite completely loses bare-strata representation, for others losing some bare strata representativity remaining fluxes are still within regular distribution. We will only use bare-dark for the paper. We can still include bare-transparent in database. 
+
+
+
+#doubt: n_daily reduction----
+
+##CO2-----
+
+#check n reduction: How many chambers result NA for daily?
+
+#exclude after veg-cut, exclude bare-transparent for this calculation.
+co2_best %>% 
+  select(UniqueID, best.model) %>% 
+  filter(!UniqueID%in%after_veg_cut_IDs) %>% #discard after veg cut
+  filter(!UniqueID%in%bare_transparent_IDs) %>% #discard bare-transparent fluxes
+  separate(UniqueID, into = c("c1","c2","c3","c4","c5","c6","c7"), sep = "-", remove = F) %>% 
+  mutate(plotcode=toupper(paste(c1,c2,c3,c4,sep = "-"))) %>% 
+  mutate(validflux=if_else(best.model=="None appropriate",F,T)) %>% 
+  select(plotcode, validflux) %>%
+  group_by(plotcode) %>% 
+  summarise(n_incubations=n(),
+            valid_incubations=sum(validflux),
+            chamber_with_flux=valid_incubations>0,
+            daily_NA=n_incubations!=valid_incubations) %>% 
+  ungroup() %>% 
+  summarise(n_chambers=n(),
+            n_chambers_with_flux=sum(chamber_with_flux),
+            n_chambers_notanyflux=n_chambers-n_chambers_with_flux,
+            n_chambers_NAdaily=sum(daily_NA))
+
+#Out of 2088 chambers: 
+#31 chambers without any valid flux, 
+#46 chambers without a vaild net_daily flux
+
+#15 chambers with 1 valid flux and 1 NA flux for CO2
+#Which chambers are these? are they concentrated in any particular subsite sampling?
+
+#Check:
+co2_best %>% 
+  select(UniqueID, best.model) %>% 
+  filter(!UniqueID%in%after_veg_cut_IDs) %>% #discard after veg cut
+  filter(!UniqueID%in%bare_transparent_IDs) %>% #discard bare-transparent fluxes
+  separate(UniqueID, into = c("c1","c2","c3","c4","c5","c6","c7"), sep = "-", remove = F) %>% 
+  mutate(plotcode=toupper(paste(c1,c2,c3,c4,sep = "-"))) %>% 
+  mutate(validflux=if_else(best.model=="None appropriate",F,T)) %>% 
+  select(plotcode, validflux) %>%
+  group_by(plotcode) %>% 
+  summarise(n_incubations=n(),
+            valid_incubations=sum(validflux),
+            chamber_with_flux=valid_incubations>0,
+            daily_NA=n_incubations!=valid_incubations) %>%
+  mutate(sampling=str_extract(pattern = "S[0-9]{1}-[A-Z]{2}-[A-Z]{1}[0-9]{1}",string = plotcode)) %>%
+  group_by(sampling) %>% 
+  summarise(n_chambers=n(),
+            n_chambers_with_flux=sum(chamber_with_flux),
+            n_chambers_notanyflux=n_chambers-n_chambers_with_flux,
+            n_chambers_NAdaily=sum(daily_NA),
+            n_chambers_withdaily=n_chambers-n_chambers_NAdaily) %>% 
+  filter(!n_chambers==n_chambers_with_flux)
+
+#generally apropriate number of incubations, 1 subsite sampling with a lot of artefacts ends up with only 6 daily balances for CO2 but good-enough representation for all strata. 
+
+
+
+
+##CH4-----
+
+#check n reduction: How many chambers result NA for daily?
+
+#exclude after veg-cut, exclude bare-transparent for this calculation.
+ch4_best %>% 
+  select(UniqueID, best.model) %>% 
+  filter(!UniqueID%in%after_veg_cut_IDs) %>% #discard after veg cut
+  filter(!UniqueID%in%bare_transparent_IDs) %>% #discard bare-transparent fluxes
+  separate(UniqueID, into = c("c1","c2","c3","c4","c5","c6","c7"), sep = "-", remove = F) %>% 
+  mutate(plotcode=toupper(paste(c1,c2,c3,c4,sep = "-"))) %>% 
+  mutate(validflux=if_else(best.model=="None appropriate",F,T)) %>% 
+  select(plotcode, validflux) %>%
+  group_by(plotcode) %>% 
+  summarise(n_incubations=n(),
+            valid_incubations=sum(validflux),
+            chamber_with_flux=valid_incubations>0,
+            daily_NA=n_incubations!=valid_incubations) %>% 
+  ungroup() %>% 
+  summarise(n_chambers=n(),
+            n_chambers_with_flux=sum(chamber_with_flux),
+            n_chambers_notanyflux=n_chambers-n_chambers_with_flux,
+            n_chambers_NAdaily=sum(daily_NA))
+
+#Out of 2088 chambers: 
+#19 chambers without any valid flux, 
+#48 chambers without a vaild net_daily flux
+
+#29 chambers with 1 valid flux and 1 NA flux for CH4
+#Which chambers are these? are they concentrated in any particular subsite sampling?
+
+#Check:
+#Check:
+ch4_best %>% 
+  select(UniqueID, best.model) %>% 
+  filter(!UniqueID%in%after_veg_cut_IDs) %>% #discard after veg cut
+  filter(!UniqueID%in%bare_transparent_IDs) %>% #discard bare-transparent fluxes
+  separate(UniqueID, into = c("c1","c2","c3","c4","c5","c6","c7"), sep = "-", remove = F) %>% 
+  mutate(plotcode=toupper(paste(c1,c2,c3,c4,sep = "-"))) %>% 
+  mutate(validflux=if_else(best.model=="None appropriate",F,T)) %>% 
+  select(plotcode, validflux) %>%
+  group_by(plotcode) %>% 
+  summarise(n_incubations=n(),
+            valid_incubations=sum(validflux),
+            chamber_with_flux=valid_incubations>0,
+            daily_NA=n_incubations!=valid_incubations) %>%
+  mutate(sampling=str_extract(pattern = "S[0-9]{1}-[A-Z]{2}-[A-Z]{1}[0-9]{1}",string = plotcode)) %>%
+  group_by(sampling) %>% 
+  summarise(n_chambers=n(),
+            n_chambers_with_flux=sum(chamber_with_flux),
+            n_chambers_notanyflux=n_chambers-n_chambers_with_flux,
+            n_chambers_NAdaily=sum(daily_NA),
+            n_chambers_withdaily=n_chambers-n_chambers_NAdaily) %>% 
+  filter(!n_chambers==n_chambers_with_flux)
+
+
+#doubt: light/dark daily balance appropriate for CH4?----
+
+#PLot: transparent vs dark flux (log-log)
+
+#Plot: transparent/dark ratio vs transparent flux. 
+
+
+ghg_lightdark<- field_veg2 %>% 
+  filter(!UniqueID%in%after_veg_cut_IDs) %>% #discard after veg cut
+  # filter(!UniqueID%in%bare_transparent_IDs) %>% #discard bare-transparent fluxes
+    merge.data.frame(co2_best %>% select(UniqueID,best.model,LM.flux,HM.flux) %>% rename(co2_model=best.model,co2_LM.flux=LM.flux, co2_HM.flux=HM.flux), all.x = T) %>% 
+  merge.data.frame(ch4_best %>% select(UniqueID,best.model,LM.flux,HM.flux,total.flux) %>% rename(ch4_model=best.model,ch4_LM.flux=LM.flux, ch4_HM.flux=HM.flux, ch4_total.flux=total.flux), all.x = T) %>% 
+  #select best flux
+  mutate(co2_bestflux=case_when(co2_model=="LM"~co2_LM.flux,
+                                co2_model=="HM"~co2_HM.flux,
+                                TRUE~NA_real_),
+         ch4_bestflux=case_when(ch4_model=="LM"~ch4_LM.flux,
+                                ch4_model=="HM"~ch4_HM.flux,
+                                ch4_model=="total.flux"~ch4_total.flux,
+                                TRUE~NA_real_)) %>% 
+  #remove extra cols:
+  select(-c(co2_model, co2_LM.flux,co2_HM.flux,
+            ch4_model, ch4_LM.flux,ch4_HM.flux, ch4_total.flux)) %>% 
+  #filter out incubations without any useful flux
+  filter(!(is.na(co2_bestflux)&is.na(ch4_bestflux))) %>% 
+  mutate(season=substr(sampling,1,2),
+         subsite=sub(pattern = "S[0-9]{1}-","", x = sampling)) %>% 
+  select(plotcode, sampling, date, gas_analyzer, plot_id, strata, transparent_dark, co2_bestflux, ch4_bestflux) %>% 
+  pivot_wider(names_from = transparent_dark, values_from = c(co2_bestflux, ch4_bestflux)) %>% 
+  mutate(ch4_ratio_light_dark=(ch4_bestflux_transparent/ch4_bestflux_dark))
+
+
+
+
+#CH4
+#Minimums for logscale transformations: 
+ghg_lightdark %>% 
+  summarise(min_ch4_trans=min(ch4_bestflux_transparent,na.rm = T),
+            min_ch4_dark=min(ch4_bestflux_dark,na.rm = T),
+            min_co2_trans=min(co2_bestflux_transparent,na.rm = T),
+            min_co2_dark=min(co2_bestflux_dark,na.rm = T)
+  )
+
+##CH4 lightVSdark----
+#all incubations
+ghg_lightdark %>% 
+  mutate(site = substr(sampling, 4, 5)) %>%
+  filter(!is.na(ch4_bestflux_dark*ch4_bestflux_transparent)) %>% 
+  ggplot(aes(x=4+ch4_bestflux_dark, y=4+ch4_bestflux_transparent))+
+  geom_point(aes(col=site))+
+  geom_vline(xintercept = 4)+
+  geom_hline(yintercept = 4)+
+  geom_abline( slope = 1, linetype=2)+
+  geom_smooth(method = "lm")+
+  stat_cor()+
+  scale_x_log10()+
+  scale_y_log10()+
+  ggtitle("CH4 light vs dark (all data)")
+
+
+#all incubations
+ghg_lightdark %>% 
+  filter(strata=="bare") %>% 
+  mutate(site = substr(sampling, 4, 5)) %>%
+  filter(!is.na(ch4_bestflux_dark*ch4_bestflux_transparent)) %>% 
+  ggplot(aes(x=4+ch4_bestflux_dark, y=4+ch4_bestflux_transparent))+
+  geom_point(aes(col=site))+
+  geom_vline(xintercept = 4)+
+  geom_hline(yintercept = 4)+
+  geom_abline( slope = 1, linetype=2)+
+  geom_smooth(method = "lm")+
+  stat_cor()+
+  scale_x_log10()+
+  scale_y_log10()
+
+
+
+
+
+#test Normalized effect of light on flux (per gas)
+
+# Get central 99% quantile bounds
+bounds <- quantile(ghg_lightdark$ch4_ratio_light_dark, probs = c(0.005, 0.995), na.rm = TRUE)
+
+
+ghg_lightdark %>% 
+  filter(!is.na(ch4_ratio_light_dark)) %>%
+  filter(ch4_ratio_light_dark >= bounds[1],
+         ch4_ratio_light_dark <= bounds[2]) %>%
+  mutate(site = substr(sampling, 4, 5)) %>%
+  ggplot(aes(x=4+ch4_bestflux_transparent, y=ch4_ratio_light_dark,col=site))+
+  geom_point()+
+  geom_vline(xintercept = 4)+
+  geom_hline(yintercept = 1)+
+  scale_x_log10()+
+  ggtitle("Ratio transparent/dark CH4flux (central 99%)")
+#Very high variability in ratio overall
+
+
+#Only bare incubations: ratio transp/dark 
+ghg_lightdark %>% 
+  filter(!is.na(ch4_ratio_light_dark)) %>%
+  filter(strata=="bare") %>% 
+  mutate(site = substr(sampling, 4, 5)) %>%
+  ggplot(aes(x=4+ch4_bestflux_transparent, y=ch4_ratio_light_dark,col=site))+
+  geom_point()+
+  geom_vline(xintercept = 4)+
+  geom_hline(yintercept = 1)+
+  scale_x_log10()+
+  ggtitle("Ratio transparent/dark CH4flux (bare only)")
+#Much better correspondence trasnparent:dark in Bare than vegetated
+
+
+# Filter and summarize
+ghg_lightdark %>%
+  filter(!is.na(ch4_ratio_light_dark)) %>%
+  filter(ch4_ratio_light_dark >= bounds[1],
+         ch4_ratio_light_dark <= bounds[2]) %>%
+  mutate(site = substr(sampling, 4, 5)) %>%
+  mutate(transp_ch4_largerthan1 = ch4_bestflux_transparent > 1) %>%
+  group_by(transp_ch4_largerthan1) %>%
+  summarise(
+    n = n(),
+    avg_ratiolightdark_ch4 = mean(ch4_ratio_light_dark),
+    sd_ratiolightdark_ch4 = sd(ch4_ratio_light_dark),
+    t_pval = t.test(ch4_ratio_light_dark, mu = 0)$p.value,
+    w_pval = wilcox.test(ch4_ratio_light_dark, mu = 0)$p.value
+  )
+
+
+ghg_lightdark %>%
+  filter(!is.na(ch4_ratio_light_dark)) %>%
+  filter(ch4_ratio_light_dark >= bounds[1],
+         ch4_ratio_light_dark <= bounds[2]) %>%
+  mutate(site = substr(sampling, 4, 5)) %>%
+  mutate(transp_ch4_largerthan1 = ch4_bestflux_transparent > 1) %>%
+  ggplot(aes(x = transp_ch4_largerthan1, y = ch4_ratio_light_dark)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  labs(y = "Ratio CH4flux Transparent/Dark",
+       x = "Transparent flux > 1 nmol")
 
