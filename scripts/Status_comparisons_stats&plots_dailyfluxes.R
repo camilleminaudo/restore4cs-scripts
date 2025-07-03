@@ -57,6 +57,8 @@ library(suncalc)
 #For modelling: 
 library(lmerTest) #similar to lme4 but allows to estimate significance of predictors (and interactions)
 library(bestNormalize)
+library(outliers) #Outlier exploration
+library(rstatix) #Outlier exploration
 library(emmeans)
 library(DHARMa)
 library(performance)
@@ -497,11 +499,11 @@ select(-c(dark, transparent)) %>%
          ch4_mmol=ch4*1e-6,
          n2o_mmol=n2o*1e-6,
          #Global warming potential GWP100: 
-         gwp_co2=co2_mol*44, #molar flux* molar mass-->g/m2/day
-         gwp_ch4=(ch4_mmol*1e-3)*16*27,#molar flux * molar mass* GWP100 factor 27
-         gwp_n2o=(n2o_mmol*1e-3)*44*273, #molar flux * molar mass 44* GWP100factor 273
-         gwp_co2andch4= gwp_co2+gwp_ch4, #gwp of co2 and ch4 only
-         gwp_allghg=gwp_co2+gwp_ch4+gwp_n2o) %>%  #gwp of all GHGs
+         gwp_co2=co2_mol*44.0095, #molar flux* molar mass-->g/m2/day
+         gwp_ch4=(ch4_mmol*1e-3)*16.04246*27,#molar flux * molar mass* GWP100 factor 27
+         gwp_n2o=(n2o_mmol*1e-3)*44.0128*273, #molar flux * molar mass 44* GWP100factor 273
+         gwp_co2andch4= gwp_co2+gwp_ch4, #Sum of gwp of co2 and ch4 only
+         gwp_allghg=gwp_co2+gwp_ch4+gwp_n2o) %>%  #Sum of gwp of all GHGs (co2,ch4,n2o)
   select(-c(co2, ch4, n2o)) %>% 
   #Add modeling variables: 
   mutate(status=substr(x = sampling, start = 7, stop=7),
@@ -609,7 +611,25 @@ inv_signedlog <- function(x) sign(x) * (exp(abs(x)) - 1)
 # For signed root transformation
 inv_rootsign <- function(x) sign(x) * (x^2)
 
+#Outlier exploration: 
+#Identify outliers (with data already transformed)
+co2log_outliers<-data_sub %>% 
+  group_by(status,season,casepilot,subsite,strata) %>% 
+  mutate(is.extreme=is_extreme(dailyflux_logsign)) %>% 
+  filter(is.extreme==T) %>% 
+  mutate(subsite2=substr(subsite,4,5))
 
+#visualize outliers
+data_sub %>% 
+  mutate(subsite2=substr(subsite,4,5)) %>% 
+  ggplot(aes(x=subsite2, y=dailyflux_logsign, fill=status, group=paste0(subsite)))+
+  geom_boxplot()+
+  geom_point(data = co2log_outliers, col="red")+
+  facet_wrap(~casepilot,scales="free")
+
+#Extreme outliers (3*IQR, by status,season,casepilot, subsite, strata) could be removed, if removed, sample_weights should be adjusted accordingly to retain strata-representativity (re-normalize). 
+#SHOULD WE REMOVE OUTLIERS? 
+#DECISSION: NO. Our "outliers" represent true variability in field conditions. Even when grouped by strata,  data-driven outlier removal should NOT be done (as we cannot account for small scale variability in our dataset) 
 
 
 ## ========== 1. Untransformed Model ==========
@@ -701,7 +721,7 @@ check_model_diagnostics <- function(model, model_name, data) {
 diag_untrans <- check_model_diagnostics(model_untrans, "Untransformed", data_sub)
 #Untransformed Observations: clear non-normality of residuals, heterocedasticity at season and casepilot level (not at status level)
 diag_logsign <- check_model_diagnostics(model_logsign, "Signed Log", data_sub)
-#Logtransformed Observations: Residuals show reasonable normaility. Heterocedasticity at season and casepilot level (not at status level), OK heterocedasticity is expected. BEST
+#Logtransformed Observations: Residuals show reasonable normality (visual). Heterocedasticity at season and casepilot level (not at status level), OK heterocedasticity is expected. BEST
 diag_rootsign <- check_model_diagnostics(model_rootsign, "Signed Root", data_sub)
 #Roottransformed Observations: clear non-normality of residuals, Heterocedasticity at season and casepilot level (not at status level), OK heterocedasticity is expected. 
 
@@ -823,15 +843,91 @@ ggplot(emm_df_bt, aes(x = season, y = emmean, fill = status)) +
   ) +
   theme_minimal()
 
+#Compare EEMs vs weigthed averages (calcualte SE of weighted average)
+weighted_avgs <- data_sub %>%
+  group_by(status, casepilot, season) %>%
+  summarise(
+    weighted_mean = sum(dailyflux * sample_weight) / sum(sample_weight),
+    sum_w = sum(sample_weight),
+    sum_w2 = sum(sample_weight^2),
+    # Temporarily compute mean for variance calculation
+    mean_w = sum(dailyflux * sample_weight) / sum(sample_weight),
+    # Weighted variance
+    var_w = sum(sample_weight * (dailyflux - mean_w)^2) / sum(sample_weight),
+    # Effective sample size
+    n_eff = (sum_w)^2 / sum_w2,
+    # Standard error
+    se = sqrt(var_w) / sqrt(n_eff),
+    .groups = "drop"
+  ) %>%
+  # Keep only relevant output columns
+  select(status, casepilot, season, weighted_mean, se)
+
+#PLot back transformed EMMs vs Weighted averages (original scale)
+emm_df_bt %>% 
+  left_join(weighted_avgs) %>% 
+  ggplot(aes(x=weighted_mean,y=emmean))+
+  geom_point()+
+  geom_abline(intercept = 0, slope = 1)+
+  ggtitle("BT EMMs vs Weighted avg of untransformed\n(same groups)")
+#There is a large deviation because the EMMs are calculated based on transformed values (as they should), and the back transformed average is not the same as the average of back transformed (original scale)
+
+
+#Plot weighted averages (original scale) 
+ggplot(weighted_avgs, aes(x = season, y = weighted_mean, fill = status)) +
+  geom_col(position = position_dodge(width = 0.8)) +
+  geom_errorbar(aes(ymin = weighted_mean - se, ymax = weighted_mean + se),
+                position = position_dodge(width = 0.8), width = 0.2) +
+  facet_wrap(~ casepilot,scales="free") +
+  labs(
+    title = "Weighted avg by Status, Season, and Casepilot",
+    y = expression(Average~CO[2]~dailyflux~(g~CO2[eq]~d^-1~m^-2)),
+    x = "Season",
+    col = "Status"
+  ) +
+  theme_minimal()
+
+
+#JUST FOR CONSISTENCY: if we calculate the weighted averages on the transformed values and then back transform the averages, the results from the model fit perfectly: 
+weighted_avgs_bt <- data_sub %>%
+  group_by(status, casepilot, season) %>%
+  summarise(
+    weighted_mean = sum(dailyflux_logsign * sample_weight) / sum(sample_weight),
+    sum_w = sum(sample_weight),
+    sum_w2 = sum(sample_weight^2),
+    # Temporarily compute mean for variance calculation
+    mean_w = sum(dailyflux_logsign * sample_weight) / sum(sample_weight),
+    # Weighted variance
+    var_w = sum(sample_weight * (dailyflux_logsign - mean_w)^2) / sum(sample_weight),
+    # Effective sample size
+    n_eff = (sum_w)^2 / sum_w2,
+    # Standard error
+    se = sqrt(var_w) / sqrt(n_eff),
+    .groups = "drop"
+  ) %>%
+  # Keep only relevant output columns
+  select(status, casepilot, season, weighted_mean, se) %>% 
+  mutate(across(c(weighted_mean,se),inv_function))
+
+emm_df_bt %>% 
+  left_join(weighted_avgs_bt) %>% 
+  ggplot(aes(x=weighted_mean,y=emmean))+
+  geom_point()+
+  geom_abline(intercept = 0, slope = 1)+
+  ggtitle("BT EMMs vs BT Weighted avg\n(same groups)")
+
+
+
+
 ## ---- 5.4. Post-hoc on EMMs  ----
 # EMM comparison for status by season and casepilot comparisons
 pairs(emm_all, by = c("season", "casepilot"))
 
 
-###POR AQUI---------
-#CHECK data for apparent outliers: seems DA S1 altered emmeans are too high in comparison to rest (check magnitude of fluxes and sample_weight's ). REVIEW Jorge's script and use the same approach for detecting outliers (doubt: using transformed or untransformed data?)
 
-#For tomorrow: provide to co-pilot info on database, model structure, main outputs and comparisons with model_no3way. Explore patterns and reach a decission for model complexity. 
+###POR AQUI---------
+
+  #For tomorrow: provide to co-pilot info on database, model structure, main outputs and comparisons with model_no3way. Explore patterns and reach a decision for model complexity. 
 
 #Why status and season are not significant but casepilot and interactions appear strongly significant  (would this serve as justification for casepilot-specific models)
 #3-way interaction appears highly significant, 
@@ -898,12 +994,21 @@ anova(model_no3way, best_model)
 
 #Exploratory plots-----
 
-#GWP_CO2
+#GWP_CO2: all seasons combined
 daily_ghg_plotcode %>%
   mutate(subsite2=substr(subsite,4,5)) %>% 
   group_by(casepilot, status, subsite,subsite2) %>%
   filter(!is.na(gwp_co2)) %>% 
   ggplot(aes(x=subsite2, y=sign(gwp_co2)*log(abs(gwp_co2)+1), fill=status, group=paste0(subsite)))+
+  geom_boxplot()+
+  facet_wrap(~casepilot,scales="free")
+
+#GWP_CH4: all seasons combined
+daily_ghg_plotcode %>%
+  mutate(subsite2=substr(subsite,4,5)) %>% 
+  group_by(casepilot, status, subsite,subsite2) %>%
+  filter(!is.na(gwp_co2)) %>% 
+  ggplot(aes(x=subsite2, y=sign(gwp_ch4)*log(abs(gwp_ch4)+1), fill=status, group=paste0(subsite)))+
   geom_boxplot()+
   facet_wrap(~casepilot,scales="free")
 
