@@ -110,7 +110,7 @@ if(length(unique(inconsistencies_core_id$sample_id))>0){message(paste("The follo
 
 #Suspect units for water-depth (suposed to be in cm)
 
-checked_waterdepth<- c("S1-VA-R2","S2-CA-P2","S2-CU-R2","S2-RI-P2","S3-RI-P1","S4-DU-R1","S4-VA-A2")
+checked_waterdepth<- c("S1-VA-R2","S2-CA-P2","S2-CU-R2","S2-RI-P2","S3-RI-P1","S4-DU-R1","S4-VA-A2","S2-DU-R1")
 
 complete_list %>% 
   filter(water_depth<=2) %>% 

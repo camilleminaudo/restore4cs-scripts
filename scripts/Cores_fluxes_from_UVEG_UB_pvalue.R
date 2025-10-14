@@ -54,7 +54,6 @@ core_path<- paste0(dropbox_root,"/Cores/")
 
 
 #TO-DO--------
-#Update fieldsheet missing details (when Carlos fills them)
 #Format meta-data (sampling data & incubation details, ask Carlos to decide what to include). 
 
 
