@@ -16,6 +16,7 @@
 
 #Outputs: 
 #FIGURES
+#TABLES
 
 
 rm(list = ls()) # clear workspace
@@ -47,6 +48,19 @@ files.sources = list.files(path = paste0(repo_root,"/functions"), full.names = T
 for (f in files.sources){source(f)}
 
 
+#custom functions: 
+
+#Function to get symbols for pvalues
+pval_to_symbol <- function(p) {
+  ifelse(p < 0.001, "(***)",
+         ifelse(p < 0.01, "(**)",
+                ifelse(p < 0.05, "(*)",
+                       ifelse(p < 0.1, "(.)", "(ns)")
+                )
+         )
+  )
+}
+
 
 
 # ---- Directories ----
@@ -77,6 +91,7 @@ data4paper<- data4paper %>%
   filter(ghgspecies%in%c("co2","ch4","gwp_co2andch4")) %>% 
   #Rename to GWPco2andch4
   mutate(ghgspecies=if_else(ghgspecies=="gwp_co2andch4","GWPco2andch4",ghgspecies)) %>% 
+  mutate(vegpresence=if_else(strata=="vegetated","Vegetated","Non-vegetated")) %>% 
   #Factor grouping variables:
   mutate(season=factor(season, levels = c("S1","S2","S3","S4"), ordered = T),
          casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
@@ -84,35 +99,36 @@ data4paper<- data4paper %>%
          subsite=factor(subsite, ordered = F),
          ghgspecies=factor(ghgspecies, ordered=F),
          strata=factor(strata, levels = c("open water","bare","vegetated"), ordered = F),
-         sampling=factor(sampling, ordered = F))
+         sampling=factor(sampling, ordered = F),
+         vegpresence=factor(vegpresence, levels = c("Non-vegetated","Vegetated"), ordered = F))
 
 
-##general models------
+##Simple models------
+
+#Simple models refer to models with only status*season as fixed effects (we are only interested in the RI results)
+
+
 #Import results from models (R2 and significances)
 
-summary_models_all<- read.csv(paste0(paper_path, "Allghg_summary_chambermodels.csv"))
+simplemodel_summary<- read.csv(paste0(paper_path, "Summary_bestsimplemodel_chambermodels.csv"))
 
-significances_alleffects<- summary_models_all %>% 
-  dplyr::select(dataset, status_pval, season_pval, interaction_pval) %>% 
+simplemodel_significances_alleffects<- simplemodel_summary %>% 
+  dplyr::select(dataset, status_pval, season_pval, status.season_pval) %>% 
   separate(dataset, into = c("casepilot","ghgspecies")) %>% 
-  pivot_longer(c(status_pval,season_pval,interaction_pval),names_sep = "_",values_to = "pvalue_effect", names_to = c("effect","drop")) %>% 
+  pivot_longer(c(status_pval,season_pval,status.season_pval),names_sep = "_",values_to = "pvalue_effect", names_to = c("effect","drop")) %>% 
   dplyr::select(-drop)
-  
-head(significances_alleffects)
 
-#Import Emmeans post-hoc (all ghgs Combined into single table)
-emmeans_all<-read.csv(paste0(paper_path,"Allghg_emmeans-posthoc_chambermodels.csv"))
 
-#Format Emmeans: remove groupletters from comparisons when effect was not significant. 
-  #For status_within_season group-letters, use the significance of "interaction" 
+#Import Emmeans +SE + cld groupletters 
+simplemodel_emmeans_all<-read.csv(paste0(paper_path,"EmmeansCLD_simplemodels_chambermodels.csv"))
 
-emmeans_all<- emmeans_all %>% 
-  mutate(effect=if_else(comparison=="status_within_season","interaction",comparison)) %>% 
-  #Join signifcances of model effects
-  left_join(significances_alleffects , by=c("casepilot","ghgspecies","effect")) %>% 
-  #Replace post-hoc letters with "" to avoid non-significant effect comparisons to be shown
-  #We are leaving the pvalue threshold at 0.1, (va status_within_season for ch4 is almmost significant)
-  mutate(group_letter=if_else(pvalue_effect>0.1,"",group_letter)) %>%
+#Format Emmeans: filter for RI only & remove groupletters from comparisons when all are the same.
+RI_simplemodel_emmeans_all<- simplemodel_emmeans_all %>% 
+  filter(casepilot=="RI") %>% 
+  group_by(ghgspecies, casepilot, comparison) %>% 
+  #If there are no differences (same letter for all levels of a given comparison), remove the cld_group letter 
+  mutate(cld_group = if (n_distinct(cld_group) == 1) "" else cld_group) %>%
+  ungroup() %>% 
   mutate(ghgspecies=factor(ghgspecies, ordered=F),
          casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
          status=factor(status, levels = c("Preserved","Altered","Restored"), ordered = T),
@@ -121,230 +137,157 @@ emmeans_all<- emmeans_all %>%
 
 
 #separate emmeans per type of comparison
-emmeans_status<- emmeans_all %>% 
-  filter(comparison=="status") %>% 
-  group_by(ghgspecies,casepilot) %>% 
-  #If there are no differences (same letter for all status of a given ghgspecies*casepilot combination), remove the group_letter. 
-  mutate(group_letter = if (n_distinct(group_letter) == 1) "" else group_letter) %>%
-  ungroup()
+#status
+RI_simplemodel_emmeans_status<- RI_simplemodel_emmeans_all %>% 
+  filter(comparison=="status")
 
+#season
+RI_simplemodel_emmeans_season<- RI_simplemodel_emmeans_all %>% 
+  filter(comparison=="season")
 
-emmeans_season<- emmeans_all %>% 
-  filter(comparison=="season") %>% 
-  group_by(ghgspecies,casepilot) %>% 
-  #If there are no differences (same letter for all status of a given ghgspecies*casepilot combination), remove the group_letter. 
-  mutate(group_letter = if (n_distinct(group_letter) == 1) "" else group_letter) %>%
-  ungroup()
-
-
-#Subset the emmeans and group-letters of status_within_season comparison. 
-emmeans_status_within_season<- emmeans_all %>% 
+#status_within_season, need to re-filter to remove letters when all status are equal under a particular season
+RI_simplemodel_emmeans_statuswithinseason<- RI_simplemodel_emmeans_all %>% 
   filter(comparison=="status_within_season") %>% 
-  group_by(ghgspecies, casepilot, season) %>%
-  #If there are no differences between status within a given combination of ghgspecies*casepilot*season, remove the group_letter. This avoids printing group_letters when no difference was seen. 
-  mutate(group_letter = if (n_distinct(group_letter) == 1) "" else group_letter) %>%
-  ungroup()
+  group_by(ghgspecies, casepilot, comparison,season) %>% 
+  #If there are no differences (same letter for all levels of a given comparison), remove the cld_group letter 
+  mutate(cld_group = if (n_distinct(cld_group) == 1) "" else cld_group)
 
 
-#Import emmeans contrasts
-emmeans_contrasts<- read.csv(paste0(paper_path,"Allghg_pairwise_diffemmeans-posthoc_chambermodels.csv"))
-
-emmeans_contrasts
-
-#Function to get symbols for pvalues
-pval_to_symbol <- function(p) {
-  ifelse(p < 0.001, "(***)",
-         ifelse(p < 0.01, "(**)",
-                ifelse(p < 0.05, "(*)",
-                       ifelse(p < 0.1, "(.)", "(ns)")
-                )
-         )
-  )
-}
-
-emmeans_contrasts<- emmeans_contrasts %>% 
-  mutate(pval_symbol=pval_to_symbol(p.value))
 
 
-# formated_pvalues_all<- significances_alleffects %>% 
-#   mutate(comparison=effect) %>% 
-#   mutate(pval_symbol=pval_to_symbol(pvalue_effect)) %>% 
-#   mutate(p_value_label = paste0("p = ", formatC(pvalue_effect, format = "e", digits = 2))) %>% 
-#   mutate(p_value_label=if_else(pvalue_effect>0.05, "n.s.", p_value_label))
-  
 
+##Complex models------
+#Complex models refer to models that consider status*season*vegpresence as fixed effects (Appropriate for all casepilot except RI).
 
-##cores models-----
-
-#Import Chamberdata4paper.csv
-datacores4paper<-read.csv(file = paste0(paper_path,"CoresData4paper.csv"))
-
-#Format main data: 
-datacores4paper<- datacores4paper %>% 
-  #Remove NAs
-  filter(!is.na(dailyflux)) %>% 
-  #Factor grouping variables:
-  mutate(season=factor(season, levels = c("S1","S2","S3","S4"), ordered = T),
-         casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
-         status=factor(status, levels = c("Preserved","Altered","Restored"), ordered = T),
-         subsite=factor(subsite, ordered = F),
-         ghgspecies=factor(ghgspecies, ordered=F),
-         sampling=factor(sampling, ordered = F))
-
+#The EMMEANS HAVE BEEN calculated taking into account custom weights that scale the vegpresence effects to the actual vegpresence found in the field (at the moment using in-situ chamber distribution, to be updated with RS-retrieved vegpresence)
 
 
 #Import results from models (R2 and significances)
 
-summary_coresmodels_all<- read.csv(paste0(paper_path, "Allghg_summary_coresmodels.csv"))
+complexmodel_summary<- read.csv(paste0(paper_path, "Summary_bestcomplexmodel_chambermodels.csv"))
 
-significances_cores_alleffects<- summary_coresmodels_all %>% 
-  dplyr::select(dataset, status_pval, season_pval, interaction_pval) %>% 
+head(complexmodel_summary)
+
+#only significances long format
+complexmodel_significances_alleffects<- complexmodel_summary %>% 
+  dplyr::select(dataset, status_pval, season_pval, vegpresence_pval, status.season_pval, status.vegpresence_pval, season.vegpresence_pval, status.season.vegpresence_pval) %>% 
   separate(dataset, into = c("casepilot","ghgspecies")) %>% 
-  pivot_longer(c(status_pval,season_pval,interaction_pval),names_sep = "_",values_to = "pvalue_effect", names_to = c("effect","drop")) %>% 
+  pivot_longer(c(status_pval, season_pval, vegpresence_pval, status.season_pval, status.vegpresence_pval, season.vegpresence_pval, status.season.vegpresence_pval),names_sep = "_",values_to = "pvalue_effect", names_to = c("effect","drop")) %>% 
   dplyr::select(-drop)
 
-head(significances_cores_alleffects)
+head(complexmodel_significances_alleffects)
 
-#Import Emmeans post-hoc (all ghgs Combined into single table)
-emmeans_cores<-read.csv(paste0(paper_path,"Allghg_emmeans-posthoc_coresmodels.csv"))
-head(emmeans_cores)
-#Format Emmeans:
-emmeans_cores<- emmeans_cores %>% 
-  #add effect (status,season, interaction), to join post-hoc comparisons with significances of effects. The significance of interaction is used to filter the status_within_season comparisons
-  mutate(effect=if_else(comparison!="status_within_season", comparison, "interaction")) %>% 
-  #Join signifcances of model effects
-  left_join(significances_cores_alleffects, by=c("casepilot","ghgspecies","effect")) %>% 
-  #Replace post-hoc letters with "" to avoid non-significant effect comparisons to be shown
-  mutate(group_letter=if_else(pvalue_effect>0.05,"",group_letter)) %>% 
+
+#Import Emmeans + cld groupletters (all ghgs Combined into single table)
+#Calculated with custom weights for vegpresence. 
+complexmodel_emmeans_all<-read.csv(paste0(paper_path,"EmmeansCLD_complexmodel_customweight_chambermodels.csv"))
+
+
+#Should not filter emmeans groupletters by the effect significance (interactions and custom weight can make it so that status differences arise due to vegpresence differences rather than due to status overall effect)
+
+#Remove CLD when all are the same within a given comparison (no differences)
+complexmodel_emmeans_all<- complexmodel_emmeans_all %>% 
+  group_by(ghgspecies,casepilot,comparison) %>% 
+  #If there are no differences (same letter for all status of a given ghgspecies*casepilot combination), remove the cld_group 
+  mutate(cld_group = if (n_distinct(cld_group) == 1) "" else cld_group) %>%
+  ungroup() %>% 
   mutate(ghgspecies=factor(ghgspecies, ordered=F),
          casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
          status=factor(status, levels = c("Preserved","Altered","Restored"), ordered = T),
-         season=factor(season, levels = c("S1","S2","S3","S4"), ordered = T)) 
+         season=factor(season, levels = c("S1","S2","S3","S4"), ordered = T),
+         vegpresence=factor(vegpresence, levels = c("Non-vegetated","Vegetated"), ordered = F)) %>% 
+  arrange(casepilot, ghgspecies, comparison, season,status,vegpresence)
 
 
-#Function to get symbols for pvalues
-pval_to_symbol <- function(p) {
-  ifelse(p < 0.001, "(***)",
-         ifelse(p < 0.01, "(**)",
-                ifelse(p < 0.05, "(*)",
-                       ifelse(p < 0.1, "(.)", "(ns)")
-                )
-         )
-  )
-}
+#separate emmeans per type of comparison:
+#status
+complexmodel_emmeans_status<- complexmodel_emmeans_all %>% 
+  filter(comparison=="status")
 
+#season
+complexmodel_emmeans_season<- complexmodel_emmeans_all %>% 
+  filter(comparison=="season") 
 
-formated_pvalues_all<- significances_cores_alleffects %>% 
-  mutate(comparison=effect) %>% 
-  mutate(pval_symbol=pval_to_symbol(pvalue_effect)) %>% 
-  mutate(p_value_label = paste0("p = ", formatC(pvalue_effect, format = "e", digits = 2))) %>% 
-  mutate(p_value_label=if_else(pvalue_effect>0.05, "n.s.", p_value_label))
-
-
-
-
-
-##Specific models------
-
-#TO ADAPT. 
-#Import results from models (R2 and significances)
-
-summary_specificmodels_all<- read.csv(paste0(paper_path, "Allghg_summary_Specificchambermodels.csv"))
-
-significances_specificmodels_alleffects<- summary_specificmodels_all %>% 
-  dplyr::select(dataset, status_pval, season_pval, interaction_pval) %>% 
-  separate(dataset, into = c("casepilot","ghgspecies")) %>% 
-  pivot_longer(c(status_pval,season_pval,interaction_pval),names_sep = "_",values_to = "pvalue_effect", names_to = c("effect","drop")) %>% 
-  dplyr::select(-drop)
-
-head(significances_specificmodels_alleffects)
-
-#IMPORTANT-----
-#Missing strata significance and 3-way interaction, need adapt function in modelling script to work with specific models (to add strata significance when present in fixed effects)
-
-#Import Emmeans post-hoc (all ghgs Combined into single table)
-emmeans_specificmodels_all<-read.csv(paste0(paper_path,"Allghg_emmeans-posthoc_specificchambermodels.csv"))
-
-#Format Emmeans: CANNOT filter letters for effect significance until I fix the summary function above. TO remove groupletters from comparisons when effect was not significant.
-unique(emmeans_specificmodels_all$comparison)
-
-emmeans_specificmodels_all<- emmeans_specificmodels_all %>% 
-  # mutate(effect=if_else(comparison=="status_within_season","interaction",comparison)) %>% 
-  # #Join signifcances of model effects
-  # left_join(significances_alleffects , by=c("casepilot","ghgspecies","effect")) %>% 
-  # #Replace post-hoc letters with "" to avoid non-significant effect comparisons to be shown
-  # #We are leaving the pvalue threshold at 0.1, (va status_within_season for ch4 is almmost significant)
-  # mutate(group_letter=if_else(pvalue_effect>0.1,"",group_letter)) %>%
-  mutate(ghgspecies=factor(ghgspecies, ordered=F),
-         casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
-         status=factor(status, levels = c("Preserved","Altered","Restored"), ordered = T),
-         season=factor(season, levels = c("S1","S2","S3","S4"), ordered = T)) %>% 
-  arrange(casepilot, ghgspecies, comparison, season,status)
-
-
-#separate emmeans per type of comparison
-emmeans_status_specificmodels<- emmeans_specificmodels_all %>% 
-  filter(comparison=="status") %>% 
-  group_by(ghgspecies,casepilot) %>% 
-  #If there are no differences (same letter for all status of a given ghgspecies*casepilot combination), remove the group_letter. 
-  mutate(group_letter = if (n_distinct(group_letter) == 1) "" else group_letter) %>%
-  ungroup()
-
-
-emmeans_season_specificmodels<- emmeans_specificmodels_all %>% 
-  filter(comparison=="season") %>% 
-  group_by(ghgspecies,casepilot) %>% 
-  #If there are no differences (same letter for all status of a given ghgspecies*casepilot combination), remove the group_letter. 
-  mutate(group_letter = if (n_distinct(group_letter) == 1) "" else group_letter) %>%
-  ungroup()
-
-
-#Subset the emmeans and group-letters of status_within_season comparison. 
-emmeans_status_within_season_specificmodels<- emmeans_specificmodels_all %>% 
+#status_within_season, need to re-filter to eliminate letters when all are the same at the specific season
+complexmodel_emmeans_statuswithinseason<- complexmodel_emmeans_all %>% 
   filter(comparison=="status_within_season") %>% 
-  group_by(ghgspecies, casepilot, season) %>%
-  #If there are no differences between status within a given combination of ghgspecies*casepilot*season, remove the group_letter. This avoids printing group_letters when no difference was seen. 
-  mutate(group_letter = if (n_distinct(group_letter) == 1) "" else group_letter) %>%
-  ungroup()
+  group_by(ghgspecies,casepilot,comparison,season) %>% 
+  #If there are no differences (same letter for all levels within season), remove the cld_group 
+  mutate(cld_group = if (n_distinct(cld_group) == 1) "" else cld_group)
+
+#status_within_vegpresence, need to re-filter to eliminate letters when all are the same at the specific vegpresence group
+complexmodel_emmeans_statuswithinvegpresence<- complexmodel_emmeans_all %>% 
+  filter(comparison=="status_within_vegpresence") %>% 
+  group_by(ghgspecies,casepilot,comparison,vegpresence) %>% 
+  #If there are no differences (same letter for all levels within season), remove the cld_group 
+  mutate(cld_group = if (n_distinct(cld_group) == 1) "" else cld_group)
 
 
-#Subset the emmeans and group-letters of status_within_strata comparison. 
-emmeans_status_within_strata_specificmodels<- emmeans_specificmodels_all %>% 
-  filter(comparison=="status_within_strata") %>% 
-  group_by(ghgspecies, casepilot, strata) %>%
-  #If there are no differences between status within a given combination of ghgspecies*casepilot*strata, remove the group_letter. This avoids printing group_letters when no difference was seen. 
-  mutate(group_letter = if (n_distinct(group_letter) == 1) "" else group_letter) %>%
-  ungroup()
+##Combine bestmodel results----
+#Use most-complex model possible for each case (simplemodel only for RI)
+#Get emmean (back-transformed) + cld_group for every relevant comparison: 
 
+#status
+bestmodel_emmeans_status<- RI_simplemodel_emmeans_status %>% 
+  full_join(complexmodel_emmeans_status) %>% 
+  dplyr::select(ghgspecies, casepilot, comparison, status, emmean_bt,SE_bt, cld_group)
 
+str(bestmodel_emmeans_status)
 
+#season
+bestmodel_emmeans_season<- RI_simplemodel_emmeans_season %>% 
+  full_join(complexmodel_emmeans_season) %>% 
+  dplyr::select(ghgspecies, casepilot, comparison, season, emmean_bt,SE_bt, cld_group)
 
+str(bestmodel_emmeans_season)
 
+#status_within_season
+bestmodel_emmeans_statuswithinseason<- RI_simplemodel_emmeans_statuswithinseason %>% 
+  full_join(complexmodel_emmeans_statuswithinseason) %>% 
+  dplyr::select(ghgspecies, casepilot, comparison, status,season, emmean_bt,SE_bt, cld_group)
 
+str(bestmodel_emmeans_statuswithinseason)
 
+#status_within_vegpresence, NO need to join RI (no comparison possible)
+bestmodel_emmeans_statuswithinvegpresence<- complexmodel_emmeans_statuswithinvegpresence %>% 
+  dplyr::select(ghgspecies, casepilot, comparison, status,vegpresence, emmean_bt,SE_bt, cld_group)
+
+str(bestmodel_emmeans_statuswithinvegpresence)
 
 
 #DONE CREATE:SEASONAL Plots (1per ghg, casepilot per pannel)(with posthoc letter groups), no status.
 #DONE status_within_season plots 1per ghg, casepilot per pannel (with symbol per pair status|season): x=season, col=status (FAIL), instead posthoc letter groups
-
+#DONE recalculate contrasts back-transformed (correcly now)
 
 
 #TO-DO: --------
 
-#CREATE: Plots of specific models with data (1 per casepilot, ghg per pannel).
+#USE actual strata distribution of valid plotcodes for plots of strata composition (the same way it is implemented for permanova in modelChamber script). Create: strata-composition plot (all casepilots together, how to add permanova significance?). Export from there to create stratacomp to plot. 
 
-#Compare gwp estimates for status: via GWP model vs via CO2 and CH4 model and error propagation. 
-  #We could compare the obs-vs-pred of the two methods. 
+#Check units of contrasts for tables of "flux change after restoration". 
 
-
-#USE actual strata distribution of valid plotcodes for plots (the same way it is implemented for permanova in modelChamber script). Create: strata-composition plot (all casepilots together, how to add permanova significance?). Export from there to create stratacomp to plot. 
 
 #Import stratacomposition_in-situ 
 # stratacomp<- read.csv(file = paste0(paper_path,"Stratacomposition_in-situ.csv"))
 
+#General descriptive statistics----
+
+#Average number of chamber deployments per subsite sampling
+plotcodes<- read.csv(paste0(dropbox_root, "/GHG/Processed data/computed_flux/Plotcode_harmonized_field_obs.csv"))
+
+plotcodes %>% 
+group_by(sampling) %>% 
+  summarise(n_chambers=n_distinct(plotcode)) %>% 
+  ungroup() %>% 
+  summarise(sub_avg_nchambers=mean(n_chambers),
+            sd_nchambers=sd(n_chambers),
+            min_nchambers=min(n_chambers),
+            max_nchambers=max(n_chambers),
+            median_nchambers=median(n_chambers)) 
+
+
 #____________________--------
 #MAIN PLOTS------
-
 
 #Fig. 1 (Preserved Baseline)-----
 #A 3-panel vertical plot. 1 panel per gas. Boxplot (without outliers). Linear scale. 
@@ -361,7 +304,7 @@ base_co2_ident<-
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
        x=NULL,
        fill=paste0("Status"))
 
@@ -380,7 +323,7 @@ base_ch4_ident_main <- data4paper %>%
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CH[4] ~ NEE ~ (mmol ~ d^-1 ~ m^-2)),
+    y = expression(CH[4] ~ NEE ~ (mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -436,7 +379,7 @@ base_gwp_ident<-data4paper %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
   guides(color = "none", fill="none")+
-  labs(y= expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
        x=paste0("Casepilot"),
        fill=paste0("Status"))
 
@@ -507,7 +450,7 @@ plot_ghg_faceted <- function(GHG,
   
   #filter data for GHG
   data<- data4paper %>% filter(ghgspecies==GHG)
-  emmeans_data<- emmeans_status %>% filter(ghgspecies==GHG) 
+  emmeans_data<- bestmodel_emmeans_status %>% filter(ghgspecies==GHG) 
   
   #Produce plot: 
   ggplot(data, aes(x = status, y = dailyflux * y_multiplier)) +
@@ -519,7 +462,7 @@ plot_ghg_faceted <- function(GHG,
                shape = 23, size = 3, fill = "black") +
     
     # Add group letters
-    geom_text(data = emmeans_data, aes(x = status, label = group_letter, y = Inf),
+    geom_text(data = emmeans_data, aes(x = status, label = cld_group, y = Inf),
               vjust = 1.2, hjust = 0.5, color = "black", inherit.aes = FALSE,
               size = 5, fontface = "bold") +
     theme_bw() +
@@ -551,7 +494,7 @@ plot_ghg_faceted <- function(GHG,
 
 #Produce plot using status template and subset data for CO2: 
 plot_ghg_faceted(GHG="co2",
-                 y_label = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+                 y_label = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
                  y_multiplier = 1000)
 
 
@@ -570,7 +513,7 @@ ggsave(filename = "PAPERPLOTS_Fig2_status_CO2_molar_boxplot_allCP.png",
 
 #Produce plot using status template and subset data for CH4: 
 plot_ghg_faceted(GHG="ch4",
-                 y_label = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+                 y_label = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
                  y_multiplier = 1)
 
 #Save plot: 
@@ -587,7 +530,7 @@ ggsave(filename = "PAPERPLOTS_Fig3_status_CH4_molar_boxplot_allCP.png",
 
 #Produce plot using status template and subset data for GWP: 
 plot_ghg_faceted(GHG="GWPco2andch4",
-                 y_label = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+                 y_label = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
                  y_multiplier = 1)
 
 #Save plot: 
@@ -602,69 +545,137 @@ ggsave(filename = "PAPERPLOTS_Fig4_status_GWP_boxplot_allCP.png",
 
 
 
-#TEST plots cores------
-
-#Models dont behave as expected, I believe subsite-specific variability is masking effect of status in some cases, many other cases core-flux variability is too high to see any effect (also linked to high geographical variability, how representative is a core of the whole subsite?)
-
-
-#Produce plot using status template and subset data for CO2: 
-plot_ghg_faceted(data = datacores4paper %>% filter(ghgspecies=="co2"),
-                 emmeans_data = emmeans_cores %>% filter(comparison=="status",ghgspecies=="co2"),
-                 y_label = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
-                 y_multiplier = 1,
-                 drawboxplot_outliers= F)
-
-
-#Produce plot using status template and subset data for CH4: 
-plot_ghg_faceted(data = datacores4paper %>% filter(ghgspecies=="ch4"),
-                 emmeans_data = emmeans_cores %>% filter(comparison=="status",ghgspecies=="ch4"),
-                 y_label = "ch4",
-                 y_multiplier = 1,
-                 drawboxplot_outliers= F)
-
-plot_ghg_faceted(data = datacores4paper %>% filter(ghgspecies=="n2o"),
-                 emmeans_data = emmeans_cores %>% filter(comparison=="status",ghgspecies=="n2o"),
-                 y_label = "n2o",
-                 y_multiplier = 1,
-                 drawboxplot_outliers= F)
-
-
-plot_ghg_faceted(data = datacores4paper %>% filter(ghgspecies=="GWPco2andch4"),
-                 emmeans_data = emmeans_cores %>% filter(comparison=="status",ghgspecies=="GWPco2andch4"),
-                 y_label = "GWPco2andch4",
-                 y_multiplier = 1,
-                 drawboxplot_outliers= F)
-
-plot_ghg_faceted(data = datacores4paper %>% filter(ghgspecies=="GWPtotal"),
-                 emmeans_data = emmeans_cores %>% filter(comparison=="status",ghgspecies=="GWPtotal"),
-                 y_label = "GWPtotal",
-                 y_multiplier = 1,
-                 drawboxplot_outliers= F)
-
-
-
 #____________________--------
 #TABLES--------
 
-#Significance of effects------
+#Model summary------
 #Format model summary into table with effect significance, R2c and R2m
-#Arrange by co2,ch4,GWP, then casepilot (DU,RI,CA,VA,DA,CU) , then effect (status,season,interaction)
+#Arrange by co2,ch4,GWP, then casepilot (DU,RI,CA,VA,DA,CU) , then effect (status,season,interaction).
 
-
-formated_summary_models<- summary_models_all %>% 
-  dplyr::select(dataset, status_pval, season_pval, interaction_pval, homoced_R2m, homoced_R2c) %>% 
-  pivot_longer(cols=c(status_pval, season_pval, interaction_pval), names_to = c("effect","drop"),names_sep = "_", values_to = "p_value") %>% 
+#RI model: 
+formated_summary_simplemodels<- simplemodel_summary %>% 
+  dplyr::select(dataset, transformation,formula, family,nobs, status_pval, season_pval, status.season_pval, homoced_R2m, homoced_R2c) %>% 
+  pivot_longer(cols=c(status_pval, season_pval, status.season_pval), names_to = c("effect","drop"),names_sep = "_", values_to = "p_value") %>% 
   separate(dataset, into = c("casepilot", "ghgspecies")) %>% 
   mutate(casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
          ghgspecies=factor(ghgspecies, levels = c("co2","ch4","GWPco2andch4"), ordered = T),
-         effect=factor(effect, levels = c("status","season","interaction"), ordered = T),
+         effect=factor(effect, levels = c("status","season","status.season"), ordered = T),
          sig_symbol=gsub("\\)","",gsub("\\(","",pval_to_symbol(p_value)))) %>% 
   rename(R2c=homoced_R2c, R2m=homoced_R2m) %>% 
-  dplyr::select(ghgspecies, casepilot, effect, sig_symbol, R2m, R2c, p_value) %>% 
+  dplyr::select(ghgspecies, casepilot, transformation,formula,family, nobs, R2m, R2c, effect, sig_symbol, p_value) %>% 
+  filter(casepilot=="RI") %>% 
   mutate(R2m=round(R2m,digits = 3), R2c=round(R2c, digits = 3)) %>% 
-  arrange(ghgspecies, casepilot, effect)
+  arrange(ghgspecies, casepilot, effect) %>% 
+  mutate(rounded_p_value=if_else(condition = p_value<0.001,
+                                  true= "< 0.001",
+                                  false=as.character(round(p_value, digits = 3))))
 
-write.csv(formated_summary_models, file=paste0(main_figures, "EffectSignif_and_Rsquared_chambermodels.csv"), row.names = F)
+
+#FOR complex models
+formated_summary_complexmodels<- complexmodel_summary %>% 
+  dplyr::select(dataset, transformation,formula, family,nobs, 
+                status_pval, season_pval,vegpresence_pval, status.season_pval, status.vegpresence_pval, season.vegpresence_pval,status.season.vegpresence_pval, 
+                homoced_R2m, homoced_R2c) %>% 
+  pivot_longer(cols=c(status_pval, season_pval,vegpresence_pval, status.season_pval, status.vegpresence_pval, status.season.vegpresence_pval), names_to = c("effect","drop"),names_sep = "_", values_to = "p_value") %>% 
+  separate(dataset, into = c("casepilot", "ghgspecies")) %>% 
+  mutate(casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
+         ghgspecies=factor(ghgspecies, levels = c("co2","ch4","GWPco2andch4"), ordered = T),
+         effect=factor(effect, levels = c("status","season","vegpresence","status.season","status.vegpresence","season.vegpresence", "status.season.vegpresence"), ordered = T),
+         sig_symbol=gsub("\\)","",gsub("\\(","",pval_to_symbol(p_value)))) %>% 
+  rename(R2c=homoced_R2c, R2m=homoced_R2m) %>% 
+  dplyr::select(ghgspecies, casepilot, transformation,formula,family, nobs, R2m, R2c, effect, sig_symbol, p_value) %>% 
+  mutate(R2m=round(R2m,digits = 3), R2c=round(R2c, digits = 3)) %>% 
+  arrange(ghgspecies, casepilot, effect)%>% 
+  mutate(rounded_p_value=if_else(condition = p_value<0.001,
+                                 true= "< 0.001",
+                                 false=as.character(round(p_value, digits = 3))))
+
+#JOIN summaries of all models and save
+combined_model_summary<- rbind(formated_summary_simplemodels,formated_summary_complexmodels) %>% 
+  arrange(ghgspecies, casepilot, effect)
+rm(formated_summary_complexmodels, formated_summary_simplemodels)
+
+write.csv(combined_model_summary, 
+          file=paste0(main_figures, "Formated_summary_models.csv"), row.names = F)
+
+
+
+#Restoration mitigation-----
+
+#Table with formated contrasts (altered-restored) to show the estimated effect of restoration (change over altered) for every ghg and casepilot. Contrast have been re-ordered to show Change after restoration (restored flux - altered flux), more intuitive: negative values=emissions mitigated. 
+
+#TO-DO:----------
+#CHECK UNITS OF contrasts!
+
+#Statistical Issue: cannot back-transform the contrasts: difference of back-transformed != back-transformed difference. Especially worrisome for SEs. OCTOBER 29th: I THINK THIS WAS ALREADY CORRECTED. 
+
+
+simplemodel_contrasts<- read.csv(file = paste0(paper_path,"Emmeans-posthoctests_simplemodels_chambermodels.csv"))
+
+restoration_mitigation_RI<- simplemodel_contrasts %>% 
+  filter(casepilot=="RI", comparison=="status", contrast=="Altered - Restored") %>% 
+  #Change the order of contrast to show flux-change after restoration. Sign-inversion and swap of CL order
+  mutate(change=-estimate_bt, SE=SE_bt, lower.CL=-upper.CL_bt, upper.CL=-lower.CL_bt) %>% 
+  dplyr::select(casepilot, ghgspecies, change, SE, lower.CL, upper.CL,p.value) %>%
+  pivot_longer(cols = c(change, SE, lower.CL, upper.CL, p.value), values_to = "value", names_to = "parameter") %>% 
+  pivot_wider(values_from = value, names_from = c(ghgspecies, parameter)) %>% 
+  mutate(co2_sigsymbol=pval_to_symbol(co2_p.value),
+         ch4_sigsymbol=pval_to_symbol(ch4_p.value),
+         GWPco2andch4_sigsymbol=pval_to_symbol(GWPco2andch4_p.value)) %>% 
+  dplyr::select(casepilot,
+                co2_change, co2_SE, co2_lower.CL, co2_upper.CL, co2_p.value,co2_sigsymbol,
+                ch4_change, ch4_SE, ch4_lower.CL, ch4_upper.CL, ch4_p.value,ch4_sigsymbol,
+                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol)
+
+
+
+complexmodel_contrasts<- read.csv(file=paste0(paper_path,"Emmeans-posthoctests_complexmodel_customweight_chambermodels.csv"))
+
+restoration_mitigation_rest<- complexmodel_contrasts %>% 
+  filter(comparison=="status", contrast=="Altered - Restored") %>% 
+   #Change the order of contrast to show flux-change after restoration. Sign-inversion and swap of CL order
+  mutate(change=-estimate_bt, SE=SE_bt, lower.CL=-upper.CL_bt, upper.CL=-lower.CL_bt) %>% 
+  dplyr::select(casepilot, ghgspecies, change, SE, lower.CL, upper.CL,p.value) %>%
+  pivot_longer(cols = c(change, SE, lower.CL, upper.CL, p.value), values_to = "value", names_to = "parameter") %>% 
+  pivot_wider(values_from = value, names_from = c(ghgspecies, parameter)) %>% 
+  mutate(co2_sigsymbol=pval_to_symbol(co2_p.value),
+         ch4_sigsymbol=pval_to_symbol(ch4_p.value),
+         GWPco2andch4_sigsymbol=pval_to_symbol(GWPco2andch4_p.value)) %>% 
+  dplyr::select(casepilot,
+                co2_change, co2_SE, co2_lower.CL, co2_upper.CL, co2_p.value,co2_sigsymbol,
+                ch4_change, ch4_SE, ch4_lower.CL, ch4_upper.CL, ch4_p.value,ch4_sigsymbol,
+                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol)
+
+
+restoration_mitigation_all<- rbind(restoration_mitigation_rest,restoration_mitigation_RI) %>% 
+  mutate(casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T)) %>% 
+  arrange(casepilot)
+
+write.csv(restoration_mitigation_all, 
+          file=paste0(main_figures, "Flux_change_after_restoration.csv"), row.names = F)
+
+
+
+
+restoration_mitigation_per_vegpresence<- complexmodel_contrasts %>% 
+  filter(comparison=="status_within_vegpresence", contrast=="Altered - Restored") %>% 
+  #Change the order of contrast to show flux-change after restoration. Sign-inversion and swap of CL order
+  mutate(change=-estimate_bt, SE=SE_bt, lower.CL=-upper.CL_bt, upper.CL=-lower.CL_bt) %>% 
+  dplyr::select(casepilot, ghgspecies,vegpresence, change, SE, lower.CL, upper.CL,p.value) %>%
+  pivot_longer(cols = c(change, SE, lower.CL, upper.CL, p.value), values_to = "value", names_to = "parameter") %>% 
+  pivot_wider(values_from = value, names_from = c(ghgspecies, parameter)) %>% 
+  mutate(co2_sigsymbol=pval_to_symbol(co2_p.value),
+         ch4_sigsymbol=pval_to_symbol(ch4_p.value),
+         GWPco2andch4_sigsymbol=pval_to_symbol(GWPco2andch4_p.value)) %>% 
+  dplyr::select(casepilot, vegpresence,
+                co2_change, co2_SE, co2_lower.CL, co2_upper.CL, co2_p.value,co2_sigsymbol,
+                ch4_change, ch4_SE, ch4_lower.CL, ch4_upper.CL, ch4_p.value,ch4_sigsymbol,
+                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol)
+
+
+write.csv(restoration_mitigation_per_vegpresence, 
+          file=paste0(main_figures, "Supp_Flux_change_after_restoration_per_vegpresence.csv"), row.names = F)
+
 
 
 
@@ -673,8 +684,7 @@ write.csv(formated_summary_models, file=paste0(main_figures, "EffectSignif_and_R
 
 
 
-#Season------
-
+#1. Season------
 #Per-season boxplots (no "outliers") and group differences (EMMeans post-hoc), for each casepilot (vertical pannels). 
 
 #We create a single plot template object (for which we will change the data-origin and yaxis label for each ghgspecies). It takes 4 arguments: data (the ghg-specific in-situ dataframe), emmeans_data (the ghg-specific emmeans dataframe, comparison==status), y_label (the expression call to use for the y axis), y_multiplier: (multiplier of dailyflux to use, 1000 for CO2 in mmol, 1 for CH4mmol, 1 for GWP in gCO2eq)
@@ -688,7 +698,7 @@ season_plot <- function(GHG, y_label, y_multiplier = 1, drawboxplot_outliers=F) 
                             season=="S4"~"Summer")) %>% 
     mutate(season=factor(season, levels=c("Autumn", "Winter","Spring","Summer"), ordered = T))
   #Filter and format
-  emmeans_data<- emmeans_season %>% filter(ghgspecies==GHG)%>% 
+  emmeans_data<- bestmodel_emmeans_season %>% filter(ghgspecies==GHG)%>% 
     mutate(season=case_when(season=="S1"~"Autumn",
                             season=="S2"~"Winter",
                             season=="S3"~"Spring",
@@ -705,7 +715,7 @@ season_plot <- function(GHG, y_label, y_multiplier = 1, drawboxplot_outliers=F) 
                shape = 23, size = 3, fill = "black") +
     
     # Add group letters
-    geom_text(data = emmeans_data, aes(x = season, label = group_letter, y = Inf),
+    geom_text(data = emmeans_data, aes(x = season, label = cld_group, y = Inf),
               vjust = 1.2, hjust = 0.5, color = "black", inherit.aes = FALSE,
               size = 5, fontface = "bold") +
     scale_fill_manual(values = c(
@@ -732,7 +742,7 @@ season_plot <- function(GHG, y_label, y_multiplier = 1, drawboxplot_outliers=F) 
 ## Save plots-----
 #CO2 
 season_plot(GHG="co2",
-            y_label = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+            y_label = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
             y_multiplier = 1000,
             drawboxplot_outliers = F)
 
@@ -748,7 +758,7 @@ ggsave(filename = "Sup_Fig_season_CO2.png",
 
 #CH4
 season_plot(GHG="ch4",
-            y_label = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+            y_label = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
             y_multiplier = 1,
             drawboxplot_outliers = F)
 
@@ -763,7 +773,7 @@ ggsave(filename = "Sup_Fig_season_CH4.png",
 
 #GWPco2andch4
 season_plot(GHG="GWPco2andch4",
-            y_label = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+            y_label = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
             y_multiplier = 1,
             drawboxplot_outliers = F)
 
@@ -776,7 +786,7 @@ ggsave(filename = "Sup_Fig_season_GWP.png",
        height = 229,
        width = 100)
 
-#Status per season ------
+#2. Status per season ------
 
 #Plot both data and emmeans across status*season for each casepilot. 
 #Color for status, x-position for season. 
@@ -797,7 +807,7 @@ plot_status_per_season <- function(GHG, y_label,
                             season=="S4"~"Summer")) %>% 
     mutate(season=factor(season, levels=c("Autumn", "Winter","Spring","Summer"), ordered = T))
   
-  emmeans_data<- emmeans_status_within_season %>% filter(ghgspecies==GHG)%>% 
+  emmeans_data<- bestmodel_emmeans_statuswithinseason %>% filter(ghgspecies==GHG)%>% 
     mutate(season=case_when(season=="S1"~"Autumn",
                             season=="S2"~"Winter",
                             season=="S3"~"Spring",
@@ -817,7 +827,7 @@ plot_status_per_season <- function(GHG, y_label,
                position = position_dodge(width = dodge_width)) +
     # Add group letters with same dodge
     geom_text(data = emmeans_data, 
-              aes(x = season, label = group_letter, y = Inf, group=status),
+              aes(x = season, label = cld_group, y = Inf, group=status),
               vjust = 1.2, hjust = 0.5, color = "black", inherit.aes = FALSE,
               size = 4.5, fontface = "bold",
               position = position_dodge(width = dodge_width)) +
@@ -848,7 +858,7 @@ plot_status_per_season <- function(GHG, y_label,
 
 #CO2: 
 plot_status_per_season(GHG = "co2",
-                       y_label = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+                       y_label = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
                        y_multiplier = 1000, #to change from molar to milli-molar units
                        dodge_width = 0.6)
 
@@ -865,7 +875,7 @@ ggsave(filename = "Sup_Fig_status_per_season_CO2.png",
 
 #CH4
 plot_status_per_season(GHG = "ch4",
-                       y_label = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+                       y_label = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
                        y_multiplier = 1,
                        dodge_width = 0.6)
 
@@ -881,7 +891,7 @@ ggsave(filename = "Sup_Fig_status_per_season_CH4.png",
 
 #GWPco2andch4
 plot_status_per_season(GHG = "GWPco2andch4",
-                       y_label = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+                       y_label = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
                        y_multiplier = 1,
                        dodge_width = 0.6)
 
@@ -988,8 +998,224 @@ plot_status_by_season(data=data4paper %>% filter(ghgspecies=="ch4"),
 #ISSUES: need to set offset for y-position for each of the 3 comparisons, additionally, pannel limits clip significance symbols. Potentially, set a single y-position for each casepilot (to be reused across seasons) and offset the 3 comparisons proportionally to this y-position. This will result in same-height of sig.symbols across seasons, set by the maximum wisker height across all boxplots of the same casepilot. 
 
 
+
+#3. Status per vegpresence ------
+
+#Plot both data and emmeans across status*vegpresence for each casepilot that can support it. 
+#Color for status, x-position for vegpresence 
+#Points for emmeans and group-letters for status_within_vegpresence comparisons
+
+
+##with groupletters (ok)-----
+
+#Works finee. Difficult to adjust y-axis of letters dynamically (now set to y=Inf)
+plot_status_per_vegpresence <- function(GHG, y_label, 
+                                   y_multiplier = 1, 
+                                   dodge_width = 0.4) {
+  #Filter datasets for GHG:
+  data<- data4paper %>% filter(ghgspecies==GHG) %>% filter(casepilot!="RI")
+  emmeans_data<- complexmodel_emmeans_statuswithinvegpresence %>% filter(ghgspecies==GHG) %>% filter(casepilot!="RI")
+  
+  #Produce plots:
+  ggplot(data, aes(x = vegpresence, y = dailyflux * y_multiplier)) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    # Boxplots with dodge
+    geom_boxplot(aes(fill = status), width = 0.2, outliers = F,
+                 position = position_dodge(width = dodge_width), size = 0.7) +
+    # Emmeans points with same dodge
+    geom_point(data = emmeans_data,
+               aes(x = vegpresence, y = emmean_bt * y_multiplier, group = status),
+               shape = 23, size = 2, fill = "black",
+               position = position_dodge(width = dodge_width)) +
+    # Add group letters with same dodge
+    geom_text(data = emmeans_data, 
+              aes(x = vegpresence, label = cld_group, y = Inf, group=status),
+              vjust = 1.2, hjust = 0.5, color = "black", inherit.aes = FALSE,
+              size = 4.5, fontface = "bold",
+              position = position_dodge(width = dodge_width)) +
+    #expand y-scale to avoid overlap between group_letters and wiskers
+    scale_y_continuous(expand = expansion(mult = c(0.1, 0.2), 0)) +
+    theme_bw() +
+    scale_fill_manual(values = c(
+      "Preserved" = "#009E73",
+      "Altered"   = "#D55E00",
+      "Restored"  = "#56B4E9"
+    )) +
+    theme(
+      axis.text = element_text(face = "bold"),
+      axis.text.x = element_text(angle = 0, hjust = 0.5,vjust=0.5)
+    ) +
+    guides(color = "none") +
+    labs(
+      y = y_label,
+      x = "Vegetation presence",
+      fill = "Status"
+    ) +
+    facet_grid(rows = vars(casepilot), scales = "free") 
+  
+}
+
+
+## Save plots-----
+
+#CO2: 
+plot_status_per_vegpresence(GHG = "co2",
+                       y_label = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
+                       y_multiplier = 1000, #to change from molar to milli-molar units
+                       dodge_width = 0.6)
+
+#Save plot: 
+ggsave(filename = "Sup_Fig_status_per_vegpresence_CO2.png",
+       path = sup_figures,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 229,
+       width = 180)
+
+
+
+#CH4
+plot_status_per_vegpresence(GHG = "ch4",
+                       y_label = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
+                       y_multiplier = 1,
+                       dodge_width = 0.6)
+
+#Save plot: 
+ggsave(filename = "Sup_Fig_status_per_vegpresence_CH4.png",
+       path = sup_figures,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 229,
+       width = 180)
+
+
+#GWPco2andch4
+plot_status_per_vegpresence(GHG = "GWPco2andch4",
+                       y_label = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
+                       y_multiplier = 1,
+                       dodge_width = 0.6)
+
+#Save plot: 
+ggsave(filename = "Sup_Fig_status_per_vegpresence_GWP.png",
+       path = sup_figures,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 229,
+       width = 180)
+
+
+
+
 #____________________--------
 #EXTRA PLOTS-------
+
+#Subsite plots------
+
+
+subsiteplot_ghg_faceted <- function(GHG,
+                             y_label, 
+                             y_multiplier = 1,
+                             drawboxplot_outliers=F) {
+  
+  #filter data for GHG
+  data<- data4paper %>% filter(ghgspecies==GHG) %>% 
+    separate(subsite, into = c("drop","statusnum"),sep = "-") %>% 
+    mutate(statusnum=factor(statusnum, levels=c("P1","P2","A1","A2","R1","R2"), ordered = T))
+  emmeans_data<- bestmodel_emmeans_status %>% filter(ghgspecies==GHG) 
+  
+  #Produce plot: 
+  ggplot(data, aes(x = status, y = dailyflux * y_multiplier)) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    geom_boxplot(width = 0.2, outliers = drawboxplot_outliers, aes(group=statusnum, fill = status), size = 0.7,position = position_dodge(width = 0.4)) +
+    
+    # Add emmeans points
+    geom_point(data = emmeans_data, aes(x = status, y = emmean_bt * y_multiplier),
+               shape = 23, size = 3, fill = "black") +
+    
+    # Add group letters
+    geom_text(data = emmeans_data, aes(x = status, label = cld_group, y = Inf),
+              vjust = 1.2, hjust = 0.5, color = "black", inherit.aes = FALSE,
+              size = 5, fontface = "bold") +
+    theme_bw() +
+    scale_fill_manual(values = c(
+      "Preserved" = "#009E73",
+      "Altered"   = "#D55E00",
+      "Restored"  = "#56B4E9"
+    )) +
+    scale_color_manual(values = c(
+      "Preserved" = "#009E73",
+      "Altered"   = "#D55E00",
+      "Restored"  = "#56B4E9"
+    )) +
+    scale_y_continuous(expand = expansion(mult = c(0.1, 0.2), 0)) +
+    theme(
+      axis.text = element_text(face = "bold")
+    ) +
+    guides(color = "none", fill = "none") +
+    labs(
+      y = y_label,
+      x = "Conservation status",
+      fill = "Status"
+    ) +
+    facet_grid(rows = vars(casepilot), scales = "free")
+}
+
+#CO2 status subsite
+subsiteplot_ghg_faceted(GHG="co2",
+                 y_label = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
+                 y_multiplier = 1000)
+
+
+#Save plot: 
+ggsave(filename = "subsite_status_CO2.png",
+       path = extra_figures,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 229,
+       width = 90)
+
+
+
+#CH4 status subsite
+subsiteplot_ghg_faceted(GHG="ch4",
+                 y_label = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
+                 y_multiplier = 1)
+
+#Save plot: 
+ggsave(filename = "subsite_status_CH4.png",
+       path = extra_figures,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 229,
+       width = 90)
+
+
+#GWP status subsite
+subsiteplot_ghg_faceted(GHG="GWPco2andch4",
+                 y_label = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
+                 y_multiplier = 1)
+
+#Save plot: 
+ggsave(filename = "subsite_status_GWP.png",
+       path = extra_figures,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 229,
+       width = 90)
+
+
+
+
+
+
+
+
 
 #Specific model plots----
 ##DA 4-level status-----
@@ -1042,7 +1268,7 @@ da_co2_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -1081,7 +1307,7 @@ da_ch4_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -1117,7 +1343,7 @@ da_gwp_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+    y = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
     x = "Conservation status",
     fill = "Status"
   )
@@ -1205,7 +1431,7 @@ cu_co2_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )+
@@ -1244,7 +1470,7 @@ cu_ch4_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )+
@@ -1280,7 +1506,7 @@ cu_gwp_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+    y = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
     x = "Conservation status",
     fill = "Status"
   )+
@@ -1353,7 +1579,7 @@ cu_co2_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -1391,7 +1617,7 @@ cu_ch4_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -1426,7 +1652,7 @@ cu_gwp_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+    y = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
     x = "Conservation status",
     fill = "Status"
   )
@@ -1510,7 +1736,7 @@ va_co2_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )+
@@ -1549,7 +1775,7 @@ va_ch4_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )+
@@ -1585,7 +1811,7 @@ va_gwp_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+    y = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
     x = "Conservation status",
     fill = "Status"
   )+
@@ -1659,7 +1885,7 @@ va_co2_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -1697,7 +1923,7 @@ va_ch4_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -1732,7 +1958,7 @@ va_gwp_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+    y = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
     x = "Conservation status",
     fill = "Status"
   )
@@ -1816,7 +2042,7 @@ ca_co2_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )+
@@ -1855,7 +2081,7 @@ ca_ch4_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )+
@@ -1891,7 +2117,7 @@ ca_gwp_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+    y = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
     x = "Conservation status",
     fill = "Status"
   )+
@@ -1965,7 +2191,7 @@ ca_co2_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -2003,7 +2229,7 @@ ca_ch4_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -2038,7 +2264,7 @@ ca_gwp_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+    y = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
     x = "Conservation status",
     fill = "Status"
   )
@@ -2122,7 +2348,7 @@ du_co2_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )+
@@ -2161,7 +2387,7 @@ du_ch4_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )+
@@ -2197,7 +2423,7 @@ du_gwp_specific_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+    y = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
     x = "Conservation status",
     fill = "Status"
   )+
@@ -2271,7 +2497,7 @@ du_co2_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -2309,7 +2535,7 @@ du_ch4_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+    y = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
     x = NULL,
     fill = "Status"
   )
@@ -2344,7 +2570,7 @@ du_gwp_status_plot<-
   ) +
   guides(color = "none", fill = "none") +
   labs(
-    y = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+    y = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
     x = "Conservation status",
     fill = "Status"
   )
@@ -2542,7 +2768,7 @@ status_plot_pseudolog <- function(GHG,
 
 #CO2: (sigma=0.1),hour-glass shapes (not-intuitive visualization)
 status_plot_pseudolog(GHG="co2",
-                 y_label = expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+                 y_label = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
                  y_multiplier = 1000)
 
 ggsave(filename = "Alternative_status_CO2_pseudolog.png",
@@ -2555,7 +2781,7 @@ ggsave(filename = "Alternative_status_CO2_pseudolog.png",
 
 #CH4: (sigma=0.1), OK for CA,VA,DA,CU (good comparison), NOT appropriate for DU, RI
 status_plot_pseudolog(GHG="ch4",
-                      y_label = expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+                      y_label = expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
                       y_multiplier = 1)
 
 ggsave(filename = "Alternative_status_CH4_pseudolog.png",
@@ -2568,7 +2794,7 @@ ggsave(filename = "Alternative_status_CH4_pseudolog.png",
 
 #CH4: (sigma=0.1), Hour-glass shape for mots, non-intuitive visualization
 status_plot_pseudolog(GHG="GWPco2andch4",
-                      y_label = expression(GWP~NEE~(g*CO[2~eq]~d^-1~m^-2)),
+                      y_label = expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
                       y_multiplier = 1)
 
 ggsave(filename = "Alternative_status_GWP_pseudolog.png",
@@ -2583,6 +2809,122 @@ ggsave(filename = "Alternative_status_GWP_pseudolog.png",
 
 
 #____________________--------
+
+
+
+##(OMIT) cores models-----
+#We decided not to use core incubations in the paper. 
+
+
+#Import Chamberdata4paper.csv
+datacores4paper<-read.csv(file = paste0(paper_path,"CoresData4paper.csv"))
+
+#Format main data: 
+datacores4paper<- datacores4paper %>% 
+  #Remove NAs
+  filter(!is.na(dailyflux)) %>% 
+  #Factor grouping variables:
+  mutate(season=factor(season, levels = c("S1","S2","S3","S4"), ordered = T),
+         casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
+         status=factor(status, levels = c("Preserved","Altered","Restored"), ordered = T),
+         subsite=factor(subsite, ordered = F),
+         ghgspecies=factor(ghgspecies, ordered=F),
+         sampling=factor(sampling, ordered = F))
+
+
+
+#Import results from models (R2 and significances)
+
+summary_coresmodels_all<- read.csv(paste0(paper_path, "Allghg_summary_coresmodels.csv"))
+
+significances_cores_alleffects<- summary_coresmodels_all %>% 
+  dplyr::select(dataset, status_pval, season_pval, interaction_pval) %>% 
+  separate(dataset, into = c("casepilot","ghgspecies")) %>% 
+  pivot_longer(c(status_pval,season_pval,interaction_pval),names_sep = "_",values_to = "pvalue_effect", names_to = c("effect","drop")) %>% 
+  dplyr::select(-drop)
+
+head(significances_cores_alleffects)
+
+#Import Emmeans post-hoc (all ghgs Combined into single table)
+emmeans_cores<-read.csv(paste0(paper_path,"Allghg_emmeans-posthoc_coresmodels.csv"))
+head(emmeans_cores)
+#Format Emmeans:
+emmeans_cores<- emmeans_cores %>% 
+  #add effect (status,season, interaction), to join post-hoc comparisons with significances of effects. The significance of interaction is used to filter the status_within_season comparisons
+  mutate(effect=if_else(comparison!="status_within_season", comparison, "interaction")) %>% 
+  #Join signifcances of model effects
+  left_join(significances_cores_alleffects, by=c("casepilot","ghgspecies","effect")) %>% 
+  #Replace post-hoc letters with "" to avoid non-significant effect comparisons to be shown
+  mutate(group_letter=if_else(pvalue_effect>0.05,"",group_letter)) %>% 
+  mutate(ghgspecies=factor(ghgspecies, ordered=F),
+         casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
+         status=factor(status, levels = c("Preserved","Altered","Restored"), ordered = T),
+         season=factor(season, levels = c("S1","S2","S3","S4"), ordered = T)) 
+
+
+#Function to get symbols for pvalues
+pval_to_symbol <- function(p) {
+  ifelse(p < 0.001, "(***)",
+         ifelse(p < 0.01, "(**)",
+                ifelse(p < 0.05, "(*)",
+                       ifelse(p < 0.1, "(.)", "(ns)")
+                )
+         )
+  )
+}
+
+
+formated_pvalues_all<- significances_cores_alleffects %>% 
+  mutate(comparison=effect) %>% 
+  mutate(pval_symbol=pval_to_symbol(pvalue_effect)) %>% 
+  mutate(p_value_label = paste0("p = ", formatC(pvalue_effect, format = "e", digits = 2))) %>% 
+  mutate(p_value_label=if_else(pvalue_effect>0.05, "n.s.", p_value_label))
+
+
+
+#TEST plots cores------
+
+#Models dont behave as expected, I believe subsite-specific variability is masking effect of status in some cases, many other cases core-flux variability is too high to see any effect (also linked to high geographical variability, how representative is a core of the whole subsite?)
+
+
+#Produce plot using status template and subset data for CO2: 
+plot_ghg_faceted(data = datacores4paper %>% filter(ghgspecies=="co2"),
+                 emmeans_data = emmeans_cores %>% filter(comparison=="status",ghgspecies=="co2"),
+                 y_label = expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
+                 y_multiplier = 1,
+                 drawboxplot_outliers= F)
+
+
+#Produce plot using status template and subset data for CH4: 
+plot_ghg_faceted(data = datacores4paper %>% filter(ghgspecies=="ch4"),
+                 emmeans_data = emmeans_cores %>% filter(comparison=="status",ghgspecies=="ch4"),
+                 y_label = "ch4",
+                 y_multiplier = 1,
+                 drawboxplot_outliers= F)
+
+plot_ghg_faceted(data = datacores4paper %>% filter(ghgspecies=="n2o"),
+                 emmeans_data = emmeans_cores %>% filter(comparison=="status",ghgspecies=="n2o"),
+                 y_label = "n2o",
+                 y_multiplier = 1,
+                 drawboxplot_outliers= F)
+
+
+plot_ghg_faceted(data = datacores4paper %>% filter(ghgspecies=="GWPco2andch4"),
+                 emmeans_data = emmeans_cores %>% filter(comparison=="status",ghgspecies=="GWPco2andch4"),
+                 y_label = "GWPco2andch4",
+                 y_multiplier = 1,
+                 drawboxplot_outliers= F)
+
+plot_ghg_faceted(data = datacores4paper %>% filter(ghgspecies=="GWPtotal"),
+                 emmeans_data = emmeans_cores %>% filter(comparison=="status",ghgspecies=="GWPtotal"),
+                 y_label = "GWPtotal",
+                 y_multiplier = 1,
+                 drawboxplot_outliers= F)
+
+
+
+
+
 
 
 #OLD PLOTS (NOT TO USE)-------
@@ -2611,7 +2953,7 @@ ggplot(co2_4paper, aes(x=status, y=dailyflux*1000))+
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
        x=paste0("Conservation status"),
        fill=paste0("Status"))+
   facet_grid(rows="casepilot", scales="free")
@@ -2738,7 +3080,7 @@ base_co2_ident_out<-data4paper %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
        x=NULL,
        fill=paste0("Status"))
 
@@ -2754,7 +3096,7 @@ base_ch4_ident_out<-data4paper %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
        x=NULL,
        fill=paste0("Status"))
 
@@ -2769,7 +3111,7 @@ base_gwp_ident_out<-data4paper %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
   guides(color = "none", fill="none")+
-  labs(y= expression(GWP~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(GWP~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Casepilot"),
        fill=paste0("Status"))
 
@@ -2800,7 +3142,7 @@ base_co2_pseudolog<- data4paper %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
        x=NULL,
        fill=paste0("Status"))
 
@@ -2820,7 +3162,7 @@ base_ch4_pseudolog<- data4paper %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
        x=NULL,
        fill=paste0("Status"))
 
@@ -2838,7 +3180,7 @@ base_gwp_pseudolog<- data4paper %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
        x=paste0("Casepilot"),
        fill=paste0("Status"))
 
@@ -2884,7 +3226,7 @@ ggplot(co2_4paper, aes(x=status, y=dailyflux*1000))+
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
        x=paste0("Conservation status"),
        fill=paste0("Status"))+
   facet_grid(rows="casepilot", scales="free")
@@ -2912,7 +3254,7 @@ ggplot(co2_4paper, aes(x=status, y=dailyflux*1000))+
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
        x=paste0("Conservation status"),
        fill=paste0("Status"))+
   facet_grid(rows="casepilot", scales="free")
@@ -2946,7 +3288,7 @@ ggplot(co2_4paper, aes(x=status, y=dailyflux*1000))+
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
        x=paste0("Conservation status"),
        fill=paste0("Status"))+
   facet_grid(rows="casepilot", scales="free")
@@ -2986,7 +3328,7 @@ ggplot(ch4_4paper, aes(x=status, y=dailyflux))+
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
        x=paste0("Conservation status"),
        fill=paste0("Status"))+
   facet_grid(rows="casepilot", scales="free")
@@ -3013,7 +3355,7 @@ ggplot(ch4_4paper, aes(x=status, y=dailyflux))+
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
        x=paste0("Conservation status"),
        fill=paste0("Status"))+
   facet_grid(rows="casepilot", scales="free")
@@ -3046,7 +3388,7 @@ ggplot(ch4_4paper, aes(x=status, y=dailyflux))+
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(mmol~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(mmol~m^-2~d^-1)),
        x=paste0("Conservation status"),
        fill=paste0("Status"))+
   facet_grid(rows="casepilot", scales="free")
@@ -3082,7 +3424,7 @@ ggplot(gwp_4paper, aes(x=status, y=dailyflux))+
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]+CH[4]~GWP~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]+CH[4]~GWP~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status"),
        fill=paste0("Status"))+
   facet_grid(rows="casepilot", scales="free")
@@ -3109,7 +3451,7 @@ ggplot(gwp_4paper, aes(x=status, y=dailyflux))+
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]+CH[4]~GWP~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]+CH[4]~GWP~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status"),
        fill=paste0("Status"))+
   facet_grid(rows="casepilot", scales="free")
@@ -3142,7 +3484,7 @@ ggplot(gwp_4paper, aes(x=status, y=dailyflux))+
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]+CH[4]~GWP~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]+CH[4]~GWP~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status"),
        fill=paste0("Status"))+
   facet_grid(rows="casepilot", scales="free")
@@ -3152,7 +3494,114 @@ ggplot(gwp_4paper, aes(x=status, y=dailyflux))+
 
 
 #____________________--------
+#N2O exploratory figures------
+
+
+#Import Chamberdata4paper.csv
+alldaily<-read.csv(file = paste0(paper_path,"ChamberData4paper.csv"))
+
+#Format main data: 
+n2odaily<- alldaily %>% 
+  #Remove NAs
+  filter(!is.na(dailyflux)) %>% 
+  #Keep only ghg of interest
+  filter(ghgspecies%in%c("n2o")) %>% 
+  #Rename to GWPco2andch4
+  mutate(ghgspecies=if_else(ghgspecies=="gwp_co2andch4","GWPco2andch4",ghgspecies)) %>% 
+  mutate(vegpresence=if_else(strata=="vegetated","Vegetated","Non-vegetated")) %>% 
+  #Factor grouping variables:
+  mutate(season=factor(season, levels = c("S1","S2","S3","S4"), ordered = T),
+         casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
+         status=factor(status, levels = c("Preserved","Altered","Restored"), ordered = T),
+         subsite=factor(subsite, ordered = F),
+         ghgspecies=factor(ghgspecies, ordered=F),
+         strata=factor(strata, levels = c("open water","bare","vegetated"), ordered = F),
+         sampling=factor(sampling, ordered = F),
+         vegpresence=factor(vegpresence, levels = c("Non-vegetated","Vegetated"), ordered = F))
+
+    
+    #N2O plot dailyflux: 
+    ggplot(n2odaily, aes(x = status, y = dailyflux)) +
+      geom_hline(yintercept = 0, linetype = "dashed") +
+      geom_boxplot(width = 0.2, outliers = T, aes(fill = status), size = 0.7) +
+      theme_bw() +
+      scale_fill_manual(values = c(
+        "Preserved" = "#009E73",
+        "Altered"   = "#D55E00",
+        "Restored"  = "#56B4E9"
+      )) +
+      scale_color_manual(values = c(
+        "Preserved" = "#009E73",
+        "Altered"   = "#D55E00",
+        "Restored"  = "#56B4E9"
+      )) +
+      scale_y_continuous(expand = expansion(mult = c(0.1, 0.2), 0)) +
+      theme(
+        axis.text = element_text(face = "bold")
+      ) +
+      guides(color = "none", fill = "none") +
+      labs(
+        y = expression(N[2]*O~(mmol~m^2~d^-1)),
+        x = "Conservation status",
+        fill = "Status"
+      ) +
+      facet_grid(rows = vars(casepilot), scales = "free")
+
+
+instant_n2o<- read.csv(paste0(dropbox_root,"/GHG/N2O_fluxes/S4_restore4cs_N2O_arealflux_nmol_s-1_m-2.csv"))
+
+instant_n2o<- instant_n2o %>% 
+  separate(UniqueID_notime, into = c("season","casepilot","status_num","plotnum","strat","light"), remove = F) %>% 
+  mutate(status=case_when(grepl("a",status_num)~"Altered",
+                          grepl("p",status_num)~"Preserved",
+                          grepl("r",status_num)~"Restored"),
+         casepilot=factor(toupper(casepilot), levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
+         strata=factor(case_when(grepl("v",strat)~"Vegetated", 
+                                 grepl("o",strat)~"Open water",
+                                 grepl("b",strat)~"Bare"), levels = c("Vegetated","Open water","Bare"),ordered = F),
+         light=if_else(light=="t", "Transparent","Dark")) %>% 
+  mutate(sigflux=if_else(N2Oflux_pvalue<0.05,T,F))
+
+
+library(ggpubr)
+
+#Instant n2o plot:
+ggplot(instant_n2o, aes(x = status, y = N2Oflux_nmol_per_second_per_m2)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_boxplot(width = 0.2, outliers = T, aes(fill = status), size = 0.7) +
+  theme_bw() +
+  # scale_fill_manual(values = c(
+  #   "Vegetated" = "green",
+  #   "Bare"   = "orange",
+  #   "Open water"  = "lightblue"
+  # )) +
+  scale_fill_manual(values = c(
+    "Preserved" = "#009E73",
+    "Altered"   = "#D55E00",
+    "Restored"  = "#56B4E9"
+  )) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2), 0)) +
+  theme(
+    axis.text = element_text(face = "bold")
+  ) +
+  guides(color = "none", fill = "none") +
+  labs(
+    y = expression(N[2]*O~(nmol~m^2~s^-1)),
+    x = "Conservation status",
+    fill = "Status"
+  ) +
+  facet_grid(rows = vars(casepilot), scales = "free")
+
+
+
+
 #SEFS PLOTS-----------
+
+
+
+
+
+
 
 #CHECK PLOT TUTORIAL-----------
 # https://r-graph-gallery.com/web-violinplot-with-ggstatsplot.html
@@ -3203,7 +3652,7 @@ ca_co2_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(ca_co2),")"),
        fill=paste0("Status"))
 
@@ -3239,7 +3688,7 @@ ca_ch4_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(ca_ch4),")"),
        fill=paste0("Status"))
 
@@ -3273,7 +3722,7 @@ ca_co2andch4_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(ca_co2andch4),")"),
        fill=paste0("Status"))
 
@@ -3318,7 +3767,7 @@ cu_co2_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(cu_co2),")"),
        fill=paste0("Status"))
 
@@ -3350,7 +3799,7 @@ cu_ch4_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(cu_ch4),")"),
        fill=paste0("Status"))
 
@@ -3384,7 +3833,7 @@ cu_co2andch4_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(cu_co2andch4),")"),
        fill=paste0("Status"))
 
@@ -3430,7 +3879,7 @@ da_co2_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(da_co2),")"),
        fill=paste0("Status"))
 
@@ -3466,7 +3915,7 @@ da_ch4_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(da_ch4),")"),
        fill=paste0("Status"))
 
@@ -3500,7 +3949,7 @@ da_co2andch4_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(da_co2andch4),")"),
        fill=paste0("Status"))
 
@@ -3545,7 +3994,7 @@ du_co2_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(du_co2),")"),
        fill=paste0("Status"))
 
@@ -3579,7 +4028,7 @@ du_ch4_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(du_ch4),")"),
        fill=paste0("Status"))
 
@@ -3610,7 +4059,7 @@ du_co2andch4_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(du_co2andch4),")"),
        fill=paste0("Status"))
 
@@ -3654,7 +4103,7 @@ ri_co2_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(ri_co2),")"),
        fill=paste0("Status"))
 
@@ -3694,7 +4143,7 @@ ri_ch4_sefsplot<-
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
   labs( 
-    y= expression(CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+    y= expression(CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
     x=paste0("Conservation status (n = ",nrow(ri_ch4),")"),
     fill=paste0("Status"))
 ri_ch4_sefsplot
@@ -3727,7 +4176,7 @@ ri_co2andch4_sefsplot<-
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
   labs(
-    y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+    y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
     x=paste0("Conservation status (n = ",nrow(ri_ch4),")"),
     fill=paste0("Status"))
 
@@ -3761,7 +4210,7 @@ ri_co2_sefsplot_linear<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(ri_co2),")"),
        fill=paste0("Status"))
 
@@ -3792,7 +4241,7 @@ ri_ch4_sefsplot_linear<-
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
   labs( 
-    y= expression(CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+    y= expression(CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
     x=paste0("Conservation status (n = ",nrow(ri_ch4),")"),
     fill=paste0("Status"))
 ri_ch4_sefsplot_linear
@@ -3820,7 +4269,7 @@ ri_co2andch4_sefsplot_linear<-
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
   labs(
-    y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+    y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
     x=paste0("Conservation status (n = ",nrow(ri_ch4),")"),
     fill=paste0("Status"))
 
@@ -3867,7 +4316,7 @@ va_co2_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(va_co2),")"),
        fill=paste0("Status"))
 
@@ -3903,7 +4352,7 @@ va_ch4_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(va_ch4),")"),
        fill=paste0("Status"))
 
@@ -3933,7 +4382,7 @@ va_co2andch4_sefsplot<-
   theme(
     axis.text = element_text(face = "bold"))+
   guides(color = "none", fill="none")+
-  labs(y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(y= expression(CO[2]+CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Conservation status (n = ",nrow(va_co2andch4),")"),
        fill=paste0("Status"))
 
@@ -3970,7 +4419,7 @@ data4models %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+
   guides(color = "none", fill="none")+
-  labs(title=expression(CO[2]~GWP) ,y= expression(CO[2]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(title=expression(CO[2]~GWP) ,y= expression(CO[2]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Casepilot"),
        fill=paste0("Status"))
 
@@ -4002,7 +4451,7 @@ data4models %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+
   guides(color = "none", fill="none")+
-  labs(title=expression(CH[4]~GWP) ,y= expression(CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(title=expression(CH[4]~GWP) ,y= expression(CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Casepilot"),
        fill=paste0("Status"))
 
@@ -4034,7 +4483,7 @@ data4models %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+
   guides(color = "none", fill="none")+
-  labs(title=expression(CO[2]~GWP) ,y= expression(CO[2]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(title=expression(CO[2]~GWP) ,y= expression(CO[2]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Casepilot"),
        fill=paste0("Status"))
 
@@ -4066,7 +4515,7 @@ data4models %>%
     axis.text = element_text(face = "bold"),
     axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+
   guides(color = "none", fill="none")+
-  labs(title=expression(CH[4]~GWP) ,y= expression(CH[4]~NEE~(g~CO[2~eq]~d^-1~m^-2)),
+  labs(title=expression(CH[4]~GWP) ,y= expression(CH[4]~NEE~(g~CO[2~eq]~m^-2~d^-1)),
        x=paste0("Casepilot"),
        fill=paste0("Status"))
 
@@ -4108,7 +4557,7 @@ plot_co2_status_CA <- co2_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CO[2]~flux),
        subtitle = paste0("Camargue"), 
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4133,7 +4582,7 @@ plot_co2_status_CU<- co2_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CO[2]~flux),
        subtitle = paste0("Curonian lagoon"), 
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4157,7 +4606,7 @@ plot_co2_status_DA<- co2_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CO[2]~flux),
        subtitle = paste0("Danube delta"),
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4181,7 +4630,7 @@ plot_co2_status_DU<- co2_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CO[2]~flux),
        subtitle = paste0("Dutch delta"),
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4206,7 +4655,7 @@ plot_co2_status_RI<- co2_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CO[2]~flux),
        subtitle = paste0("Ria d'Aveiro"), 
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4230,7 +4679,7 @@ plot_co2_status_VA<- co2_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CO[2]~flux),
        subtitle = paste0("Valencian wetland"), 
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4262,7 +4711,7 @@ plot_co2_season_CA<- co2_casepilot_comparisons %>%
   labs(title = expression(Seasonal~effect~on~net~CO[2]~flux),
        subtitle = paste0("Camargue"), 
        caption = paste0("Seasonal effect is averaged across the three conservation status.\nBoxes indicate the EM mean, error bars indicate SE,\n",              "Letters indicate different groups"),
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Sampling campaign",
        col=paste0("Sampling"))
 
@@ -4294,7 +4743,7 @@ plot_co2_interaction_CA<- co2_casepilot_comparisons %>%
       labs(title = expression(Seasonal~effect~on~net~CO[2]~flux),
            subtitle = paste0("Camargue"), 
            caption = paste0("Boxes indicate the EM mean, error bars indicate SE,\n",              "Letters indicate different groups"),
-           y=expression(EMM~(mol~CO[2]~d^-1~m^-2)),
+           y=expression(EMM~(mol~CO[2]~m^-2~d^-1)),
            x="Sampling campaign",
            col=paste0("Sampling"))
   }
@@ -4321,7 +4770,7 @@ plot_ch4_status_CA<-ch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CH[4]~flux),
        subtitle = paste0("Camargue"), 
-       y=expression(EMM~(mmol~CH[4]~d^-1~m^-2)),
+       y=expression(EMM~(mmol~CH[4]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4346,7 +4795,7 @@ plot_ch4_status_CU<- ch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CH[4]~flux),
        subtitle = paste0("Curonian lagoon"), 
-       y=expression(EMM~(mmol~CH[4]~d^-1~m^-2)),
+       y=expression(EMM~(mmol~CH[4]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4370,7 +4819,7 @@ plot_ch4_status_DA<- ch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CH[4]~flux),
        subtitle = paste0("Danube delta"), 
-       y=expression(EMM~(mmol~CH[4]~d^-1~m^-2)),
+       y=expression(EMM~(mmol~CH[4]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4395,7 +4844,7 @@ plot_ch4_status_DU<- ch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CH[4]~flux),
        subtitle = paste0("Dutch delta"),
-       y=expression(EMM~(mmol~CH[4]~d^-1~m^-2)),
+       y=expression(EMM~(mmol~CH[4]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4421,7 +4870,7 @@ plot_ch4_status_RI<-ch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CH[4]~flux),
        subtitle = paste0("Ria d'Aveiro"), 
-       y=expression(EMM~(mmol~CH[4]~d^-1~m^-2)),
+       y=expression(EMM~(mmol~CH[4]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4445,7 +4894,7 @@ plot_ch4_status_VA<-ch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~net~CH[4]~flux),
        subtitle = paste0("Valencian wetland"), 
-       y=expression(EMM~(mmol~CH[4]~d^-1~m^-2)),
+       y=expression(EMM~(mmol~CH[4]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4484,7 +4933,7 @@ plot_ch4_season_CA<-ch4_casepilot_comparisons %>%
       labs(title = expression(Seasonal~effect~on~net~CH[4]~flux),
            subtitle = paste0("Camargue"), 
            caption = paste0("Seasonal effect is averaged across the three conservation status.\nBoxes indicate the EM mean, error bars indicate SE,\n",              "Letters indicate different groups"),
-           y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+           y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
            x="Sampling campaign",
            col=paste0("Sampling"))
   }
@@ -4517,7 +4966,7 @@ plot_ch4_interaction_CA<-ch4_casepilot_comparisons %>%
       labs(title = expression(Seasonal~effect~on~net~CO[2]~flux),
            subtitle = paste0("Camargue"), 
            caption = paste0("Boxes indicate the EM mean, error bars indicate SE,\n",              "Letters indicate different groups"),
-           y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+           y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
            x="Sampling campaign",
            col=paste0("Sampling"))
   }
@@ -4542,7 +4991,7 @@ plot_co2andch4_status_CA <- co2andch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~NEE~(CO[2]+CH[4])),
        subtitle = paste0("Camargue"), 
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4567,7 +5016,7 @@ plot_co2andch4_status_CU<- co2andch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~NEE~(CO[2]+CH[4])),
        subtitle = paste0("Curonian lagoon"), 
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4591,7 +5040,7 @@ plot_co2andch4_status_DA<- co2andch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~NEE~(CO[2]+CH[4])),
        subtitle = paste0("Danube delta"),
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4615,7 +5064,7 @@ plot_co2andch4_status_DU<- co2andch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~NEE~(CO[2]+CH[4])),
        subtitle = paste0("Dutch delta"),
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4640,7 +5089,7 @@ plot_co2andch4_status_RI<- co2andch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~NEE~(CO[2]+CH[4])),
        subtitle = paste0("Ria d'Aveiro"), 
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4664,7 +5113,7 @@ plot_co2andch4_status_VA<- co2andch4_casepilot_comparisons %>%
         plot.caption = element_text(hjust = 0)) +
   labs(title = expression(Status~effect~on~NEE~(CO[2]+CH[4])),
        subtitle = paste0("Valencian wetland"), 
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Conservation status",
        col=paste0("Status"))
 
@@ -4695,7 +5144,7 @@ plot_co2_season_CA<- co2_casepilot_comparisons %>%
   labs(title = expression(Seasonal~effect~on~NEE~(CO[2]+CH[4])),
        subtitle = paste0("Camargue"), 
        caption = paste0("Seasonal effect is averaged across the three conservation status.\nBoxes indicate the EM mean, error bars indicate SE,\n",              "Letters indicate different groups"),
-       y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+       y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
        x="Sampling campaign",
        col=paste0("Sampling"))
 
@@ -4727,7 +5176,7 @@ plot_co2_interaction_CA<- co2_casepilot_comparisons %>%
       labs(title = expression(Seasonal~effect~on~NEE~(CO[2]+CH[4])),
            subtitle = paste0("Camargue"), 
            caption = paste0("Boxes indicate the EM mean, error bars indicate SE,\n",              "Letters indicate different groups"),
-           y=expression(EMM~(g~CO[2~eq]~d^-1~m^-2)),
+           y=expression(EMM~(g~CO[2~eq]~m^-2~d^-1)),
            x="Sampling campaign",
            col=paste0("Sampling"))
   }

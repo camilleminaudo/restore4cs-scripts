@@ -56,8 +56,10 @@ library(suncalc)
 
 
 #For modelling: 
+
 library(vegan) #to test for strata-compositional differences
 library(bestNormalize) #For data-transformations
+library(numDeriv) #For back-transformation of emmeans and contrasts SEs
 library(scales)#For pseudolog transformation
 library(glmmTMB) #For glmm modelling
 library(DHARMa) #For residual evaluation
@@ -3196,8 +3198,6 @@ save.image(file = paste0(paper_path,"chambermodels.RData"))
 load(file = paste0(paper_path, "chambermodels.RData"))
 
 
-
-
 #SUMMARY across GHGs-------
 
 
@@ -3246,257 +3246,678 @@ write.csv(x = all_complexmodel_outputs, file = paste0(paper_path,"Summary_bestco
 write.csv(x = complexmodel_resid_diag_summary, file = paste0(paper_path,"Residualtests_bestcomplexmodel_chambermodels.csv"),row.names = F)
 
 
-##3.3. EMEANs----
+##3.3. EMEANs & post-hoc----
+
+#Notes on post-hoc pairwise tests. 
+#When using an emmeans object (contains variance-covariance structure): emmeans package automatically chosses apropriate test (t-test vs z-test) depending on family distribution used (gaussian vs t_family, respectively) due to DF not being possible to estimate correctly for t_family models. This is OK.  
+
+#When calculating emmeans manually: I have to use the full variance-covariance structure to get accurate SEs. 
+#Then, if the model is gaussian, I can do t-test if I calculate the DF (via Satterthwaite approximation (if feasible)), otherwise defalut to z-test. 
+#IF the model is t_family we can use z-test (assuming robustness to heavy tails, otherwise we should try to get robust SEs or boostrap.)
+
+#CLDs (group letters) should be assigned based on the above pairwise tests, do not repeat the test, but assign letters based on already calcualted tests via (multcompLetters function). Additionally, re-code letters so that they give emmean ranking info (letter "a" denotes the smallest-emmean significant group, letter"b" the signficant group with the next lowest emmean
 
 #Calculate relevant emmeans and post-hocs tests: separately for simple model list (status*season) and complex model list (status*season*vegpresence)
 
-#NOTE on bootstrapping: there is the possibility to bootstrap the models (i.e. recalculate the model many times with re-sampled data, and calculate emmeans for each model, to be able to produce more robust Confidence Intervals for them, but this is not usually done and computationally intensive. We would have to take into account the model structure when re-sampling the data to ensure balanced resamplings (all factors represented by data). WE will not do this (for the moment).
+#NOTE on bootstrapping: OMIT FOR NOW there is the possibility to bootstrap the models (i.e. recalculate the model many times with re-sampled data, and calculate emmeans for each model, to be able to produce more robust Confidence Intervals for them, but this is not usually done and computationally intensive. We would have to take into account the model structure when re-sampling the data to ensure balanced resamplings (all factors represented by data). WE will not do this (for the moment).
 
-#NOTE on non-gaussian models: upper and lower confidence limits are given as asymp.LCL/asymp.UCL (in our context we can treat them equally as the ones from gaussian models). Additionally, non-gaussian models will have Inf df (degrees of freedom are calculated differently for T-family models), not an issue. 
+#NOTE on non-gaussian models: non-gaussian models will have Inf df (degrees of freedom are not possible to estimate for T-family models), not an issue but forces to use z-test post-hoc. 
 
 
-##Simple models-----
-#No need to use weights, we use "equal" to average across seasons with the same weight (assume sampling is representative of every season). 
 
+#DEDICATED FUNCTIONS:
+
+#EMMEANS-FUNCTION------
+#=========================================================-
+# FUNCTION: custom_weighted_emmeans_backtrans
+#---------------------------------------------------------_
+# Calculates weighted emmeans (with custom weights) from a glmmTMB model.
+# Returns both model-scale and back-transformed emmeans with proper SEs and CIs (using full covariance matrix).
+# Back-transformation is done via the supplied BestNormalize object or custom inverse.
+#=========================================================-
+
+custom_weighted_emmeans_backtrans <- function(
+    model_object,       # glmmTMB model
+    trans_object,       # BestNormalize object (or similar, must support predict(inverse=TRUE))
+    grouping_vars,      # character vector of fixed effects to group by
+    custom_weights = FALSE, # logical: use custom_weight_df or not
+    custom_weight_df = NULL, # optional: data frame with all level combinations + prop_weight
+    conf_level = 0.95   # confidence level for CIs
+) {
+  library(emmeans)
+  library(dplyr)
+  library(numDeriv)
+  
+  #-------------------------------#
+  # Helper: critical value
+  #-------------------------------#
+  get_crit_value <- function(df, conf_level) {
+    alpha <- 1 - conf_level
+    if (is.infinite(df)) qnorm(1 - alpha / 2) else qt(1 - alpha / 2, df)
+  }
+  
+  #-------------------------------#
+  # Extract factor variables
+  #-------------------------------#
+  all_terms <- attr(terms(model_object), "term.labels")
+  factor_vars <- all_terms[
+    sapply(all_terms, function(v) is.factor(model.frame(model_object)[[v]]))
+  ]
+  
+  # Fallback: if none detected, warn user
+  if (length(factor_vars) == 0)
+    stop("No factor variables detected in the model.")
+  
+  #-------------------------------#
+  # Compute full emmeans object
+  #-------------------------------#
+  full_emms_object <- emmeans(model_object, specs = factor_vars)
+  vc <- vcov(full_emms_object)
+  emm_df <- as.data.frame(full_emms_object)
+  
+  #-------------------------------#
+  # Apply weighting scheme
+  #-------------------------------#
+  if (custom_weights) {
+    if (is.null(custom_weight_df))
+      stop("If custom_weights = TRUE, you must provide custom_weight_df.")
+    
+    # Merge with custom weights
+    emm_df <- emm_df %>%
+      left_join(custom_weight_df, by = factor_vars)
+    
+    if (any(is.na(emm_df$prop_weight)))
+      stop("Mismatch between factor levels and custom_weight_df.")
+    
+  } else {
+    # Use equal weights within each grouping
+    emm_df <- emm_df %>%
+      group_by(across(all_of(grouping_vars))) %>%
+      mutate(prop_weight = 1 / n()) %>%
+      ungroup()
+  }
+  
+  # Create unique labels for vcov indexing
+  emm_df <- emm_df %>%
+    mutate(row_label = do.call(paste, c(across(all_of(factor_vars)), sep = " ")))
+  
+  #-------------------------------#
+  # Group by user-specified variables
+  #-------------------------------#
+  grouped_df <- emm_df %>%
+    group_by(across(all_of(grouping_vars))) %>%
+    group_split()
+  
+  results_list <- list()
+  
+  #-------------------------------#
+  # Loop over groups
+  #-------------------------------#
+  for (group in grouped_df) {
+    group_label <- group %>%
+      dplyr::select(all_of(grouping_vars)) %>%
+      slice(1)
+    
+    w <- group$prop_weight / sum(group$prop_weight)
+    mu <- group$emmean
+    vc_sub <- vc[group$row_label, group$row_label, drop = FALSE]
+    
+    # Model-scale weighted mean and SE
+    emmean_og <- sum(w * mu)
+    SE_og <- sqrt(as.numeric(t(w) %*% vc_sub %*% w))
+    
+    df_val <- unique(group$df)
+    if (length(df_val) != 1) stop("Non-unique df within group.")
+    crit <- get_crit_value(df_val, conf_level)
+    
+    lower.CL_og <- emmean_og - crit * SE_og
+    upper.CL_og <- emmean_og + crit * SE_og
+    
+    #-------------------------------#
+    # Back-transform using delta method
+    #-------------------------------#
+    inv_fun <- function(x) predict(trans_object, x, inverse = TRUE)
+    deriv_fun <- function(x) numDeriv::grad(inv_fun, x)
+    
+    emmean_bt <- inv_fun(emmean_og)
+    deriv_val <- deriv_fun(emmean_og)
+    SE_bt <- abs(deriv_val) * SE_og
+    
+    lower.CL_bt <- emmean_bt - crit * SE_bt
+    upper.CL_bt <- emmean_bt + crit * SE_bt
+    
+    #-------------------------------#
+    # Store results
+    #-------------------------------#
+    res <- group_label %>%
+      mutate(
+        emmean_og = emmean_og,
+        SE_og = SE_og,
+        df = df_val,
+        lower.CL_og = lower.CL_og,
+        upper.CL_og = upper.CL_og,
+        emmean_bt = emmean_bt,
+        SE_bt = SE_bt,
+        lower.CL_bt = lower.CL_bt,
+        upper.CL_bt = upper.CL_bt
+      )
+    
+    collapsed_vars <- setdiff(factor_vars, grouping_vars)
+    for (v in collapsed_vars) res[[v]] <- NA
+    
+    results_list <- append(results_list, list(res))
+  }
+  
+  #-------------------------------#
+  # Combine all results
+  #-------------------------------#
+  final_df <- bind_rows(results_list) %>%
+    dplyr::select(all_of(grouping_vars),
+                  emmean_og, SE_og, lower.CL_og, upper.CL_og,
+                  emmean_bt, SE_bt, lower.CL_bt, upper.CL_bt,
+                  df, everything())
+  
+  return(final_df)
+}
+
+
+#CONTRASTS-FUNCTION--------
+#=========================================================-
+# FUNCTION: custom_pairwise_contrasts_fullvcov
+#---------------------------------------------------------_
+# Calculates weighted pairwise contrasts using full covariance
+# structure among emmeans, not assuming independence.
+# Returns both model-scale and back-transformed contrasts.
+#=========================================================-
+
+custom_pairwise_contrasts_fullvcov <- function(
+    model_object,              # glmmTMB model
+    trans_object,              # BestNormalize or similar transformation object
+    compare_var,               # factor for which contrasts are computed
+    group_vars = character(0), # optional grouping variables
+    use_custom_weights = FALSE,# whether to use custom weights
+    custom_weight_df = NULL,   # optional custom weights df (must include prop_weight)
+    conf_level = 0.95,         # CI level
+    return_emmeans = FALSE     # return weighted emmeans if TRUE
+) {
+  library(emmeans)
+  library(dplyr)
+  library(purrr)
+  library(numDeriv)
+  
+  #---------------------------------------------#
+  # Helper function: critical value for CI
+  #---------------------------------------------#
+  get_crit_value <- function(df, conf_level) {
+    alpha <- 1 - conf_level
+    if (is.infinite(df)) qnorm(1 - alpha / 2) else qt(1 - alpha / 2, df)
+  }
+  
+  #---------------------------------------------#
+  # STEP 1. Extract factor variables from model
+  #---------------------------------------------#
+  all_terms <- attr(terms(model_object), "term.labels")
+  factor_vars <- all_terms[
+    sapply(all_terms, function(v) is.factor(model.frame(model_object)[[v]]))
+  ]
+  if (length(factor_vars) == 0)
+    stop("No factor variables detected in model.")
+  
+  #---------------------------------------------#
+  # STEP 2. Compute emmeans + variance-covariance matrix
+  #---------------------------------------------#
+  full_emms <- emmeans(model_object, specs = factor_vars)
+  vc <- vcov(full_emms)
+  emm_df <- as.data.frame(full_emms)
+  
+  #---------------------------------------------#
+  # STEP 3. Apply weights (custom or equal)
+  #---------------------------------------------#
+  if (use_custom_weights) {
+    if (is.null(custom_weight_df))
+      stop("If use_custom_weights = TRUE, custom_weight_df must be provided.")
+    
+    emm_df <- emm_df %>%
+      left_join(custom_weight_df, by = factor_vars)
+    
+    if (any(is.na(emm_df$prop_weight)))
+      stop("Mismatch between factor levels and custom_weight_df.")
+  } else {
+    # Use equal weights across all combinations of the factor_vars
+    emm_df <- emm_df %>%
+      group_by(across(all_of(factor_vars))) %>%
+      mutate(prop_weight = 1 / n()) %>%
+      ungroup()
+  }
+  
+  # Create row labels for vcov indexing
+  emm_df <- emm_df %>%
+    mutate(row_label = do.call(paste, c(across(all_of(factor_vars)), sep = " ")))
+  
+  #---------------------------------------------#
+  # STEP 4. Compute weighted emmeans (model scale)
+  #---------------------------------------------#
+  grouping_vars_all <- unique(c(group_vars, compare_var))
+  grouped_df <- emm_df %>%
+    group_by(across(all_of(grouping_vars_all))) %>%
+    group_split()
+  
+  weighted_emmeans <- list()
+  
+  for (group in grouped_df) {
+    group_label <- group %>% dplyr::select(all_of(grouping_vars_all)) %>% slice(1)
+    
+    w <- group$prop_weight / sum(group$prop_weight)
+    mu <- group$emmean
+    vc_sub <- vc[group$row_label, group$row_label, drop = FALSE]
+    
+    emmean_og <- sum(w * mu)
+    SE_og <- sqrt(as.numeric(t(w) %*% vc_sub %*% w))
+    
+    df_val <- unique(group$df)
+    if (length(df_val) != 1) stop("Non-unique df within group.")
+    
+    weighted_emmeans <- append(weighted_emmeans, list(
+      group_label %>%
+        mutate(weights = list(w),
+               row_label = list(group$row_label),
+               emmean_og = emmean_og,
+               SE_og = SE_og,
+               df = df_val)
+    ))
+  }
+  
+  emmean_df <- bind_rows(weighted_emmeans)
+  
+  #---------------------------------------------#
+  # STEP 5. Compute pairwise contrasts
+  #---------------------------------------------#
+  contrast_groups <- if (length(group_vars) > 0) {
+    emmean_df %>% group_by(across(all_of(group_vars))) %>% group_split()
+  } else {
+    list(emmean_df)
+  }
+  
+  results <- purrr::map_dfr(contrast_groups, function(group_df) {
+    levels <- unique(group_df[[compare_var]])
+    combs <- combn(levels, 2, simplify = FALSE)
+    m <- length(combs)  # number of pairwise comparisons for Sidak correction
+    
+    df_val <- unique(group_df$df)
+    if (length(df_val) != 1) stop("Non-unique df within group.")
+    crit <- get_crit_value(df_val, conf_level)
+    
+    purrr::map_dfr(combs, function(pair) {
+      g1 <- group_df %>% filter(!!sym(compare_var) == pair[1])
+      g2 <- group_df %>% filter(!!sym(compare_var) == pair[2])
+      
+      #---------------------------------------------#
+      # Model-scale contrast (using full vcov)
+      #---------------------------------------------#
+      w1 <- unlist(g1$weights)
+      w2 <- unlist(g2$weights)
+      L <- numeric(nrow(vc))
+      idx1 <- match(unlist(g1$row_label), rownames(vc))
+      idx2 <- match(unlist(g2$row_label), rownames(vc))
+      L[idx1] <- w1
+      L[idx2] <- -w2
+      
+      estimate_og <- g1$emmean_og - g2$emmean_og
+      SE_og <- sqrt(as.numeric(t(L) %*% vc %*% L))
+      stat <- estimate_og / SE_og
+      
+      # test type + p-value
+      if (is.infinite(df_val)) {
+        test_used <- "Z.test"
+        p_value_raw <- 2 * pnorm(-abs(stat))
+      } else {
+        test_used <- "T.test"
+        p_value_raw <- 2 * pt(-abs(stat), df = df_val)
+      }
+      
+      # Sidak correction for multiple comparisons
+      p_value_sidak <- 1 - (1 - p_value_raw)^m
+      
+      lower.CL_og <- estimate_og - crit * SE_og
+      upper.CL_og <- estimate_og + crit * SE_og
+      
+      #---------------------------------------------#
+      # Back-transformation (delta method)
+      #---------------------------------------------#
+      inv_fun <- function(x) predict(trans_object, x, inverse = TRUE)
+      deriv_fun <- function(x) numDeriv::grad(inv_fun, x)
+      
+      mu1_bt <- inv_fun(g1$emmean_og)
+      mu2_bt <- inv_fun(g2$emmean_og)
+      d1 <- deriv_fun(g1$emmean_og)
+      d2 <- deriv_fun(g2$emmean_og)
+      
+      estimate_bt <- mu1_bt - mu2_bt
+      SE_bt <- sqrt((d1^2 * g1$SE_og^2) + (d2^2 * g2$SE_og^2))
+      lower.CL_bt <- estimate_bt - crit * SE_bt
+      upper.CL_bt <- estimate_bt + crit * SE_bt
+      
+      #---------------------------------------------#
+      # Return results
+      #---------------------------------------------#
+      res <- tibble(
+        contrast = paste0(pair[1], " - ", pair[2]),
+        !!compare_var := NA,
+        estimate_og = estimate_og,
+        SE_og = SE_og,
+        lower.CL_og = lower.CL_og,
+        upper.CL_og = upper.CL_og,
+        estimate_bt = estimate_bt,
+        SE_bt = SE_bt,
+        lower.CL_bt = lower.CL_bt,
+        upper.CL_bt = upper.CL_bt,
+        df = df_val,
+        stat.ratio = stat,
+        test_used = test_used,
+        # p.value_raw = p_value_raw, #omit raw p-value
+        p.value = p_value_sidak
+      )
+      
+      if (length(group_vars) > 0)
+        res <- bind_cols(group_df[1, group_vars, drop = FALSE], res)
+      
+      return(res)
+    })
+  })
+  
+  #---------------------------------------------#
+  # STEP 6. Organize output
+  #---------------------------------------------#
+  out <- results %>%
+    relocate(all_of(group_vars), .before = everything()) %>%
+    relocate(contrast, .before = everything()) %>% 
+    dplyr::select(-all_of(compare_var))
+  
+  if (return_emmeans) {
+    return(list(emmeans = emmean_df, contrasts = out))
+  } else {
+    return(out)
+  }
+}
+
+
+
+#Simple models (ok)-------
+
+#Emmeans are extracted, pairwise tests done (based on model distribution family), CLDs are assigned to significantly different groups (and re-ordered based on emmean ranking). WE save both pairwise post-hoc tests in original (model scale) and back-tranformed scales; AND emmeanCLDs in original and back-transformed scales. 
+
+#Weights used for EMMs: equal, this assumes that all seasons and all status have the same weight for each other (apropriate). 
+
+#Updated loop: 
+#1st. calculate emmeans for each comparison
+#2nd. perform pairwise post-hoc
+#3rd. Join all emmeans and all pairwise comparisons
+#4th. save them in dedicated list
+
+#outside loop: 
+#get separate data frames (eems and contrasts) and bind them rowwise
+#assign cld by group to emms 
+#reassing cld based on EMM rank by group
+#Final formatting and saving to csv files
+
+
+
+#Initialize simple model results list
 simple_comparison_list<- list()
 
-# Loop to extract all comparisons for every casepilot best model
+# Loop to extract all emmeans and perform pairwise tests for apropriate comparisons for every casepilot simple model. 
+
 for (dataset in names(simplemodel_list_allghg)) {
   #get model
   cp_model <- simplemodel_list_allghg[[dataset]]
+  #get transformation object
+  cp_trans_obj<- bn_list[[dataset]]
   
   #extract casepilot name and ghgspecies from model-list names
   casepilot_name<- sub("_.*", "", dataset)
   ghgspecies<- sub(paste0(casepilot_name,"_"),"",dataset)
   
-  # Status comparisons:
-  status_emmeans <- emmeans(cp_model, ~status, weights = "equal")
-  status_comparisons <- cld(status_emmeans, 
-                            alpha = 0.05,
-                            Letters = letters,
-                            adjust = "sidak") %>%
+  # Obtain emmean object for each comparison: status, season, status_within_season. Using custom function for consistency. 
+  status_emmeans <- custom_weighted_emmeans_backtrans(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    grouping_vars = c("status"),
+    custom_weights = F)%>% 
     mutate(comparison = "status",
            ghgspecies = ghgspecies,
            casepilot = casepilot_name,
-           season = NA) %>%
-    rename(lower.CL = any_of("asymp.LCL"),
-           upper.CL = any_of("asymp.UCL"))
+           season = NA)
   
-  # Season comparisons: 
-  season_emmeans <- emmeans(cp_model, ~season, weights = "equal")
-  season_comparisons <- cld(season_emmeans, 
-                            alpha = 0.05,
-                            Letters = letters,
-                            adjust = "sidak") %>%
+  season_emmeans <- custom_weighted_emmeans_backtrans(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    grouping_vars = c("season"),
+    custom_weights = F)%>% 
     mutate(comparison = "season",
            ghgspecies = ghgspecies,
            casepilot = casepilot_name,
-           status = NA) %>%
-    rename(lower.CL = any_of("asymp.LCL"),
-           upper.CL = any_of("asymp.UCL"))
+           status = NA)
   
-  #Status_within_season comparisons: 
-  statuswithinseason_emmeans <- emmeans(cp_model, ~status|season, weights="equal")
-  statuswithinseason_comparisons <- cld(statuswithinseason_emmeans, 
-                                 alpha = 0.05,
-                                 Letters = letters,
-                                 adjust = "sidak") %>%
+  statuswithinseason_emmeans <- custom_weighted_emmeans_backtrans(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    grouping_vars = c("status","season"),
+    custom_weights = F) %>%
     mutate(comparison = "status_within_season",
            ghgspecies = ghgspecies,
-           casepilot = casepilot_name) %>%
-    rename(lower.CL = any_of("asymp.LCL"),
-           upper.CL = any_of("asymp.UCL"))
+           casepilot = casepilot_name)
   
-  # Join and format CP comparisons
-  all_comparisons <- status_comparisons %>%
-    full_join(season_comparisons) %>%
-    full_join(statuswithinseason_comparisons) %>%
-    rename(group_letter = .group) %>%
-    mutate(group_letter = gsub(" ", "", group_letter),
-           # Create key for accessing BestNormalize object
-           key_trans = paste(casepilot_name, ghgspecies, sep = "_")
-    ) %>%
-    rowwise() %>% 
-    # BACK-TRANSFORMATION of emmean, SE and CL using BestNormalize object
-    mutate(
-      emmean_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], emmean, inverse = TRUE) else NA_real_,
-      SE_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], SE, inverse = TRUE) else NA_real_,
-      lower.CL_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], lower.CL, inverse = TRUE) else NA_real_,
-      upper.CL_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], upper.CL, inverse = TRUE) else NA_real_
-    ) %>%
-    dplyr::select(any_of(c(
-      "ghgspecies", "casepilot","comparison", "status", "season","strata", "df",
-      "emmean", "SE", "lower.CL", "upper.CL", "group_letter",
-      "emmean_bt", "SE_bt", "lower.CL_bt", "upper.CL_bt"
-    ))) %>%
-    arrange(ghgspecies, casepilot, comparison, status, season)
   
-  # Store casepilot results
-  simple_comparison_list[[dataset]] <- all_comparisons
+  #Calculate contrasts for each comparison and add identifying columns:   
+  #Status comparison:
+  status_contrasts <- custom_pairwise_contrasts_fullvcov(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    compare_var = "status",
+    use_custom_weights = FALSE)%>% 
+    mutate(comparison = "status",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           season= NA)
+  
+  season_contrasts <- custom_pairwise_contrasts_fullvcov(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    compare_var = "season",
+    use_custom_weights = FALSE)%>% 
+    mutate(comparison = "season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           status= NA)
+  
+  statuswithinseason_contrasts <- custom_pairwise_contrasts_fullvcov(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    compare_var = "status",group_vars = "season",
+    use_custom_weights = FALSE)%>% 
+    mutate(comparison = "status_within_season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name)
+  
+  
+  #Join all emmeans and all contrasts:
+  all_emmeans<- status_emmeans %>%
+    full_join(season_emmeans) %>%
+    full_join(statuswithinseason_emmeans)
+  
+  all_contrasts<- status_contrasts %>%
+    full_join(season_contrasts) %>%
+    full_join(statuswithinseason_contrasts)
+  
+  #Store in named list: 
+  simple_comparison_list[[dataset]] <- list(
+    emmeans_og = all_emmeans,
+    posthoc_comparisons = all_contrasts)
+  
 }
 
+
 #Remove within-loop objects
-rm(all_comparisons, status_comparisons,season_comparisons,statuswithinseason_comparisons,
-   statuswithinseason_emmeans,status_emmeans, season_emmeans)
+rm(all_contrasts,all_emmeans, cp_model,cp_trans_obj, casepilot_name, ghgspecies,
+   status_emmeans, season_emmeans, statuswithinseason_emmeans,
+   status_contrasts,season_contrasts,statuswithinseason_contrasts)
 
 
-# Unir todos los resultados en un solo data.frame
-simplemodel_emmeans_withgroups <- bind_rows(simple_comparison_list)
+#Get pairwise posthoc tests (in model scale): 
+#T-test or Z-test depending on model distribution family used (automatically assigned by contrasts (method="pairwise)). p.value is was adjusted for multiple comparisons sidak 
+simplemodel_posthoc_tests <- purrr::map_dfr(simple_comparison_list, "posthoc_comparisons") %>%
+  #Identify the model_distribution based on df estimation:
+  mutate(model_distribution=if_else(df==Inf, "t_family", "gaussian")) %>% 
+  dplyr::select(casepilot, ghgspecies, model_distribution,comparison, test_used, contrast, season,
+                estimate_og, SE_og, lower.CL_og, upper.CL_og,
+                estimate_bt, SE_bt, lower.CL_bt, upper.CL_bt,
+                df, stat.ratio, p.value)
 
-#Save all comparisons:  
-write.csv(x = simplemodel_emmeans_withgroups, file = paste0(paper_path,"Emmeans-posthoc_simplemodels_chambermodels.csv"),row.names = F)
+#Save pairwise posthoc tests as csv.
+#Save post-hoc comparisons in model scale (to go to supplementary table)
+write.csv(x = simplemodel_posthoc_tests, file = paste0(paper_path,"Emmeans-posthoctests_simplemodels_chambermodels.csv"),row.names = F)
+
+
+#Obtain CLDs (letter-groups) based on post-hoc tests for every comparison:
+CLD_letters <- simplemodel_posthoc_tests %>%
+  #leave only (1) variables that identify unique comparisons, (2)contrast column, (3) pvalue column
+  #season is kept to account for status_within_season comparison. 
+  dplyr::select(casepilot, ghgspecies, comparison, season, contrast, p.value) %>% 
+  #Group by comparison identifiers
+  group_by(casepilot, ghgspecies, comparison, season) %>%
+  #Remove any spaces from contrast column (mutcompLetters expects levels to be only separated by a hyphen "-")
+  mutate(contrast=gsub(" ","", contrast)) %>% 
+  #Nest data for each group
+  nest() %>%
+  # Step 3: Apply multcompLetters to each group
+  mutate(letters = purrr::map(data, function(group_df) {
+    # Extract levels and p-values 
+    contrast_matrix <- group_df %>%
+      dplyr::select(contrast, p.value) %>%
+      deframe()
+    
+    # Apply multcompLetters
+    multcompLetters(contrast_matrix)$Letters %>%
+      enframe(name = "level", value = "cld_group")
+  })) %>%
+  # Step 4: Unnest results
+  dplyr::select(-data) %>%
+  unnest(letters) %>% 
+  #Reformat level to fit the appropriate columns: season or status
+  mutate(season=if_else(level%in%c("S1","S2","S3","S4"),level,season),
+         status=if_else(level%in%c("Altered","Preserved","Restored"),level, NA),
+         #Mantain level to identify nested comparisons 
+         seasonlevel=if_else(comparison=="status_within_season", season, NA)) %>% 
+  dplyr::select(casepilot, ghgspecies, comparison,status,season,seasonlevel, cld_group)
+
+
+#Get emmeans (in model scale) from loop list 
+simplemodel_emmeans<- purrr::map_dfr(simple_comparison_list, "emmeans_og")
+
+#Add CLD and back transform emmeans
+simplemodel_emmeansCLD <- simplemodel_emmeans %>%
+  #ADD CLD group-letters (re-coding them so that "a" always identifies the significant group with lowest emmean, b the next lowest emmean, and so on...)
+  left_join(CLD_letters, by = c("status", "comparison", "ghgspecies", "casepilot", "season")) %>%
+  #Separate each comparison group to do the letter re-coding
+  group_split(casepilot, ghgspecies, comparison, seasonlevel) %>%
+  map_dfr(function(group_df) {
+    # Step 1: Order by emmean
+    group_df <- group_df %>% arrange(emmean_og)
+    # Step 2: Extract and map letters
+    letter_list <- str_split(group_df$cld_group, "")
+    unique_letters <- unique(unlist(letter_list))
+    new_letters <- letters[seq_along(unique_letters)]
+    letter_map <- setNames(new_letters, unique_letters)
+    # Step 3: Apply mapping
+    group_df <- group_df %>%
+      mutate(cld_group = map_chr(letter_list, ~ paste0(letter_map[.x], collapse = "")))
+    return(group_df)
+  }) %>% 
+  #remove grouping season variable
+  dplyr::select(-seasonlevel) %>% 
+  mutate(weights_used="equal") %>% #add weights info for all (all equal)
+  #Format final emmean_CLD: select columns
+  dplyr::select(casepilot, ghgspecies, comparison, status, season,
+                df, weights_used,
+                emmean_og, SE_og,lower.CL_og, upper.CL_og,
+                cld_group,
+                emmean_bt, SE_bt, lower.CL_bt, upper.CL_bt) %>% 
+  #Format final emmean_CLD: arrange values
+  arrange(casepilot,ghgspecies, comparison, season,status )
+
+#Save emmeans and groupletters (back-transformed):  
+write.csv(x = simplemodel_emmeansCLD, file = paste0(paper_path,"EmmeansCLD_simplemodels_chambermodels.csv"),row.names = F)
 
 
 
-##Complex models------
+
+
+#Complex models (ok)------
 
 #We need to take into account the proportion of vegpresence in the field to estimate the status, season and status_within_season emmeans. For status_within_vegpresence, weights should not be applied. 
 
 #NOTES: 
 #Overall status: weights should be used to account for different vegpresence in different status and potentially in different season, but all seasons should have the same combined weight (to give the same importance to each season regardless of how many observation we have in each.)
 
-formula(cu_best_ch4)
-Anova(cu_best_ch4)
-emmeans(cu_best_ch4, ~status,weights = "show.levels")
+formula(cu_complexmodel_ch4)
+Anova(cu_complexmodel_ch4)
+emmeans(cu_complexmodel_ch4, ~status,weights = "show.levels")
 #Calling emmeans with weights="show.levels" give us the combination of levels over which each status emmean is averaging across. 
 
 #IF  we simply use the default weights="equal", each combination of levels above will be treated with equal weight for all status, which will biass our estimates if for example, not every status have the same proportion of vegpresence, or if this vegproportion is different across seasons, or even just if the actual vegproportion in the field is not 50:50.  
-emmeans(cu_best_ch4, ~status, weights = "equal")
+emmeans(cu_complexmodel_ch4, ~status, weights = "equal")
 
 #WE NEED to use WEIGHTS. 
 
 #A passable alternative would be to use weights="proportional", this option scales each level combination to its proportion in the data with is ok-ish given our semi-proportional sampling strategy. HOWEVER, with this method we get the same "sampling biass" as we have in our data: strata with little cover will be over-represented due to the minimum 3-chambers per strata rule. Also, if the number of measurements differs by season, this imbalance will also be transferred to the estimates. 
-emmeans(cu_best_ch4, ~status, weights = "proportional")
+emmeans(cu_complexmodel_ch4, ~status, weights = "proportional")
 
-#HOWEVER, if we want to "revert" the sampling biasses that we have (by design or by accident), we shoudl use weights that inform of the actual distribution of vegpresence in each season for each status. 
+#HOWEVER, if we want to "revert" the sampling biasses that we have (by design or by accident), we shoudl use weights that inform of the actual distribution of vegpresence in each season for each status. Also needed to give all seasons equal importance for the status comparison (we have differing number of observations for different seasons by chance and/or logistical constrains).  
+
 #The optimal solution is to re-calculate the weights for each combination of status*season*vegpresence according to the independently assessed coverage of each site. Additionally, we can ensure that all seasons are given the same importance to account for cases where, by chance, we performed more measurements in one season or other. 
 
 
+#METHOD DESCRIPTION text: 
+# Estimated marginal means (EMMs) were calculated for each level of the fixed effects (status, season, vegpresence) using model predictions from linear mixed-effects models. To account for sampling bias due to minimum representation constraints, custom weights reflecting the observed distribution of vegpresence within each status and season level were applied manually to the EMMs. Standard errors were calculated taking into account the variance-covariance structure of the model.
 
-##Opt1. (NO) Using proportional weigths------
-#Not ideal
-#This method takes into account the different N of the actual data the model was fitted to. So it would preserve any proportionality and biasses of the dataset. 
-#BUT it uses the same weight for all levels of the effect being estimated. Cross-status average for vegpresence and season.
-summary(cp_model)
-cp_model
-
-# Initialize list for storing comparisons
-complex_comparisons_list <- list()
-
-# Loop to extract all comparisons for every casepilot best model
-for (dataset in names(complexmodel_list_allghg)) {
-  cp_model <- complexmodel_list_allghg[[dataset]]
-  
-  #extract list of fixed effects of model:
-  fixed_effects_used<- attr(terms(cp_model), "term.labels")
-  
-  #extract casepilot name and ghgspecies from model-list names
-  casepilot_name<- sub("_.*", "", dataset)
-  ghgspecies<- sub(paste0(casepilot_name,"_"),"",dataset)
-  
-  
-  # Status comparisons: 
-  status_emmeans <- emmeans(cp_model, ~status, weights = "proportional") #Calculate overall status emmean, scaling results to database. This assumes perfect representativity of our sampling. Eg. If more samplings in winter--> more weight of winter in status emmean (same weight for all levels of status). If predominantly vegetated (across all status)--> more weight to vegetated (same weight for all). 
-  status_comparisons <- cld(status_emmeans, 
-                            alpha = 0.05,
-                            Letters = letters,
-                            adjust = "sidak") %>%
-    mutate(comparison = "status",
-           ghgspecies = ghgspecies,
-           casepilot = casepilot_name,
-           season = NA) %>%
-    rename(lower.CL = any_of("asymp.LCL"),
-           upper.CL = any_of("asymp.UCL"))
-  
-  # Season comparisons: 
-  season_emmeans <- emmeans(cp_model, ~season, weights = "proportional") #Calculate overall season emmeans, using database weights. IF through the year there are more measurements in altered, altered will have a greater impact in the estimates.
-  season_comparisons <- cld(season_emmeans, 
-                            alpha = 0.05,
-                            Letters = letters,
-                            adjust = "sidak") %>%
-    mutate(comparison = "season",
-           ghgspecies = ghgspecies,
-           casepilot = casepilot_name,
-           status = NA) %>%
-    rename(lower.CL = any_of("asymp.LCL"),
-           upper.CL = any_of("asymp.UCL"))
-  
-  # Status within season comparisons: 
-  statuswithinseason_emmeans <- emmeans(cp_model, ~status|season, weights = "proportional")
-  statuswithinseason_comparisons <- cld(statuswithinseason_emmeans, 
-                                        alpha = 0.05,
-                                        Letters = letters,
-                                        adjust = "sidak") %>%
-    mutate(comparison = "status_within_season",
-           ghgspecies = ghgspecies,
-           casepilot = casepilot_name) %>%
-    rename(lower.CL = any_of("asymp.LCL"),
-           upper.CL = any_of("asymp.UCL"))
-  
-  
-  #Status within vegpresence comparisons: 
-  statuswithinvegpresence_emmeans<-  emmeans(cp_model, ~status|vegpresence, weights = "equal")#Using equal weights ensures that different proportions of vegpresence between different seasons are not taken into account. The effect does not take into account if spring had more vegetated class than winter to calcualte the overall effect. Is the equivalent to calculating the yearly effect giving equal importance to all seasons. 
-  statuswithinvegpresence_comparisons<- cld(statuswithinvegpresence_emmeans,
-                                            alpha=0.05,
-                                            Letters=letters,
-                                            adjust = "sidak") %>% 
-    mutate(comparison="status_within_vegpresence",
-           ghgspecies=ghgspecies,
-           casepilot=casepilot_name) %>% 
-    rename(lower.CL = any_of("asymp.LCL"),
-           upper.CL = any_of("asymp.UCL"))
-  
-  
-  # Join and format CP comparisons
-  all_comparisons <- status_comparisons %>%
-    full_join(season_comparisons) %>%
-    full_join(statuswithinseason_comparisons) %>%
-    full_join(statuswithinvegpresence_comparisons) %>% 
-    rename(group_letter = .group) %>%
-    mutate(group_letter = gsub(" ", "", group_letter),
-           
-           # Create key for accessing BestNormalize object
-           key_trans = paste(casepilot_name, ghgspecies, sep = "_")
-    ) %>%
-    rowwise() %>% 
-    # BACK-TRANSFORMATION of emmean, SE and CL using BestNormalize object
-    mutate(
-      emmean_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], emmean, inverse = TRUE) else NA_real_,
-      SE_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], SE, inverse = TRUE) else NA_real_,
-      lower.CL_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], lower.CL, inverse = TRUE) else NA_real_,
-      upper.CL_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], upper.CL, inverse = TRUE) else NA_real_
-    ) %>%
-    dplyr::select(any_of(c(
-      "ghgspecies", "casepilot","comparison", "status", "vegpresence","season", "df",
-      "emmean", "SE", "lower.CL", "upper.CL", "group_letter",
-      "emmean_bt", "SE_bt", "lower.CL_bt", "upper.CL_bt"
-    ))) %>%
-    arrange(ghgspecies, casepilot, comparison, status, season)
-  
-  # Store casepilot results
-  complex_comparisons_list[[dataset]] <- all_comparisons
-}
-
-#Remove within-loop objects
-rm(all_comparisons, 
-   status_comparisons,season_comparisons,statuswithinseason_comparisons,statuswithinvegpresence_comparisons,
-   status_emmeans, season_emmeans, statuswithinseason_emmeans,  statuswithinvegpresence_emmeans)
+# Post-hoc pairwise comparisons between EMMs were performed manually using t or z tests (according to modelling family used). For each comparison, the difference in EMMs was divided by the standard error of the difference (computed as the square root of the sum of squared standard errors), and two-sided p-values were obtained from the appropriate distribution (standard normal distribution or t distribution). 
+# To account for multiple comparisons within each grouping (e.g., status within season), p-values were adjusted using the Sidak correction. Letters were assigned to significantly different groups using the multcompLetters funcion (using sidak-adjusted pvalues and a significance threshold of 0.05). CLD letter groups were ordered based on emmeans ranks so that the letter order "a" "b" "c" corresponds to progressively higher values of emmeans. 
 
 
-# Unir todos los resultados en un solo data.frame
-complexmodel_emmeans_withgroups <- bind_rows(complex_comparisons_list)
+#RATIONALE FOR CUSTOM WEIGHTS:
+#WE NEED TO APPLY weights to scale the vegpresence effects according to their proportion in the field. This applies for comparisions: status, season, and status_within_season. 
+#Weights should be calculated as the proportion of veg/noveg in every combination of status*season so they sum 1.
+#The function "custom_weighted_emmeans" below already re-normalizes the weigths as needed (for status and for season emmeans, no need to re-normalize for status*season. It calculates the associated weighted SE taking into account the variance-covariance structure of the model.
 
-#Save all comparisons:  
-write.csv(x = complexmodel_emmeans_withgroups, file = paste0(paper_path,"Emmeans-posthoc_proportionalweights_complexmodels_chambermodels.csv"),row.names = F)
+
+#Status comparison: each status estimate is calculated taking into account its particular vegpresence composition while giving equal importance to all seasons.
+
+#Season comparison: each seasonal estimate is calculated taking into account the seasonally variable vegpresence composition, while giving equal importance to all status (overall seasonal effect across all status).
+
+#Status_within_season comparison: each seasonal estimate of each status takes into account its particular vegpresence composition. 
+
+#For status_within_vegpresence, weights shoudl not be applied, we are only averaging across season and we want to have equal impact of all seasons (overall yearly effect), use weights="equal".
 
 
 
+##Obtain custom weights------
+#First, calculate vegpresence proportions at every level of casepilot, status and season (but combine vegpresence proportion of each subsite). FOr the moment use field-data, update when we have RS-retrieved proportions.
+
+#With weights calculated from chamber distribution, emmeans are proportional to the data used to fit the model, with the exception that different N across seasons does not influence the importance of each season in the status emmean (all season treated equally).
 
 
-##Opt2.(YES) Using custom weights------
-#WE NEED TO APPLY weights to scale the vegpresence effects according to their proportion in the field. This applies for comparisions: status, season, and status_within_season. For status_within_vegpresence, weights shoudl not be applied, use "equal".
-
-#First, calculate vegpresence proportions at every level of casepilot, status and season (but combine vegpresence proportion of each subsite). FOr the moment use field-data, update when we have RS-retrieved proportions
+#For the moment, use field-data, update when we have RS-retrieved proportions
+casepilot_weights<- data4models %>% 
+  dplyr::select(plotcode, casepilot, season, status, vegpresence, subsite) %>% 
+  #remove duplicates (same plotcode, different ghgspecies)
+  distinct() %>% 
+  dplyr::group_by(casepilot, season, status, vegpresence, subsite) %>%
+  #Calculate vegpresence deployment counts for each (subsite) sampling and pivot_wider
+  summarise(n_vegpresence=sum(!is.na(vegpresence)), .groups = "drop") %>% 
+  pivot_wider(names_from = vegpresence, values_from = n_vegpresence,values_fill = 0) %>% 
+  #Calculate vegpresence proportion for every (subsite) sampling.
+  mutate(sum_all=`Non-vegetated`+Vegetated) %>% 
+  mutate(Vegetated=Vegetated/sum_all,
+         `Non-vegetated`=`Non-vegetated`/sum_all) %>% 
+  dplyr::select(-sum_all) %>% 
+  pivot_longer(cols = c(`Non-vegetated`,Vegetated), names_to = "vegpresence", values_to = "proportions") %>% 
+  #Calculate the average of each status (giving equal weight to the two subsites)
+  dplyr::group_by(casepilot, status, season, vegpresence) %>% 
+  summarise(prop_weight=mean(proportions, na.rm = T), .groups = "drop")
 
 #For CURONIAN: Calculate overall veg/noveg of curonian, by design this proportion should be the same for all subsites, additionally, we asume constant proportion across seasons. we will use this to override the seasonal chamber distribution
 cu_weights<- data4models %>% 
@@ -3513,9 +3934,1091 @@ cu_weights<- data4models %>%
          `Non-vegetated`=`Non-vegetated`/sum_all) %>% 
   dplyr::select(-sum_all)
 
+#Override CU composition: constant actual composition, differences in chamber deployment are due to systematic sampling biass in Restored sites
+casepilot_weights<-casepilot_weights %>% 
+  mutate(prop_weight=if_else(casepilot=="CU"&vegpresence=="Vegetated", cu_weights %>% pull(`Vegetated`),prop_weight),
+         prop_weight=if_else(casepilot=="CU"&vegpresence=="Non-vegetated",cu_weights %>% pull(`Non-vegetated`),prop_weight))
+
+
+
+##Weighted-emmean-loop------
+
+#Calculate emmeans for each relevant comparison, using weights when appropriate:
+
+#Intialize list for complex models
+complex_comparison_list<- list()
+
+# Loop to extract all emmeans and perform pairwise tests for appropriate comparisons for every casepilot complexbestmodel. 
+for (dataset in names(complexmodel_list_allghg)) {
+  #get model
+  cp_model <- complexmodel_list_allghg[[dataset]]
+  #get transformation object
+  cp_trans_obj<- bn_list[[dataset]]
+  
+  #extract casepilot name and ghgspecies from model-list names
+  casepilot_name<- sub("_.*", "", dataset)
+  ghgspecies<- sub(paste0(casepilot_name,"_"),"",dataset)
+  
+  #Prepare casepilot custom weights: 
+  weight_df<- casepilot_weights %>% filter(casepilot==casepilot_name) %>% dplyr::select(-casepilot)
+  
+  #Obtain weighted emmeans for comparisons: status, season, status_within_season
+  #Obtain equal-weighted emmeans for comparison: status_within_vegpresence
+  status_emmeans <- custom_weighted_emmeans_backtrans(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    grouping_vars = c("status"),
+    custom_weights = T, custom_weight_df = weight_df) %>% 
+    mutate(comparison = "status",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           season = NA, vegpresence = NA, weights_used = "custom")
+  
+  season_emmeans <- custom_weighted_emmeans_backtrans(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    grouping_vars = c("season"),
+    custom_weights = T, custom_weight_df = weight_df) %>% 
+    mutate(comparison = "season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           status = NA, vegpresence = NA, weights_used = "custom")
+  
+  statuswithinseason_emmeans <- custom_weighted_emmeans_backtrans(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    grouping_vars = c("status","season"),
+    custom_weights = T, custom_weight_df = weight_df) %>%
+    mutate(comparison = "status_within_season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name, 
+           vegpresence = NA, weights_used = "custom")
+  
+  statuswithinvegpresence_emmeans <- custom_weighted_emmeans_backtrans(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    grouping_vars = c("status","vegpresence"),
+    custom_weights = F) %>% #Using equal weights (same importance to all seasons)
+    mutate(comparison = "status_within_vegpresence",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name, 
+           season = NA, weights_used = "equal")
+  
+  #Calculate contrasts for each comparison and add identifying columns:   
+  #Status comparison:
+  status_contrasts <- custom_pairwise_contrasts_fullvcov(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    compare_var = "status",
+    use_custom_weights = T, custom_weight_df = weight_df)%>% 
+    mutate(comparison = "status",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           season = NA, vegpresence = NA, weights_used = "custom")
+  
+  season_contrasts <- custom_pairwise_contrasts_fullvcov(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    compare_var = "season",
+    use_custom_weights = T, custom_weight_df = weight_df)%>% 
+    mutate(comparison = "season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           vegpresence = NA, weights_used = "custom")
+  
+  statuswithinseason_contrasts <- custom_pairwise_contrasts_fullvcov(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    compare_var = "status", group_vars = "season",
+    use_custom_weights = T, custom_weight_df = weight_df)%>%
+    mutate(comparison = "status_within_season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name, 
+           vegpresence = NA, weights_used = "custom")
+  
+  statuswithinvegpresence_contrasts <- custom_pairwise_contrasts_fullvcov(
+    model_object = cp_model, trans_object = cp_trans_obj,
+    compare_var = "status", group_vars = "vegpresence",
+    use_custom_weights = F)%>%#Using equal weights (same importance to all seasons)
+    mutate(comparison = "status_within_vegpresence",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name, 
+           season = NA, weights_used = "equal")
+  
+  #Join all emmeans and all contrasts:
+  all_emmeans<- status_emmeans %>%
+    full_join(season_emmeans) %>%
+    full_join(statuswithinseason_emmeans) %>% 
+    full_join(statuswithinvegpresence_emmeans)
+  
+  all_contrasts<- status_contrasts %>%
+    full_join(season_contrasts) %>%
+    full_join(statuswithinseason_contrasts) %>% 
+    full_join(statuswithinvegpresence_contrasts)
+  
+  #Store in named list: 
+  complex_comparison_list[[dataset]] <- list(
+    emmeans_og = all_emmeans,
+    posthoc_comparisons = all_contrasts)
+  
+}
+
+#Remove within-loop objects
+rm(all_contrasts,all_emmeans, cp_model, cp_trans_obj, casepilot_name, ghgspecies,weight_df,
+   status_emmeans, season_emmeans, statuswithinseason_emmeans,statuswithinvegpresence_emmeans,
+   status_contrasts,season_contrasts,statuswithinseason_contrasts,statuswithinvegpresence_contrasts)
+
+
+#Get pairwise posthoc tests (in model scale and back-transformed): 
+#T-test or Z-test depending on model distribution family used (automatically assigned by contrasts (method="pairwise)). p.value is adjusted for multiple comparisons sidak 
+complexmodel_customweight_posthoc_tests <- purrr::map_dfr(complex_comparison_list, "posthoc_comparisons") %>%
+  #Identify the test used (and model_distribution) based on df estimation:
+  mutate(model_distribution=if_else(df==Inf, "t_family", "gaussian")) %>% 
+  dplyr::select(casepilot, ghgspecies, model_distribution, comparison, test_used, 
+                contrast,season, vegpresence, 
+                estimate_og, SE_og, lower.CL_og, upper.CL_og, 
+                estimate_bt, SE_bt, lower.CL_bt, upper.CL_bt, 
+                df, stat.ratio, p.value)
+
+
+#Save pairwise posthoc tests as csv.
+#Save post-hoc comparisons in model scale (to go to supplementary table)
+write.csv(x = complexmodel_customweight_posthoc_tests, file = paste0(paper_path,"Emmeans-posthoctests_complexmodel_customweight_chambermodels.csv"),row.names = F)
+
+
+
+#Obtain CLDs (letter-groups) based on post-hoc tests for every comparison:
+CLD_letters <- complexmodel_customweight_posthoc_tests %>%
+  #leave only (1) variables that identify unique comparisons, (2)contrast column, (3) p.value column
+  #season and vegpresence are kept to account for status_within_season and status_within_vegpresence comparison. 
+  dplyr::select(casepilot, ghgspecies, comparison, season, vegpresence, contrast, p.value) %>%
+  #Group by comparison identifiers
+  group_by(casepilot, ghgspecies, comparison, season, vegpresence) %>%
+  #Remove any spaces from contrast column (mutcompLetters expects levels separated by a hyphen "-")
+  mutate(contrast=gsub(" ","", contrast)) %>% 
+  #Nest data for each group
+  nest() %>%
+  # Step 3: Apply multcompLetters to each group
+  mutate(letters = purrr::map(data, function(group_df) {
+    # Extract levels and p-values 
+    contrast_matrix <- group_df %>%
+      dplyr::select(contrast, p.value) %>%
+      deframe()
+    # Apply multcompLetters
+    multcompLetters(contrast_matrix)$Letters %>%
+      enframe(name = "level", value = "cld_group")
+  })) %>%
+  # Step 4: Unnest results
+  dplyr::select(-data) %>%
+  unnest(letters) %>% 
+  #Reformat level to fit the appropriate columns: season or status
+  mutate(season=if_else(level%in%c("S1","S2","S3","S4"),level,season),
+         status=if_else(level%in%c("Altered","Preserved","Restored"),level, NA),
+         #Mantain level to identify nested comparisons 
+         seasonlevel=if_else(comparison=="status_within_season",season,NA),
+         vegpresencelevel=if_else(comparison=="status_within_vegpresence",vegpresence,NA)) %>% 
+  dplyr::select(casepilot, ghgspecies, comparison,status,season,vegpresence, seasonlevel, vegpresencelevel, cld_group)
+
+
+#Get emmeans (in model scale) from loop list 
+complexmodel_customweight_emmeans<- purrr::map_dfr(complex_comparison_list, "emmeans_og")
+
+#Add CLD and back transform emmeans
+complexmodel_customweight_emmeansCLD <- complexmodel_customweight_emmeans %>%
+  #ADD CLD group-letters (re-coding them so that "a" always identifies the significant group with lowest emmean, b the next lowest emmean, and so on...)
+  left_join(CLD_letters, by = c("status", "comparison", "ghgspecies", "casepilot", "season","vegpresence")) %>%
+  #Separate each comparison group to do the letter re-coding
+  group_split(casepilot, ghgspecies, comparison, seasonlevel,vegpresencelevel) %>%
+  map_dfr(function(group_df) {
+    # Step 1: Order by emmean
+    group_df <- group_df %>% arrange(emmean_og)
+    # Step 2: Extract and map letters
+    letter_list <- str_split(group_df$cld_group, "")
+    unique_letters <- unique(unlist(letter_list))
+    new_letters <- letters[seq_along(unique_letters)]
+    letter_map <- setNames(new_letters, unique_letters)
+    # Step 3: Apply mapping
+    group_df <- group_df %>%
+      mutate(cld_group = map_chr(letter_list, ~ paste0(letter_map[.x], collapse = "")))
+    return(group_df)
+  }) %>% 
+  #remove unnecesary grouping variables
+  dplyr::select(-c(seasonlevel,vegpresencelevel)) %>% 
+  #Format final emmean_CLD: select columns
+  dplyr::select(casepilot, ghgspecies, comparison, status, season,vegpresence, weights_used,
+                df, emmean_og, SE_og,lower.CL_og, upper.CL_og,
+                cld_group,
+                emmean_bt, SE_bt, lower.CL_bt, upper.CL_bt) %>% 
+  #Format final emmean_CLD: arrange values
+  arrange(casepilot,ghgspecies, comparison,season,vegpresence, status)
+
+#Save emmeans and groupletters (back-transformed):  
+write.csv(x = complexmodel_customweight_emmeansCLD, file = paste0(paper_path,"EmmeansCLD_complexmodel_customweight_chambermodels.csv"),row.names = F)
+
+
+#_____________----
+
+
+#LEGACY code below_____-----
+
+
+
+
+
+
+##OLD- Simple models (ok)-----
+
+
+simple_comparison_list<- list()
+
+# Loop to extract all emmeans and perform pairwise tests for apropriate comparisons for every casepilot best model. Steps: 
+for (dataset in names(simplemodel_list_allghg)) {
+  #get model
+  cp_model <- simplemodel_list_allghg[[dataset]]
+  
+  #extract casepilot name and ghgspecies from model-list names
+  casepilot_name<- sub("_.*", "", dataset)
+  ghgspecies<- sub(paste0(casepilot_name,"_"),"",dataset)
+  
+  # Obtain emmean object for each comparison: status, season, status_within_season
+  status_emmeans <- emmeans(cp_model, ~status, weights = "equal")
+  season_emmeans <- emmeans(cp_model, ~season, weights = "equal")
+  statuswithinseason_emmeans <- emmeans(cp_model, ~status|season, weights="equal")
+
+  #Calculate contrasts for each comparison and add identifying columns:   
+    #Status comparison:
+  status_contrasts<- contrast(status_emmeans,
+                              method = "pairwise", adjust="sidak") %>% 
+    as.data.frame() %>% 
+    mutate(comparison = "status",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           season= NA)
+    #Season comparison:
+  season_contrasts<- contrast(season_emmeans,
+                              method = "pairwise", adjust="sidak")%>% 
+    as.data.frame() %>% 
+    mutate(comparison = "season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           status= NA)
+    #Status within season comparison:
+  statuswithinseason_contrasts<- contrast(statuswithinseason_emmeans,
+                                          method = "pairwise", adjust="sidak")%>% 
+    as.data.frame() %>% 
+    mutate(comparison = "status_within_season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name)
+  
+  #Format emmeans into dataframes adding identifying columns:
+    #Status:
+  status_emmeans<- as.data.frame(status_emmeans) %>% 
+    mutate(comparison = "status",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           season = NA) %>%
+    rename(lower.CL = any_of("asymp.LCL"),
+           upper.CL = any_of("asymp.UCL"))
+    #Season: 
+  season_emmeans<- as.data.frame(season_emmeans) %>% 
+    mutate(comparison = "season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           status = NA) %>%
+    rename(lower.CL = any_of("asymp.LCL"),
+           upper.CL = any_of("asymp.UCL"))
+    #Status within season: 
+  statuswithinseason_emmeans<- as.data.frame(statuswithinseason_emmeans) %>%
+    mutate(comparison = "status_within_season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name) %>%
+    rename(lower.CL = any_of("asymp.LCL"),
+           upper.CL = any_of("asymp.UCL"))
+  
+  #Join all emmeans and all contrasts:
+  all_emmeans<- status_emmeans %>%
+    full_join(season_emmeans) %>%
+    full_join(statuswithinseason_emmeans)
+  
+  all_contrasts<- status_contrasts %>%
+    full_join(season_contrasts) %>%
+    full_join(statuswithinseason_contrasts)
+    
+  #Store in named list: 
+  simple_comparison_list[[dataset]] <- list(
+    emmeans_og = all_emmeans,
+    posthoc_comparisons = all_contrasts)
+
+}
+
+#Remove within-loop objects
+rm(all_contrasts,all_emmeans, cp_model, casepilot_name, ghgspecies,
+   status_emmeans, season_emmeans, statuswithinseason_emmeans,
+   status_contrasts,season_contrasts,statuswithinseason_contrasts)
+
+
+#Get pairwise posthoc tests (in model scale): 
+#T-test or Z-test depending on model distribution family used (automatically assigned by contrasts (method="pairwise)). p.value is was adjusted for multiple comparisons sidak 
+simplemodel_posthoc_tests <- purrr::map_dfr(simple_comparison_list, "posthoc_comparisons") %>%
+  #Identify the test used (and model_distribution) based on df estimation:
+  mutate(model_distribution=if_else(df==Inf, "t_family", "gaussian"),
+         test_used=if_else(df==Inf, "Z.test","T.test"),
+         stat.ratio=if_else(df==Inf, z.ratio, t.ratio)) %>% 
+  #BACK-TRANSFORM contrasts (estimate and SE) to molar scales using BestNormalize objects
+  mutate(key_trans=paste0(casepilot,"_",ghgspecies)) %>% 
+  rowwise() %>% 
+  # mutate(
+  #   #WRONG!!! CANNOT DIRECTLY BACK-TRANSFORM estimates of contrasts (differences between emmeans)
+  #   #back-transform estimate directly 
+  #   estimate_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], estimate, inverse = TRUE) else NA_real_,
+  #   #back-transform SE using delta method
+  #   SE_bt = if (!is.null(bn_list[[key_trans]])) {
+  #     inv_fun <- function(x) predict(bn_list[[key_trans]], x, inverse = TRUE)
+  #     deriv_val <- numDeriv::grad(inv_fun, estimate)  # g'(mu)
+  #     abs(deriv_val) * SE
+  #   } else {
+  #     NA_real_
+  #   }
+  # ) %>% 
+  dplyr::select(casepilot, ghgspecies, model_distribution,comparison, test_used, contrast, season, estimate, SE, estimate_bt, SE_bt, df, stat.ratio, p.value)
+  
+
+#Save pairwise posthoc tests as csv.
+#Save post-hoc comparisons in model scale (to go to supplementary table)
+write.csv(x = simplemodel_posthoc_tests, file = paste0(paper_path,"Emmeans-posthoctests_simplemodels_chambermodels.csv"),row.names = F)
+
+
+#Obtain CLDs (letter-groups) based on post-hoc tests for every comparison:
+CLD_letters <- simplemodel_posthoc_tests %>%
+  #leave only (1) variables that identify unique comparisons, (2)contrast column, (3) pvalue column
+  #season is kept to account for status_within_season comparison. 
+  dplyr::select(casepilot, ghgspecies, comparison, season, contrast, p.value) %>% 
+  #Group by comparison identifiers
+  group_by(casepilot, ghgspecies, comparison, season) %>%
+  #Remove any spaces from contrast column (mutcompLetters expects levels to be only separated by a hyphen "-")
+  mutate(contrast=gsub(" ","", contrast)) %>% 
+  #Nest data for each group
+  nest() %>%
+  # Step 3: Apply multcompLetters to each group
+  mutate(letters = purrr::map(data, function(group_df) {
+    # Extract levels and p-values 
+    contrast_matrix <- group_df %>%
+      dplyr::select(contrast, p.value) %>%
+      deframe()
+    
+    # Apply multcompLetters
+    multcompLetters(contrast_matrix)$Letters %>%
+      enframe(name = "level", value = "cld_group")
+  })) %>%
+  # Step 4: Unnest results
+  dplyr::select(-data) %>%
+  unnest(letters) %>% 
+  #Reformat level to fit the appropriate columns: season or status
+  mutate(season=if_else(level%in%c("S1","S2","S3","S4"),level,season),
+         status=if_else(level%in%c("Altered","Preserved","Restored"),level, NA),
+         #Mantain level to identify nested comparisons 
+         seasonlevel=if_else(comparison=="status_within_season", season, NA)) %>% 
+  dplyr::select(casepilot, ghgspecies, comparison,status,season,seasonlevel, cld_group)
+  
+
+#Get emmeans (in model scale) from loop list 
+simplemodel_emmeans<- purrr::map_dfr(simple_comparison_list, "emmeans_og")
+
+#Add CLD and back transform emmeans
+simplemodel_emmeansCLD <- simplemodel_emmeans %>%
+  #ADD CLD group-letters (re-coding them so that "a" always identifies the significant group with lowest emmean, b the next lowest emmean, and so on...)
+  left_join(CLD_letters, by = c("status", "comparison", "ghgspecies", "casepilot", "season")) %>%
+  #Separate each comparison group to do the letter re-coding
+  group_split(casepilot, ghgspecies, comparison, seasonlevel) %>%
+  map_dfr(function(group_df) {
+    # Step 1: Order by emmean
+    group_df <- group_df %>% arrange(emmean)
+    # Step 2: Extract and map letters
+    letter_list <- str_split(group_df$cld_group, "")
+    unique_letters <- unique(unlist(letter_list))
+    new_letters <- letters[seq_along(unique_letters)]
+    letter_map <- setNames(new_letters, unique_letters)
+    # Step 3: Apply mapping
+    group_df <- group_df %>%
+      mutate(cld_group = map_chr(letter_list, ~ paste0(letter_map[.x], collapse = "")))
+    return(group_df)
+  }) %>% 
+  #remove grouping season variable
+  dplyr::select(-seasonlevel) %>% 
+  #BACK-TRANSFORM emmeans (and SE, CL) to molar scales using BestNormalize objects
+  mutate(key_trans=paste0(casepilot,"_",ghgspecies)) %>% 
+  rowwise() %>% 
+  mutate(
+    emmean_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], emmean, inverse = TRUE) else NA_real_,
+    #Back-transform SE using delta method
+    SE_bt = if (!is.null(bn_list[[key_trans]])) {
+      inv_fun <- function(x) predict(bn_list[[key_trans]], x, inverse = TRUE)
+      deriv_val <- numDeriv::grad(inv_fun, emmean)  # g'(mu)
+      abs(deriv_val) * SE
+    } else {
+      NA_real_
+    },
+    lower.CL_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], lower.CL, inverse = TRUE) else NA_real_,
+    upper.CL_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], upper.CL, inverse = TRUE) else NA_real_
+  ) %>% 
+  mutate(weights_used="equal") %>% #add weights info for all (all equal)
+  #Format final emmean_CLD: select columns
+  dplyr::select(casepilot, ghgspecies, comparison, status, season,
+                df, emmean, SE,lower.CL, upper.CL,
+                cld_group,
+                emmean_bt, SE_bt, lower.CL_bt, upper.CL_bt) %>% 
+  #Format final emmean_CLD: arrange values
+  arrange(casepilot,ghgspecies, comparison, season,status )
+  
+#Save emmeans and groupletters (back-transformed):  
+write.csv(x = simplemodel_emmeansCLD, file = paste0(paper_path,"EmmeansCLD_simplemodels_chambermodels.csv"),row.names = F)
+
+
+
+
+
+
+
+
+##Complex models------
+
+#We need to take into account the proportion of vegpresence in the field to estimate the status, season and status_within_season emmeans. For status_within_vegpresence, weights should not be applied. 
+
+#NOTES: 
+#Overall status: weights should be used to account for different vegpresence in different status and potentially in different season, but all seasons should have the same combined weight (to give the same importance to each season regardless of how many observation we have in each.)
+
+formula(cu_complexmodel_ch4)
+Anova(cu_complexmodel_ch4)
+emmeans(cu_complexmodel_ch4, ~status,weights = "show.levels")
+#Calling emmeans with weights="show.levels" give us the combination of levels over which each status emmean is averaging across. 
+
+#IF  we simply use the default weights="equal", each combination of levels above will be treated with equal weight for all status, which will biass our estimates if for example, not every status have the same proportion of vegpresence, or if this vegproportion is different across seasons, or even just if the actual vegproportion in the field is not 50:50.  
+emmeans(cu_complexmodel_ch4, ~status, weights = "equal")
+
+#WE NEED to use WEIGHTS. 
+
+#A passable alternative would be to use weights="proportional", this option scales each level combination to its proportion in the data with is ok-ish given our semi-proportional sampling strategy. HOWEVER, with this method we get the same "sampling biass" as we have in our data: strata with little cover will be over-represented due to the minimum 3-chambers per strata rule. Also, if the number of measurements differs by season, this imbalance will also be transferred to the estimates. 
+emmeans(cu_complexmodel_ch4, ~status, weights = "proportional")
+
+#HOWEVER, if we want to "revert" the sampling biasses that we have (by design or by accident), we shoudl use weights that inform of the actual distribution of vegpresence in each season for each status. 
+
+#The optimal solution is to re-calculate the weights for each combination of status*season*vegpresence according to the independently assessed coverage of each site. Additionally, we can ensure that all seasons are given the same importance to account for cases where, by chance, we performed more measurements in one season or other. 
+
+
+##Opt1. (OK-ish) Using proportional weigths------
+#Use the same structure and logic as for the simplemodels (let contrast decide which post-hoc test to perform). Adapt outside-of-loop sections to simplemodel logic, to calculate CLDs and save outputs as csv files. 
+
+#Not ideal
+#This method takes into account the different N of the actual data the model was fitted to. So it would preserve any proportionality and biasses of the dataset. 
+#BUT it uses the same weight for all levels of the effect being estimated. Cross-status average for vegpresence and season.
+
+#Weights per comparison: 
+  #Status comparison (proportional weights): vegpresence and season estimates influence status emmean proportionally to the average vegpresence and season across status levels. More samples (overall) in winter--> greater effect of winter in the status emmean (not ideal). More samples (overall) in vegetated --> greater efect of vegetated estimate in the status emmean (ok-ish). 
+
+  #Season (use equal weights): season emmean is equally influenced by all combinations of status*vegpresence.
+
+  #Status_within_season (proportional weights): status_within_season emmeans are proportionally influenced by the proportion of vegetated/nonvegetated across all combinations of status and season. 
+  #Status_within_vegpresence (CLEAR, use equal weights): same impact of all seasons in the status_within_vegpresence estimates. I.e. dont take into account different amount of measurements across seasons  to estimate the emmean.  OK. 
+
+complex_comparison_list<- list()
+
+# Loop to extract all emmeans and perform pairwise tests for apropriate comparisons for every casepilot best model. Steps: 
+for (dataset in names(complexmodel_list_allghg)) {
+  #get model
+  cp_model <- complexmodel_list_allghg[[dataset]]
+  
+  #extract casepilot name and ghgspecies from model-list names
+  casepilot_name<- sub("_.*", "", dataset)
+  ghgspecies<- sub(paste0(casepilot_name,"_"),"",dataset)
+  
+  # Obtain emmean object for each comparison: status, season, status_within_season.
+  status_emmeans <- emmeans(cp_model, ~status, weights = "proportional")
+  season_emmeans <- emmeans(cp_model, ~season, weights = "equal")
+  statuswithinseason_emmeans <- emmeans(cp_model, ~status|season, weights="proportional")
+  statuswithinvegpresence_emmeans <- emmeans(cp_model, ~status|vegpresence, weights = "equal")
+  
+  #Calculate contrasts for each comparison and add identifying columns:   
+  #Status comparison:
+  status_contrasts<- contrast(status_emmeans,
+                              method = "pairwise", adjust="sidak") %>% 
+    as.data.frame() %>% 
+    mutate(comparison = "status",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           season= NA, vegpresence = NA)
+  #Season comparison:
+  season_contrasts<- contrast(season_emmeans,
+                              method = "pairwise", adjust="sidak")%>% 
+    as.data.frame() %>% 
+    mutate(comparison = "season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           status= NA, vegpresence = NA)
+  #Status within season comparison:
+  statuswithinseason_contrasts<- contrast(statuswithinseason_emmeans,
+                                          method = "pairwise", adjust="sidak")%>% 
+    as.data.frame() %>% 
+    mutate(comparison = "status_within_season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           vegpresence = NA)
+  #Status within vegpresence comparison:
+  statuswithinvegpresence_contrasts<- contrast(statuswithinvegpresence_emmeans,
+                                          method = "pairwise", adjust="sidak")%>% 
+    as.data.frame() %>% 
+    mutate(comparison = "status_within_vegpresence",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           season = NA)
+  
+  
+  #Format emmeans into dataframes adding identifying columns:
+  #Status:
+  status_emmeans<- as.data.frame(status_emmeans) %>% 
+    mutate(comparison = "status",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           season = NA, vegpresence = NA, weights_used = "proportional") %>%
+    rename(lower.CL = any_of("asymp.LCL"),
+           upper.CL = any_of("asymp.UCL"))
+  #Season: 
+  season_emmeans<- as.data.frame(season_emmeans) %>% 
+    mutate(comparison = "season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           status = NA, vegpresence = NA, weights_used = "equal") %>%
+    rename(lower.CL = any_of("asymp.LCL"),
+           upper.CL = any_of("asymp.UCL"))
+  #Status within season: 
+  statuswithinseason_emmeans<- as.data.frame(statuswithinseason_emmeans) %>%
+    mutate(comparison = "status_within_season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name, 
+           vegpresence = NA, weights_used = "proportional") %>%
+    rename(lower.CL = any_of("asymp.LCL"),
+           upper.CL = any_of("asymp.UCL"))
+  #Status within vegpresence: 
+  statuswithinvegpresence_emmeans<- as.data.frame(statuswithinvegpresence_emmeans) %>%
+    mutate(comparison = "status_within_vegpresence",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name, 
+           season = NA, weights_used = "equal") %>%
+    rename(lower.CL = any_of("asymp.LCL"),
+           upper.CL = any_of("asymp.UCL"))
+  
+  #Join all emmeans and all contrasts:
+  all_emmeans<- status_emmeans %>%
+    full_join(season_emmeans) %>%
+    full_join(statuswithinseason_emmeans) %>% 
+    full_join(statuswithinvegpresence_emmeans)
+  
+  all_contrasts<- status_contrasts %>%
+    full_join(season_contrasts) %>%
+    full_join(statuswithinseason_contrasts) %>% 
+    full_join(statuswithinvegpresence_contrasts)
+  
+  #Store in named list: 
+  complex_comparison_list[[dataset]] <- list(
+    emmeans_og = all_emmeans,
+    posthoc_comparisons = all_contrasts)
+  
+}
+
+#Remove within-loop objects
+rm(all_contrasts,all_emmeans, cp_model, casepilot_name, ghgspecies,
+   status_emmeans, season_emmeans, statuswithinseason_emmeans,statuswithinvegpresence_emmeans,
+   status_contrasts,season_contrasts,statuswithinseason_contrasts,statuswithinvegpresence_contrasts)
+
+
+#Get pairwise posthoc tests (in model scale): 
+#T-test or Z-test depending on model distribution family used (automatically assigned by contrasts (method="pairwise)). p.value is was adjusted for multiple comparisons sidak 
+complexmodel_propweight_posthoc_tests <- purrr::map_dfr(complex_comparison_list, "posthoc_comparisons") %>%
+  #Identify the test used (and model_distribution) based on df estimation:
+  mutate(model_distribution=if_else(df==Inf, "t_family", "gaussian"),
+         test_used=if_else(df==Inf, "Z.test","T.test"),
+         stat.ratio=if_else(df==Inf, z.ratio, t.ratio)) %>% 
+  #BACK-TRANSFORM contrasts (estimate and SE) to molar scales using BestNormalize objects
+  mutate(key_trans=paste0(casepilot,"_",ghgspecies)) %>% 
+  rowwise() %>% 
+  mutate(
+    estimate_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], estimate, inverse = TRUE) else NA_real_,
+    #Back-transform SE using delta method
+    SE_bt = if (!is.null(bn_list[[key_trans]])) {
+      inv_fun <- function(x) predict(bn_list[[key_trans]], x, inverse = TRUE)
+      deriv_val <- numDeriv::grad(inv_fun, estimate)  # g'(mu)
+      abs(deriv_val) * SE
+    } else {
+      NA_real_
+    }
+  ) %>% 
+  dplyr::select(casepilot, ghgspecies, model_distribution,comparison, test_used, contrast, season, vegpresence, estimate, SE, estimate_bt, SE_bt, df, stat.ratio, p.value)
+
+
+
+#Save pairwise posthoc tests as csv.
+#Save post-hoc comparisons in model scale (to go to supplementary table)
+write.csv(x = complexmodel_propweight_posthoc_tests, file = paste0(paper_path,"Emmeans-posthoctests_complexmodel_propweight_chambermodels.csv"),row.names = F)
+
+
+
+#Obtain CLDs (letter-groups) based on post-hoc tests for every comparison:
+CLD_letters <- complexmodel_propweight_posthoc_tests %>%
+  #leave only (1) variables that identify unique comparisons, (2)contrast column, (3) pvalue column
+  #season is kept to account for status_within_season comparison. 
+  dplyr::select(casepilot, ghgspecies, comparison, season,vegpresence, contrast, p.value) %>% 
+  #Group by comparison identifiers
+  group_by(casepilot, ghgspecies, comparison, season,vegpresence) %>%
+  #Remove any spaces from contrast column (mutcompLetters expects levels to be only separated by a hyphen "-")
+  mutate(contrast=gsub(" ","", contrast)) %>% 
+  #Nest data for each group
+  nest() %>%
+  # Step 3: Apply multcompLetters to each group
+  mutate(letters = purrr::map(data, function(group_df) {
+    # Extract levels and p-values 
+    contrast_matrix <- group_df %>%
+      dplyr::select(contrast, p.value) %>%
+      deframe()
+    # Apply multcompLetters
+    multcompLetters(contrast_matrix)$Letters %>%
+      enframe(name = "level", value = "cld_group")
+  })) %>%
+  # Step 4: Unnest results
+  dplyr::select(-data) %>%
+  unnest(letters) %>% 
+  #Reformat level to fit the appropriate columns: season or status
+  mutate(season=if_else(level%in%c("S1","S2","S3","S4"),level,season),
+         status=if_else(level%in%c("Altered","Preserved","Restored"),level, NA),
+         #Mantain level to identify nested comparisons 
+         seasonlevel=if_else(comparison=="status_within_season",season,NA),
+         vegpresencelevel=if_else(comparison=="status_within_vegpresence",vegpresence,NA)) %>% 
+  dplyr::select(casepilot, ghgspecies, comparison,status,season,vegpresence, seasonlevel, vegpresencelevel, cld_group)
+
+
+#Get emmeans (in model scale) from loop list 
+complexmodel_propweight_emmeans<- purrr::map_dfr(complex_comparison_list, "emmeans_og")
+
+#Add CLD and back transform emmeans
+complexmodel_propweight_emmeansCLD <- complexmodel_propweight_emmeans %>%
+  #ADD CLD group-letters (re-coding them so that "a" always identifies the significant group with lowest emmean, b the next lowest emmean, and so on...)
+  left_join(CLD_letters, by = c("status", "comparison", "ghgspecies", "casepilot", "season","vegpresence")) %>%
+  #Separate each comparison group to do the letter re-coding
+  group_split(casepilot, ghgspecies, comparison, seasonlevel,vegpresencelevel) %>%
+  map_dfr(function(group_df) {
+    # Step 1: Order by emmean
+    group_df <- group_df %>% arrange(emmean)
+    # Step 2: Extract and map letters
+    letter_list <- str_split(group_df$cld_group, "")
+    unique_letters <- unique(unlist(letter_list))
+    new_letters <- letters[seq_along(unique_letters)]
+    letter_map <- setNames(new_letters, unique_letters)
+    # Step 3: Apply mapping
+    group_df <- group_df %>%
+      mutate(cld_group = map_chr(letter_list, ~ paste0(letter_map[.x], collapse = "")))
+    return(group_df)
+  }) %>% 
+  #remove unnecesary grouping variables
+  dplyr::select(-c(seasonlevel,vegpresencelevel)) %>% 
+  #BACK-TRANSFORM emmeans (and SE, CL) to molar scales using BestNormalize objects
+  mutate(key_trans=paste0(casepilot,"_",ghgspecies)) %>% 
+  rowwise() %>% 
+  mutate(
+    emmean_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], emmean, inverse = TRUE) else NA_real_,
+    #Back-transform SE using delta method
+    SE_bt = if (!is.null(bn_list[[key_trans]])) {
+      inv_fun <- function(x) predict(bn_list[[key_trans]], x, inverse = TRUE)
+      deriv_val <- numDeriv::grad(inv_fun, emmean)  # g'(mu)
+      abs(deriv_val) * SE
+    } else {
+      NA_real_
+    },
+    lower.CL_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], lower.CL, inverse = TRUE) else NA_real_,
+    upper.CL_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], upper.CL, inverse = TRUE) else NA_real_
+  ) %>% 
+  #Format final emmean_CLD: select columns
+  dplyr::select(casepilot, ghgspecies, comparison, status, season,vegpresence,weights_used,
+                df, emmean, SE,lower.CL, upper.CL,
+                cld_group,
+                emmean_bt, SE_bt, lower.CL_bt, upper.CL_bt) %>% 
+  #Format final emmean_CLD: arrange values
+  arrange(casepilot,ghgspecies, comparison,season,vegpresence, status)
+
+#Save emmeans and groupletters (back-transformed):  
+write.csv(x = complexmodel_propweight_emmeansCLD, file = paste0(paper_path,"EmmeansCLD_complexmodel_propweight_chambermodels.csv"),row.names = F)
+
+
+
+
+
+
+##Opt2. (OK) Using custom weights------
+#METHOD DESCRIPTION text: 
+# Estimated marginal means (EMMs) were calculated for each level of the fixed effects (status, season, vegpresence) using model predictions from linear mixed-effects models. To account for sampling bias due to minimum representation constraints, custom weights reflecting the observed distribution of vegpresence within each status and season level were applied manually to the EMMs. Standard errors were calculated taking into account the variance-covariance structure of the model.
+
+# Post-hoc pairwise comparisons between EMMs were performed manually using t or z tests (according to modelling family used). For each comparison, the difference in EMMs was divided by the standard error of the difference (computed as the square root of the sum of squared standard errors), and two-sided p-values were obtained from the appropriate distribution (standard normal distribution or t distribution). 
+# To account for multiple comparisons within each grouping (e.g., status within season), p-values were adjusted using the Sidak correction. Letters were assigned to significantly different groups using the multcompLetters funcion (using sidak-adjusted pvalues and a significance threshold of 0.05). CLD letter groups were ordered based on emmeans ranks so that the letter order "a" "b" "c" corresponds to progressively higher values of emmeans. 
+
+
+#RATIONALE FOR CUSTOM WEIGHTS:
+#WE NEED TO APPLY weights to scale the vegpresence effects according to their proportion in the field. This applies for comparisions: status, season, and status_within_season. 
+#Weights should be calculated as the proportion of veg/noveg in every combination of status*season so they sum 1.
+#The function "custom_weighted_emmeans" below already re-normalizes the weigths as needed (for status and for season emmeans, no need to re-normalize for status*season. It calculates the associated weighted SE taking into account the variance-covariance structure of the model.
+
+
+#Status comparison: each status estimate is calculated taking into account its particular vegpresence composition while giving equal importance to all seasons.
+
+#Season comparison: each seasonal estimate is calculated taking into account the seasonally variable vegpresence composition, while giving equal importance to all status (overall seasonal effect across all status).
+
+#Status_within_season comparison: each seasonal estimate of each status takes into account its particular vegpresence composition. 
+
+#For status_within_vegpresence, weights shoudl not be applied, we are only averaging across season and we want to have equal impact of all seasons (overall yearly effect), use weights="equal".
+
+
+#NEW FUNCTION: 
+
+
+##Simple models (ok)-----
+#Emmeans are extracted, pairwise tests done (based on model distribution family), CLDs are assigned to significantly different groups (and re-ordered based on emmean ranking). WE save both pairwise post-hoc tests (in model scale) AND emmeanCLDs in original and back-transformed scales. 
+
+#Weights used for EMMs: equal, this assumes that all seasons and all status have the same weight for each other (apropriate). 
+
+#Updated loop: 
+#1st. calculate emmeans for each comparison
+#2nd. perform pairwise post-hoc (via custom_pairwise adjust=sidak)
+#3rd. Join all emmeans and all pairwise comparisons
+#4th. save them in dedicated list
+
+#outside loop: 
+#get separate data frames (eems and contrasts) and bind them rowwise
+#assign cld by group to emms 
+#reassing cld based on EMM rank by group
+#Perform back-transformation of emms
+
+contrasts_eq <- custom_pairwise_contrasts_fullvcov(
+  model_object = my_glmmTMB_model,
+  trans_object = bn_obj,
+  compare_var = "Treatment",
+  group_vars = c("Season"),
+  use_custom_weights = FALSE
+)
+
+
+
+#Complex models (ok)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#FUNCTION to OBTAIN weighted emmeans: allowing for custom weights (different for each level).
+custom_weighted_emmeans <- function(model_object,#glmmTMB object for which to calculate emms
+                                    grouping_vars,#vector of character names of fixed effects for whose combination emms will be calculated (allows only 1 name or more)
+                                    custom_weight_df,#Data frame of weights, must contain columns with all combinations of fixed effects and a column "prop_weight" with the custom weights for each level combination.
+                                    conf_level = 0.95 #Level at which confidence limits are calculated
+                                            ) {
+  # Critical value function for CIs (z/t depending on family distribution, infered from the extracted degrees of freedom)
+  get_crit_value <- function(df, conf_level) {
+    alpha <- 1 - conf_level
+    if (is.infinite(df)) {qnorm(1 - alpha / 2) #formula for gaussian models
+    } else {qt(1 - alpha / 2, df)}  } #formula for t_family models
+  
+  # Get names of model factors from weight data (excluding weight column)
+  factor_vars <- names(custom_weight_df)[names(custom_weight_df) != "prop_weight"]
+  # Compute full emmeans over all combinations and extract variance-covariance matrix
+  full_emms_object <- emmeans(model_object, specs = factor_vars)
+  vc <- vcov(full_emms_object)
+  # Join full emm data with weights (add row_label for subsetting of vc values)
+  emm_df <- as.data.frame(full_emms_object) %>%
+    left_join(custom_weight_df, by = factor_vars) %>%
+    mutate(row_label = do.call(paste, c(across(all_of(factor_vars)), sep = " ")))
+  # Split into groups (one per combination of grouping_vars levels)
+  grouped_df <- emm_df %>%
+    group_by(across(all_of(grouping_vars))) %>%
+    group_split()
+  #Initialize list to store group results
+  results_list <- list()
+  #Loop to calculate emmean, SE, df, lower.CL and upper.CL for each group
+  for (group in grouped_df) {
+    group_label <- group %>% dplyr::select(all_of(grouping_vars)) %>% slice(1)#get group variables
+    w <- group$prop_weight #get weights
+    w <- as.numeric(w / sum(w))  #Normalize weights to sum 1
+    mu <- group$emmean#extract emmeans
+    vc_sub <- vc[group$row_label, group$row_label]#extract variance-covariance values
+    emmean_val <- sum(w * mu)#calcualte weighted emmean
+    SE_val <- sqrt(as.numeric(t(w) %*% vc_sub %*% w))#calcualte weighted SE
+    df_vals <- unique(group$df)#extract Degrees of freedom
+    df_val <- if (length(df_vals) == 1) df_vals else stop("Non-unique df in group")
+    crit <- get_crit_value(df_val, conf_level)#calculate confidence limits
+    lower.CL <- emmean_val - crit * SE_val
+    upper.CL <- emmean_val + crit * SE_val
+    #Combine results for group into data-frame row
+    res <- group_label %>%
+      mutate(
+        emmean = emmean_val,
+        SE = SE_val,
+        df = df_val,
+        lower.CL = lower.CL,
+        upper.CL = upper.CL
+      )
+    # Add NAs for other variables (averaged over)
+    collapsed_vars <- setdiff(factor_vars, grouping_vars)
+    for (v in collapsed_vars) {res[[v]] <- NA}
+    #Add group results to list
+    results_list <- append(results_list, list(res))
+  }
+  #Combine emmeasn from all groups
+  final_df <- bind_rows(results_list) %>%
+    dplyr::select(all_of(grouping_vars), emmean, SE, df, lower.CL, upper.CL, everything())
+  return(final_df)
+}
+
+
+#Function to perform pairwise contrasts, given an emean_df, a compare_var and (optionally) a group_var. Implements automatically a t-test or a z-test depending on the modelling distribution of the emmeans (inferred from the emmeans degrees of freedom). Provides raw and sidak-adjusted pvalues.
+custom_pairwise_contrasts <- function(emmean_df, compare_var, group_vars = character(0)) {
+  emmean_df %>%
+    # Split data into groups if grouping variables are specified
+    group_by(across(all_of(group_vars))) %>%
+    group_split() %>%
+    # Apply the following procedure to each group
+    purrr::map_dfr(function(group_df) {
+      
+      # Identify all levels of the variable to compare (e.g., "status")
+      levels <- unique(group_df[[compare_var]])
+      # Generate all pairwise combinations between levels
+      combs <- combn(levels, 2, simplify = FALSE)
+      m <- length(combs)  # number of pairwise comparisons
+      
+      # Check that degrees of freedom (df) are consistent within group
+      df_val <- unique(group_df$df)
+      if (length(df_val) != 1) stop("Non-unique df within group.")
+      df_val <- df_val[1]
+      
+      # Loop through each pair of levels and compute contrasts
+      purrr::map_dfr(combs, function(pair) {
+        # Extract emmeans and SE for each group
+        g1 <- group_df %>% filter(!!sym(compare_var) == pair[1])
+        g2 <- group_df %>% filter(!!sym(compare_var) == pair[2])
+        
+        # Compute contrast difference and its standard error
+        diff <- g1$emmean - g2$emmean
+        se_diff <- sqrt(g1$SE^2 + g2$SE^2)
+        stat <- diff / se_diff  # test statistic
+        
+        # Choose test type depending on df (z-test if df = Inf, else t-test)
+        if (is.infinite(df_val)) {
+          test_used <- "Z.test"
+          p_value <- 2 * pnorm(-abs(stat))
+        } else {
+          test_used <- "T.test"
+          p_value <- 2 * pt(-abs(stat), df = df_val)
+        }
+        
+        # Apply Sidak correction within each group for multiple comparisons
+        p_value_sidak <- 1 - (1 - p_value)^m
+        
+        # Return a tidy tibble with all relevant results
+        tibble(
+          contrast = paste0(pair[1], " - ", pair[2]),
+          !!compare_var := NA,          # placeholder for removed variable
+          estimate = diff,
+          SE = se_diff,
+          df = df_val,
+          test_used = test_used,
+          stat.ratio = stat,
+          p.value = p_value_sidak,
+          # Preserve grouping variable values (if any)
+          !!!group_df[1, group_vars, drop = FALSE]
+        )
+      })
+    }) %>%
+    # Reorder columns: group_vars first, then contrast and results
+    relocate(all_of(group_vars), .before = everything()) %>% 
+    relocate(contrast, .before = everything()) %>% 
+    # Remove the original comparison variable column (now redundant)
+    dplyr::select(-all_of(compare_var))
+}
+
+
+#Example ussage:
+custom_pairwise_contrasts(emmean_df = custom_emm_status_season,
+                          compare_var = "status",
+                          group_vars = "season")
+
+
+#UPDATED function for pairwise contrasts. This function requires the transformation object to perform the back-transformation of contrasts (and associated SE and CL).  given an emean_df, a compare_var and (optionally) a group_var. Implements automatically a t-test or a z-test depending on the modelling distribution of the emmeans (inferred from the emmeans degrees of freedom). Provides sidak-adjusted pvalues.
+
+custom_pairwise_contrasts <- function(emmean_df,
+                                      compare_var,
+                                      group_vars = character(0),
+                                      trans_obj = NULL,   # optional bestNormalize or custom transformation object
+                                      inv_fun = NULL,     # optional inverse transformation function
+                                      deriv_fun = NULL,   # optional derivative of inverse function
+                                      conf_level = 0.95) {
+  library(dplyr)
+  library(purrr)
+  library(numDeriv)
+  
+  get_crit_value <- function(df, conf_level) {
+    alpha <- 1 - conf_level
+    if (is.infinite(df)) qnorm(1 - alpha / 2) else qt(1 - alpha / 2, df)
+  }
+  
+  emmean_df %>%
+    group_by(across(all_of(group_vars))) %>%
+    group_split() %>%
+    purrr::map_dfr(function(group_df) {
+      
+      levels <- unique(group_df[[compare_var]])
+      combs <- combn(levels, 2, simplify = FALSE)
+      m <- length(combs)
+      
+      df_val <- unique(group_df$df)
+      if (length(df_val) != 1) stop("Non-unique df within group.")
+      df_val <- df_val[1]
+      crit <- get_crit_value(df_val, conf_level)
+      
+      purrr::map_dfr(combs, function(pair) {
+        
+        g1 <- group_df %>% filter(!!sym(compare_var) == pair[1])
+        g2 <- group_df %>% filter(!!sym(compare_var) == pair[2])
+        
+        # Model-scale contrast
+        diff <- g1$emmean - g2$emmean
+        se_diff <- sqrt(g1$SE^2 + g2$SE^2)  # assume independence
+        stat <- diff / se_diff
+        
+        if (is.infinite(df_val)) {
+          test_used <- "Z.test"
+          p_value <- 2 * pnorm(-abs(stat))
+        } else {
+          test_used <- "T.test"
+          p_value <- 2 * pt(-abs(stat), df = df_val)
+        }
+        
+        # Sidak correction
+        p_value_sidak <- 1 - (1 - p_value)^m
+        
+        # Delta-method back-transformation
+        if (!is.null(trans_obj) || !is.null(inv_fun)) {
+          # define inverse transformation
+          if (is.null(inv_fun)) {
+            inv_fun <- function(x) predict(trans_obj, x, inverse = TRUE)
+          }
+          # derivative of inverse
+          if (is.null(deriv_fun)) {
+            deriv_fun <- function(x) numDeriv::grad(inv_fun, x)
+          }
+          
+          # compute back-transformed emmeans
+          mu1_bt <- inv_fun(g1$emmean)
+          mu2_bt <- inv_fun(g2$emmean)
+          
+          # delta-method derivatives
+          d1 <- deriv_fun(g1$emmean)
+          d2 <- deriv_fun(g2$emmean)
+          
+          # back-transformed contrast
+          diff_bt <- mu1_bt - mu2_bt
+          se_bt <- sqrt((d1^2 * g1$SE^2) + (d2^2 * g2$SE^2))
+          
+          # CIs on response scale
+          lower_bt <- diff_bt - crit * se_bt
+          upper_bt <- diff_bt + crit * se_bt
+        } else {
+          diff_bt <- se_bt <- lower_bt <- upper_bt <- NA_real_
+        }
+        
+        tibble(
+          contrast = paste0(pair[1], " - ", pair[2]),
+          !!compare_var := NA,
+          estimate = diff,
+          SE = se_diff,
+          lower.CL = diff - crit * se_diff,
+          upper.CL = diff + crit * se_diff,
+          estimate_bt = diff_bt,
+          SE_bt = se_bt,
+          lower.CL_bt = lower_bt,
+          upper.CL_bt = upper_bt,
+          df = df_val,
+          test_used = test_used,
+          stat.ratio = stat,
+          p.value = p_value_sidak,
+          !!!group_df[1, group_vars, drop = FALSE]
+        )
+      })
+    }) %>%
+    relocate(all_of(group_vars), .before = everything()) %>%
+    relocate(contrast, .before = everything()) %>%
+    dplyr::select(-all_of(compare_var))
+}
+
+
+
+#Are this custom functions doing the same as the emmeans package?
+#YES, confirmed both approaches produce the same outputs (nearly-identical, rounding errors).
+
+#Check that custom procedure (custom_weighted_emmean-> custom_pairwise_contrasts) behave the same as using emmeans procedure, (contrast(emmeans, method=pairwise)) function when used with constant weights and pvalue-adjust method. 
+if(F){
+eg_custom_emm_status_season <- compute_custom_weighted_emmeans(
+  model_object = ca_complexmodel_co2, 
+  grouping_vars = c("status","season"), 
+  custom_weight_df = casepilot_weights %>% filter(casepilot=="CA") %>% dplyr::select(-casepilot) %>% mutate(prop_weight=1), 
+  conf_level= 0.95 #The confidence level used for computing confidence intervals (default =0.95.
+) 
+
+eg_og_emm_status_season<- (emmeans(object = ca_complexmodel_co2, ~status|season,
+                                                weights = "equal"
+                                                  ))
+
+#Check that emmean-related values are a match: 
+custom_em<-eg_custom_emm_status_season %>% 
+  dplyr::select(-vegpresence) %>% 
+  pivot_longer(cols = -c(status,season), names_to = "param",values_to = "custom_value")
+
+og_em<- eg_og_emm_status_season %>% 
+  as.data.frame() %>% 
+  rename(lower.CL = any_of("asymp.LCL"),
+         upper.CL = any_of("asymp.UCL")) %>% 
+  pivot_longer(cols = -c(status,season), names_to = "param",values_to = "og_value")
+
+comparison<- custom_em %>% 
+  full_join(og_em) %>% 
+  mutate(equal=custom_value==og_value,
+         dif=custom_value-og_value)
+#YES! our custom approach produces the same output (when weights are equal, as expected). 
+
+#Check that contrasts behave in a similar way (custom procedure vs emmeans package)
+og_contrasts<- contrast(object = eg_og_emm_status_season, method="pairwise",adjust = "sidak") %>% 
+  as.data.frame() %>% 
+  pivot_longer(cols = -c(contrast,season), names_to = "name",values_to = "og_values")
+
+custom_contrasts<- custom_pairwise_contrasts(eg_custom_emm_status_season,compare_var = "status",group_vars = "season") %>%
+  dplyr::select(-c(test_used)) %>% 
+  rename(estimate=diff, SE=se_diff, z.ratio=statistic, p.value=p_value_sidak) %>% 
+  pivot_longer(cols = -c(contrast,season), names_to = "name",values_to = "custom_values")
+
+compare_contrasts<- og_contrasts %>% 
+  left_join(custom_contrasts) %>% 
+  mutate(equal=custom_values==og_values,
+         dif=custom_values-og_values)
+
+compare_contrasts
+#Very slightly different SE with our custom method (depending on comparison, likely due to internal calculation of the emmean diff, (and associated SE) in the emmeans package instead of our approach of substracting emmeans and propagating their error via sqrt(SE1^2+SE2^2). OMIT, not important. 
+
+rm(custom_em,eg_custom_emm_status_season,eg_og_emm_status_season,custom_em,og_em,comparison,og_contrasts,custom_contrasts,compare_contrasts)
+
+}
+
+
+
+##Obtain custom weights------
+#First, calculate vegpresence proportions at every level of casepilot, status and season (but combine vegpresence proportion of each subsite). FOr the moment use field-data, update when we have RS-retrieved proportions
 
 #For the moment, use field-data, update when we have RS-retrieved proportions
-vegpresence4weights<- data4models %>% 
+casepilot_weights<- data4models %>% 
   dplyr::select(plotcode, casepilot, season, status, vegpresence, subsite) %>% 
   #remove duplicates (same plotcode, different ghgspecies)
   distinct() %>% 
@@ -3531,323 +5034,268 @@ vegpresence4weights<- data4models %>%
   pivot_longer(cols = c(`Non-vegetated`,Vegetated), names_to = "vegpresence", values_to = "proportions") %>% 
   #Calculate the average of each status (giving equal weight to the two subsites)
   dplyr::group_by(casepilot, status, season, vegpresence) %>% 
-  summarise(prop_weight=mean(proportions, na.rm = T), .groups = "drop") %>% 
-  #Override CU composition: constant actual composition, differences in chamber deployment are due to systematic sampling biass in Restored sites
+  summarise(prop_weight=mean(proportions, na.rm = T), .groups = "drop")
+
+#For CURONIAN: Calculate overall veg/noveg of curonian, by design this proportion should be the same for all subsites, additionally, we asume constant proportion across seasons. we will use this to override the seasonal chamber distribution
+cu_weights<- data4models %>% 
+  filter(casepilot=="CU") %>% 
+  group_by(plotcode, casepilot,vegpresence) %>% 
+  distinct() %>% #to remove duplicates (same plotcode, different ghgspecies)
+  group_by(casepilot, vegpresence) %>% 
+  #calculate overall vegpresence counts (across all seasons and all subsites)
+  summarise(n_vegpresence=sum(!is.na(vegpresence)), .groups = "drop") %>% 
+  pivot_wider(names_from = vegpresence, values_from = n_vegpresence,values_fill = 0) %>% 
+  #Calculate vegpresence proportion 
+  mutate(sum_all=`Non-vegetated`+Vegetated) %>% 
+  mutate(Vegetated=Vegetated/sum_all,
+         `Non-vegetated`=`Non-vegetated`/sum_all) %>% 
+  dplyr::select(-sum_all)
+
+#Override CU composition: constant actual composition, differences in chamber deployment are due to systematic sampling biass in Restored sites
+casepilot_weights<-casepilot_weights %>% 
   mutate(prop_weight=if_else(casepilot=="CU"&vegpresence=="Vegetated", cu_weights %>% pull(`Vegetated`),prop_weight),
          prop_weight=if_else(casepilot=="CU"&vegpresence=="Non-vegetated",cu_weights %>% pull(`Non-vegetated`),prop_weight))
 
 
+
+##Weighted-emmean-loop------
+
 #Calculate emmeans for each relevant comparison, using weights when appropriate:
 
 #MANUAL loop:
-  #step 1. Estimate emmeans for all combinations status season vegpresence (equal weights)
-  #step 2. Join custom weights and calculated weighted means (and SE) per comparison group
-  #step 3. Perform post-hoc Wald test in transformed scale
-  #step 4. Obtain CLDs letters to join with emmeans
-  #step 5. Save estimates and results of post-hoc tests 
+  #step 1. Estimate emmeans for all combinations status season vegpresence (custom weights)
+  #step 2. Perform post-hoc test in transformed scale (t-test if we can estimate DF, z-test were not)
+  #step 3. Save emmeans and post-hoc 
 
+complex_comparison_list<- list()
 
-#OMIT FOR THE MOMENT: This loop  estimates SE via conservative SE formula assuming independence of EMMs 
-#We could improve SE accuracy using the vcov() from emmeans and the wieghed formula: 
-# SE = sqrt(t(w) %*% V %*% w) 
-#AND CONSIDERING: 
-# w <- custom_weights_vector  # same length as number of rows in emm_df
-# Make sure w sums to 1 within each group
-# 5. Get covariance matrix of EMM estimates
-# V <- vcov(emm)
-
-
-#POST HOC function: 
-# Estimated marginal means (EMMs) were calculated for each level of the fixed effects (status, season, vegpresence) using model predictions from linear mixed-effects models (lmer). To account for sampling bias due to minimum representation constraints, custom weights reflecting the observed distribution of vegpresence within each status and season level were applied manually to the EMMs. Standard errors were conservatively estimated by propagating uncertainty assuming independence between strata.
-# Post-hoc pairwise comparisons between EMMs were performed manually using Wald tests. For each comparison, the difference in EMMs was divided by the standard error of the difference (computed as the square root of the sum of squared standard errors), and two-sided p-values were obtained from the standard normal distribution. 
-# To account for multiple comparisons within each grouping (e.g., status within season), p-values were adjusted using the Sidak correction. Letters were assigned to significantly different groups using the multcompLetters funcion (using sidak-adjusted pvalues and a significance threshold of 0.05).
-
-
-# Function to compute post-hoc Wald tests of Emmeans within loop (with sidak adjustment for multiple comparisons)
-compute_pairwise_comparisons_grouped <- function(df, compare_var, group_vars=character(0)) {
-  df %>%
-    group_by(across(all_of(group_vars))) %>%
-    group_split() %>%
-    purrr::map_dfr(function(group_df) {
-      combs <- combn(unique(group_df[[compare_var]]), 2, simplify = FALSE)
-      n_comparisons <- length(combs)
-      
-      purrr::map_dfr(combs, function(pair) {
-        group1 <- group_df %>% filter(!!sym(compare_var) == pair[1])
-        group2 <- group_df %>% filter(!!sym(compare_var) == pair[2])
-        
-        diff <- group1$emmean - group2$emmean
-        se_diff <- sqrt(group1$SE^2 + group2$SE^2)
-        z <- diff / se_diff
-        p_value <- 2 * pnorm(-abs(z))
-        
-        # Sidak correction
-        p_value_sidak <- 1 - (1 - p_value)^n_comparisons
-        
-        tibble(
-          group1 = pair[1],
-          group2 = pair[2],
-          diff = diff,
-          se_diff = se_diff,
-          z = z,
-          p_value = p_value,
-          p_value_sidak = p_value_sidak,
-          comparison = unique(group_df$comparison),
-          ghgspecies = unique(group_df$ghgspecies),
-          casepilot = unique(group_df$casepilot),
-          !!!group_df[1, group_vars]
-        )
-      })
-    })
-}
-
-#Function to generate group letters Compact letter display based on the output of the previous function: 
-generate_cld <- function(df, group_var, p_col = "p_value_sidak") {
-  # Create a named vector of p-values
-  comparisons <- paste(df$group1, df$group2, sep = "-")
-  pvals <- setNames(df[[p_col]], comparisons)
-  
-  # Generate CLDs
-  cld <- multcompLetters(pvals, threshold = 0.05)$Letters
-  
-  # Return as data frame
-  tibble(
-    !!group_var := names(cld),
-    group_letter = cld
-  )
-}
-
-
-# Initialize list for storing comparisons
-complex_comparisons_list <- list()
-
-# Loop to extract all comparisons for every casepilot best model
+# Loop to extract all emmeans and perform pairwise tests for appropriate comparisons for every casepilot complexbestmodel. 
 for (dataset in names(complexmodel_list_allghg)) {
+  #get model
   cp_model <- complexmodel_list_allghg[[dataset]]
-  
-  #extract list of fixed effects of model:
-  fixed_effects_used<- attr(terms(cp_model), "term.labels")
+  #get transformation object
+  cp_trans_obj<- bn_list[[dataset]]
   
   #extract casepilot name and ghgspecies from model-list names
   casepilot_name<- sub("_.*", "", dataset)
   ghgspecies<- sub(paste0(casepilot_name,"_"),"",dataset)
   
-  #Filter external weights
-  ext_weights<- vegpresence4weights %>% filter(casepilot==casepilot_name)
+  #Prepare casepilot custom weights: 
+  weight_df<- casepilot_weights %>% filter(casepilot==casepilot_name) %>% dplyr::select(-casepilot)
+  constant_weight_df <- weight_df %>% mutate(prop_weight=1)
   
-  # STEP 1. Estimate emmeans for all combinations
+  # Obtain weighted emmeans dataframes each comparison: status, season, status_within_season, status_within_vegpresence (with equal weights)
+  status_emmeans <- custom_weighted_emmeans(model_object = cp_model,
+                                            grouping_vars = c("status"), 
+                                            custom_weight_df = weight_df)
   
-  emm_df <- emmeans(cp_model, ~ status * season * vegpresence) %>% 
-    as.data.frame()
+  season_emmeans <- custom_weighted_emmeans(model_object = cp_model,
+                                            grouping_vars = c("season"), 
+                                            custom_weight_df = weight_df)
   
-  # STEP 2. Merge custom weights 
-  emm_df <- emm_df %>%
-    left_join(ext_weights, by = c("status", "season", "vegpresence"))
+  statuswithinseason_emmeans <- custom_weighted_emmeans(model_object = cp_model,
+                                            grouping_vars = c("status","season"), 
+                                            custom_weight_df = weight_df)
   
+  statuswithinvegpresence_emmeans <- custom_weighted_emmeans(model_object = cp_model,
+                                            grouping_vars = c("status","vegpresence"), 
+                                            custom_weight_df = constant_weight_df) #equal weights for all seasons.
+    
+  #Calculate apropriate contrasts for each comparison and add identifying columns:   
+  status_contrasts<-custom_pairwise_contrasts(emmean_df = status_emmeans,trans_obj = cp_trans_obj,
+                                              compare_var = "status")%>% 
+    mutate(comparison = "status",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           season = NA, vegpresence = NA, weights_used = "custom")
   
-  # STATUS — weighted by custom weights
-  status_emmeans_weighted <- emm_df %>%
-    group_by(status) %>%
-    summarise(
-      emmean = sum(emmean * prop_weight) / sum(prop_weight),
-      SE = sqrt(sum((SE^2) * prop_weight^2)) / sum(prop_weight),
-      comparison = "status",
-      ghgspecies = ghgspecies,
-      casepilot = casepilot_name,
-      season = NA,
-      vegpresence = NA,
-      .groups = "drop"
-    )
+  season_contrasts<-custom_pairwise_contrasts(emmean_df = season_emmeans,trans_obj = cp_trans_obj,
+                                              compare_var = "season")%>% 
+    mutate(comparison = "season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           vegpresence = NA, weights_used = "custom")
   
-  # SEASON — weighted by custom weights
-  season_emmeans_weighted <- emm_df %>%
-    group_by(season) %>%
-    summarise(
-      emmean = sum(emmean * prop_weight) / sum(prop_weight),
-      SE = sqrt(sum((SE^2) * prop_weight^2)) / sum(prop_weight),
-      comparison = "season",
-      ghgspecies = ghgspecies,
-      casepilot = casepilot_name,
-      status = NA,
-      vegpresence = NA,
-      .groups = "drop"
-    )
+  statuswithinseason_contrasts<- custom_pairwise_contrasts(emmean_df = statuswithinseason_emmeans,trans_obj = cp_trans_obj, compare_var = "status", group_vars = "season")%>%
+    mutate(comparison = "status_within_season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name, 
+           vegpresence = NA, weights_used = "custom")
   
-  # STATUS within SEASON — custom weights per group
-  status_within_season_emmeans <- emm_df %>%
-    group_by(season, status) %>%
-    summarise(
-      emmean = sum(emmean * prop_weight) / sum(prop_weight),
-      SE = sqrt(sum((SE^2) * prop_weight^2)) / sum(prop_weight),
-      comparison = "status_within_season",
-      ghgspecies = ghgspecies,
-      casepilot = casepilot_name,
-      vegpresence = NA,
-      .groups = "drop"
-    )
+  statuswithinvegpresence_contrasts<- custom_pairwise_contrasts(emmean_df = statuswithinvegpresence_emmeans,trans_obj = cp_trans_obj, compare_var = "status",group_vars = "vegpresence")%>%
+    mutate(comparison = "status_within_vegpresence",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name, 
+           season = NA, weights_used = "equal")
   
-  # STATUS within VEGPRESENCE — equal weights only
-  # For equal weighting, we just average over seasons (we can obtain the same same output via emmeans(~status|vegpresence, weights= "equal"), potentially with more accurate SE)
-  status_within_vegpresence_emmeans <- emm_df %>%
-    group_by(vegpresence, status) %>%
-    summarise(
-      emmean = mean(emmean),
-      SE = sqrt(mean(SE^2)),
-      comparison = "status_within_vegpresence",
-      ghgspecies = ghgspecies,
-      casepilot = casepilot_name,
-      season = NA,
-      .groups = "drop"
-    )
-  
-  # STEP 3: Manual Wald post-hoc (test differences in emmeans for every emmeans data frame above) 
-  status_comparisons <- compute_pairwise_comparisons_grouped(status_emmeans_weighted, "status")
-  season_comparisons <- compute_pairwise_comparisons_grouped(season_emmeans_weighted, "season")
-  status_within_season_comparisons <- compute_pairwise_comparisons_grouped(status_within_season_emmeans, "status","season")
-  status_within_vegpresence_comparisons <- compute_pairwise_comparisons_grouped(status_within_vegpresence_emmeans, "status","vegpresence")
-  
-  
-  #STEP4: Obtain Compact Letter Display for different groups, based on previous post-hoc
-  cld_status<- status_comparisons %>% 
-    group_by(ghgspecies, casepilot) %>% 
-    group_split() %>% 
-    purrr::map_dfr(function(df) {
-      ghgspecies_val <- df$ghgspecies[1]
-      casepilot_val <- df$casepilot[1]
-      cld <- generate_cld(df, "group1") %>%
-        rename(status = group1) %>%
-        mutate(
-          ghgspecies = ghgspecies_val,
-          casepilot = casepilot_val
-        )
-      return(cld)
-    })
-  
-  cld_season<- season_comparisons %>% 
-    group_by(ghgspecies, casepilot) %>% 
-    group_split() %>% 
-    purrr::map_dfr(function(df) {
-      # Extract grouping values from the first row
-      ghgspecies_val <- df$ghgspecies[1]
-      casepilot_val <- df$casepilot[1]
-      
-      # Generate CLD
-      cld <- generate_cld(df, "group1") %>%
-        rename(season = group1) %>%
-        mutate(
-          ghgspecies = ghgspecies_val,
-          casepilot = casepilot_val
-        )
-      return(cld)
-    })
-  
-
-  cld_status_within_season <- status_within_season_comparisons %>%
-    group_by(season, ghgspecies, casepilot) %>%
-    group_split() %>%
-    purrr::map_dfr(function(df) {
-      # Extract grouping values from the first row
-      season_val <- df$season[1]
-      ghgspecies_val <- df$ghgspecies[1]
-      casepilot_val <- df$casepilot[1]
-      
-      # Generate CLD
-      cld <- generate_cld(df, "group1") %>%
-        rename(status = group1) %>%
-        mutate(
-          season = season_val,
-          ghgspecies = ghgspecies_val,
-          casepilot = casepilot_val
-        )
-      return(cld)
-    })
-  
-  cld_status_within_vegpresence <- status_within_vegpresence_comparisons %>%
-    group_by(vegpresence, ghgspecies, casepilot) %>%
-    group_split() %>%
-    purrr::map_dfr(function(df) {
-      # Extract grouping values from the first row
-      vegpresence_val <- df$vegpresence[1]
-      ghgspecies_val <- df$ghgspecies[1]
-      casepilot_val <- df$casepilot[1]
-      
-      # Generate CLD
-      cld <- generate_cld(df, "group1") %>%
-        rename(status = group1) %>%
-        mutate(
-          vegpresence = vegpresence_val,
-          ghgspecies = ghgspecies_val,
-          casepilot = casepilot_val
-        )
-      return(cld)
-    })
+  #Format emmeans adding identifying columns:
+  #Status:
+  status_emmeans<- status_emmeans %>% 
+    mutate(comparison = "status",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           season = NA, vegpresence = NA, weights_used = "custom")
+  #Season: 
+  season_emmeans<- season_emmeans %>% 
+    mutate(comparison = "season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name,
+           status = NA, vegpresence = NA, weights_used = "custom")
+  #Status within season: 
+  statuswithinseason_emmeans<- statuswithinseason_emmeans %>%
+    mutate(comparison = "status_within_season",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name, 
+           vegpresence = NA, weights_used = "custom")
+  #Status within vegpresence: 
+  statuswithinvegpresence_emmeans<- statuswithinvegpresence_emmeans %>%
+    mutate(comparison = "status_within_vegpresence",
+           ghgspecies = ghgspecies,
+           casepilot = casepilot_name, 
+           season = NA, weights_used = "equal")
   
   
+  #Join all emmeans and all contrasts:
+  all_emmeans<- status_emmeans %>%
+    full_join(season_emmeans) %>%
+    full_join(statuswithinseason_emmeans) %>% 
+    full_join(statuswithinvegpresence_emmeans)
   
-  # STEP 4: Combine outputs into 2 data frames.
+  all_contrasts<- status_contrasts %>%
+    full_join(season_contrasts) %>%
+    full_join(statuswithinseason_contrasts) %>% 
+    full_join(statuswithinvegpresence_contrasts)
   
-  #Pairwise comparisons: 
-  all_posthoc_comparisons <- bind_rows(
-    status_comparisons,
-    season_comparisons,
-    status_within_season_comparisons,
-    status_within_vegpresence_comparisons
-  )
-  
-  # Merge CLD with emmeans
-  status_emmeans_weighted<- status_emmeans_weighted %>% 
-    left_join(cld_status, by=c("status","ghgspecies","casepilot"))
-  
-  season_emmeans_weighted<- season_emmeans_weighted %>% 
-    left_join(cld_season, by=c("season","ghgspecies","casepilot"))
-  
-  status_within_season_emmeans <- status_within_season_emmeans %>%
-    left_join(cld_status_within_season, by = c("status", "season", "ghgspecies", "casepilot"))
-  
-  status_within_vegpresence_emmeans <- status_within_vegpresence_emmeans %>%
-    left_join(cld_status_within_vegpresence, by = c("status", "vegpresence", "ghgspecies", "casepilot"))
-  
-  #Join all emmeans: 
-  all_emmeans_cld<- bind_rows(
-    status_emmeans_weighted,
-    season_emmeans_weighted,
-    status_within_season_emmeans,
-    status_within_vegpresence_emmeans
-  )
-
-  
-# Store casepilot results as named list of 2 lists
-  complex_comparisons_list[[dataset]] <- list(
-    emmeans_with_cld = all_emmeans_cld,
-    posthoc_comparisons = all_posthoc_comparisons
-  )
+  #Store in named list: 
+  complex_comparison_list[[dataset]] <- list(
+    emmeans_og = all_emmeans,
+    posthoc_comparisons = all_contrasts)
   
 }
 
+#Remove within-loop objects
+rm(all_contrasts,all_emmeans, cp_model, casepilot_name, ghgspecies,weight_df,constant_weight_df,
+   status_emmeans, season_emmeans, statuswithinseason_emmeans,statuswithinvegpresence_emmeans,
+   status_contrasts,season_contrasts,statuswithinseason_contrasts,statuswithinvegpresence_contrasts)
 
-# Extract all emmeans with CLDs
-complexmodel_emmeans_withgroups<- purrr::map_dfr(complex_comparisons_list, "emmeans_with_cld") %>% 
-  #Back-transform to molar units
-  mutate(key_trans=paste0(casepilot, "_",ghgspecies)) %>% 
+
+#Get pairwise posthoc tests (in model scale): 
+#T-test or Z-test depending on model distribution family used (automatically assigned by contrasts (method="pairwise)). p.value is was adjusted for multiple comparisons tukey. 
+complexmodel_customweight_posthoc_tests <- purrr::map_dfr(complex_comparison_list, "posthoc_comparisons") %>%
+  #Identify the test used (and model_distribution) based on df estimation:
+  mutate(model_distribution=if_else(df==Inf, "t_family", "gaussian")) %>% 
+  #Estimates and SE are already back-transformed to molar scale within loop function. 
+# #BACK-TRANSFORM contrasts (estimate and SE) to molar scales using BestNormalize objects
+# mutate(key_trans=paste0(casepilot,"_",ghgspecies)) %>% 
+#   rowwise() %>%
+#   mutate(
+#     # Back-transform contrast estimate using the inverse transform
+#     estimate_bt = if (!is.null(bn_list[[key_trans]])) {
+#       predict(bn_list[[key_trans]], estimate, inverse = TRUE)
+#     } else {NA_real_},
+#     
+#     # Compute SE_bt using delta method (abs of inverse function derivative times the SE in model scale)
+#     SE_bt = if (!is.null(bn_list[[key_trans]])) {
+#       inv_fun <- function(x) predict(bn_list[[key_trans]], x, inverse = TRUE)
+#       deriv_val <- numDeriv::grad(inv_fun, estimate)  # g'(mu)
+#       abs(deriv_val) * SE
+#     } else {NA_real_}
+#   ) %>%
+#   ungroup() %>%
+  dplyr::select(casepilot, ghgspecies, model_distribution, comparison, test_used, contrast,
+         season, vegpresence, estimate, SE, estimate_bt, SE_bt, df, stat.ratio, p.value)
+
+
+#Save pairwise posthoc tests as csv.
+#Save post-hoc comparisons in model scale (to go to supplementary table)
+write.csv(x = complexmodel_customweight_posthoc_tests, file = paste0(paper_path,"Emmeans-posthoctests_complexmodel_customweight_chambermodels.csv"),row.names = F)
+
+
+
+#Obtain CLDs (letter-groups) based on post-hoc tests for every comparison:
+CLD_letters <- complexmodel_customweight_posthoc_tests %>%
+  #leave only (1) variables that identify unique comparisons, (2)contrast column, (3) p.value column
+  #season and vegpresence are kept to account for status_within_season and status_within_vegpresence comparison. 
+  dplyr::select(casepilot, ghgspecies, comparison, season,vegpresence, contrast, p.value) %>%
+  #Group by comparison identifiers
+  group_by(casepilot, ghgspecies, comparison, season,vegpresence) %>%
+  #Remove any spaces from contrast column (mutcompLetters expects levels to be only separated by a hyphen "-")
+  mutate(contrast=gsub(" ","", contrast)) %>% 
+  #Nest data for each group
+  nest() %>%
+  # Step 3: Apply multcompLetters to each group
+  mutate(letters = purrr::map(data, function(group_df) {
+    # Extract levels and p-values 
+    contrast_matrix <- group_df %>%
+      dplyr::select(contrast, p.value) %>%
+      deframe()
+    # Apply multcompLetters
+    multcompLetters(contrast_matrix)$Letters %>%
+      enframe(name = "level", value = "cld_group")
+  })) %>%
+  # Step 4: Unnest results
+  dplyr::select(-data) %>%
+  unnest(letters) %>% 
+  #Reformat level to fit the appropriate columns: season or status
+  mutate(season=if_else(level%in%c("S1","S2","S3","S4"),level,season),
+         status=if_else(level%in%c("Altered","Preserved","Restored"),level, NA),
+         #Mantain level to identify nested comparisons 
+         seasonlevel=if_else(comparison=="status_within_season",season,NA),
+         vegpresencelevel=if_else(comparison=="status_within_vegpresence",vegpresence,NA)) %>% 
+  dplyr::select(casepilot, ghgspecies, comparison,status,season,vegpresence, seasonlevel, vegpresencelevel, cld_group)
+
+
+#Get emmeans (in model scale) from loop list 
+complexmodel_customweight_emmeans<- purrr::map_dfr(complex_comparison_list, "emmeans_og")
+
+#Add CLD and back transform emmeans
+complexmodel_customweight_emmeansCLD <- complexmodel_customweight_emmeans %>%
+  #ADD CLD group-letters (re-coding them so that "a" always identifies the significant group with lowest emmean, b the next lowest emmean, and so on...)
+  left_join(CLD_letters, by = c("status", "comparison", "ghgspecies", "casepilot", "season","vegpresence")) %>%
+  #Separate each comparison group to do the letter re-coding
+  group_split(casepilot, ghgspecies, comparison, seasonlevel,vegpresencelevel) %>%
+  map_dfr(function(group_df) {
+    # Step 1: Order by emmean
+    group_df <- group_df %>% arrange(emmean)
+    # Step 2: Extract and map letters
+    letter_list <- str_split(group_df$cld_group, "")
+    unique_letters <- unique(unlist(letter_list))
+    new_letters <- letters[seq_along(unique_letters)]
+    letter_map <- setNames(new_letters, unique_letters)
+    # Step 3: Apply mapping
+    group_df <- group_df %>%
+      mutate(cld_group = map_chr(letter_list, ~ paste0(letter_map[.x], collapse = "")))
+    return(group_df)
+  }) %>% 
+  #remove unnecesary grouping variables
+  dplyr::select(-c(seasonlevel,vegpresencelevel)) %>% 
+  #BACK-TRANSFORM emmeans (and SE, CL) to molar scales using BestNormalize objects
+  mutate(key_trans=paste0(casepilot,"_",ghgspecies)) %>% 
   rowwise() %>% 
   mutate(
+    # Back-transform contrast emmean using the inverse transform
     emmean_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], emmean, inverse = TRUE) else NA_real_,
-    SE_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], SE, inverse = TRUE) else NA_real_
-  )
+    # Compute SE_bt using delta method (takes into account the derivative of the inverse transformed emmean)
+    SE_bt = if (!is.null(bn_list[[key_trans]])) {
+      inv_fun <- function(x) predict(bn_list[[key_trans]], x, inverse = TRUE)
+      deriv_val <- numDeriv::grad(inv_fun, emmean)  # g'(mu)
+      abs(deriv_val) * SE
+    } else {NA_real_},
+    #Back-transform Confidence limits using the inverse transform
+    lower.CL_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], lower.CL, inverse = TRUE) else NA_real_,
+    upper.CL_bt = if (!is.null(bn_list[[key_trans]])) predict(bn_list[[key_trans]], upper.CL, inverse = TRUE) else NA_real_
+  ) %>%
+  ungroup() %>%
+  #Format final emmean_CLD: select columns
+  dplyr::select(casepilot, ghgspecies, comparison, status, season,vegpresence,weights_used,
+                df, emmean, SE,lower.CL, upper.CL,
+                cld_group,
+                emmean_bt, SE_bt, lower.CL_bt, upper.CL_bt) %>% 
+  #Format final emmean_CLD: arrange values
+  arrange(casepilot,ghgspecies, comparison,season,vegpresence, status)
 
 #Save emmeans and groupletters (back-transformed):  
-write.csv(x = complexmodel_emmeans_withgroups, file = paste0(paper_path,"Emmeans-groupletters_complexmodels_chambermodels.csv"),row.names = F)
-
-
-# Extract all post-hoc comparisons (keep in model scale)
-complexmodel_posthoc_tests <- purrr::map_dfr(complex_comparisons_list, "posthoc_comparisons")
-
-#Save post-hoc comparisons (to go to supplementary table)
-write.csv(x = complexmodel_posthoc_tests, file = paste0(paper_path,"Emmeans-posthoctests_complexmodels_chambermodels.csv"),row.names = F)
-
-
-
-
+write.csv(x = complexmodel_customweight_emmeansCLD, file = paste0(paper_path,"EmmeansCLD_complexmodel_customweight_chambermodels.csv"),row.names = F)
 
 
 
