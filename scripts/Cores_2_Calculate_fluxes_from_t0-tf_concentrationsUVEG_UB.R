@@ -62,7 +62,7 @@ core_path<- paste0(dropbox_root,"/Cores/")
 
 #Incubation-data --------
 
-incub<- read_xlsx(path = paste0(core_path,"Incubation_details_all_coresS1S2S3S4_para rellenar.xlsx")) %>% 
+incub<- read_xlsx(path = paste0(core_path,"Incubation_details_all_coresS1S2S3S4_filled.xlsx")) %>% 
   select(core_id, headspace_cm, water_cm, approximatesediment_cm, coreincubation_hours,comment, t0_co2_ppm, t0_ch4_ppb)
 
 
@@ -368,7 +368,7 @@ write.csv(core_fluxes,file = paste0(core_path, "Cores_flux/All_core_GHGfluxes_an
 
 #_________________####
 
-
+#Check completeness------
 #Check completeness of dataset
 core_fluxes %>% 
   select(CO2_flux_pvalue, CH4_flux_pvalue, N2O_flux_pvalue) %>% 
@@ -408,3 +408,79 @@ incomplete_cores
 #S4-DA-R1-C5 no CO2 (ch4-caused artefacts, no reliable CO2)
 
 
+
+#Join sampling-fluxes data------
+
+#Join files with cores sampling details and corresponding calculated fluxes into a single file that will contain all information of ex-situ GHG fluxes dataset. 
+
+sampling_details<- read.csv(file = paste0(core_path,"Cores_flux/","All_core_sampling_details.csv"))
+fluxes<- read.csv(file = paste0(core_path,"Cores_flux/","All_core_GHGfluxes_and_CH4stocks.csv"))
+
+final_data<- sampling_details %>% 
+  full_join(fluxes, by="core_id")
+
+#Remove 4 cores without any associated flux
+cores_withoutflux <- final_data %>% 
+  filter(is.na(CO2_flux_mmol_per_m2_per_d)&is.na(CH4_flux_micromol_per_m2_per_d)&is.na(N2O_flux_micromol_per_m2_per_d)&is.na(CH4_stock_mmol_per_m2))%>% pull(core_id)
+
+
+#Final format LifeWatch-------
+#Produce final formatted table for lifewatch, using the header nomenclature agreed upon with Martina and leaving only the relevant columns.
+
+
+#FInal format: 
+final_data<- final_data %>% 
+  #Remove cores without any flux/stock data, 
+  filter(!core_id%in%cores_withoutflux) %>%
+  #Format identity variables
+  separate(core_id, into = c("season", "casepilot", "statusnum","core_num"), sep = "-",remove = F) %>% 
+  mutate(subsite=paste0(casepilot,"-",statusnum),
+         sampling= paste0(season,"-",subsite)) %>% 
+  #Select and re-order final variables:
+  select(core_id, season, casepilot, subsite, sampling, core_num,
+         sampling_date, latitude, longitude,water_depth_cm,
+         CO2_flux_mmol_per_m2_per_d, CO2_flux_SE, CO2_flux_pvalue,
+         CH4_flux_micromol_per_m2_per_d, CH4_flux_SE, CH4_flux_pvalue,
+         N2O_flux_micromol_per_m2_per_d, N2O_flux_SE, N2O_flux_pvalue,
+         CH4_stock_mmol_per_m2, CH4_stock_SE, CH4_stock_pvalue) %>% 
+  #Re-code variables according to LifeWatch requirements: 
+  mutate(higherGeography=case_when(casepilot=="CA"~"Camargue",
+                                   casepilot=="RI"~"Ria de Aveiro",
+                                   casepilot=="CU"~"Curonian Lagoon",
+                                   casepilot=="DA"~"Danube Delta",
+                                   casepilot=="VA"~"Valencian wetland Marjal dels Moros",
+                                   casepilot=="DU"~"South-West Dutch Delta")) %>% 
+  #Rename variables according to LifeWatch vocabulary: 
+  rename(eventID=core_id, 
+         locationID=subsite,
+         eventDate=sampling_date,
+         decimalLatitude=latitude,
+         decimalLongitude=longitude,
+         waterDepth=water_depth_cm,
+         CO2FLux=CO2_flux_mmol_per_m2_per_d,
+         CO2FluxSE=CO2_flux_SE,
+         CO2FluxPvalue=CO2_flux_pvalue,
+         CH4FLux=CH4_flux_micromol_per_m2_per_d,
+         CH4FluxSE=CH4_flux_SE,
+         CH4FluxPvalue=CH4_flux_pvalue,
+         N2OFLux=N2O_flux_micromol_per_m2_per_d,
+         N2OFluxSE=N2O_flux_SE,
+         N2OFluxPvalue=N2O_flux_pvalue,
+         CH4Stock=CH4_stock_mmol_per_m2,
+         CH4StockSE=CH4_stock_SE,
+         CH4StockPvalue=CH4_stock_pvalue
+         ) %>% 
+  dplyr::select(eventID, season, higherGeography, locationID, 
+                eventDate,decimalLatitude, decimalLongitude, waterDepth,
+                CO2FLux, CO2FluxSE, CO2FluxPvalue,
+                CH4FLux, CH4FluxSE, CH4FluxPvalue,
+                N2OFLux, N2OFluxSE, N2OFluxPvalue,
+                CH4Stock, CH4StockSE, CH4StockPvalue)
+  
+
+#Check final dataset
+str(final_data)
+
+
+#Save final dataset.
+write.csv(final_data, file = paste0(core_path, "Cores_flux/", "Full_Cores-dataset_Fluxes_and_sampling_details.csv"), row.names = F)
