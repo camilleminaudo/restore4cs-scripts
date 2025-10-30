@@ -435,6 +435,23 @@ ggsave(plot = baseline_3sp_ident_noinset,
        width = 90)
 
 
+##In-text Avg preserved fluxes----
+
+data4paper %>% 
+  filter(status=="Preserved", ghgspecies%in%c("co2","ch4","GWPco2andch4")) %>% 
+  group_by(casepilot, ghgspecies) %>% 
+  #Transform to consistent unit (co2 and ch4 in mmol, gwp in gCO2eq)
+  mutate(dailyflux=if_else(ghgspecies=="co2",dailyflux*1000, dailyflux),
+         unitflux=if_else(ghgspecies=="co2","mmol per m2 per day",  unitflux)) %>% 
+  summarise(avg_flux=mean(dailyflux, na.rm=T),
+            sd_flux=sd(dailyflux, na.rm = T),
+            median_flux=median(dailyflux, na.rm = T),
+            q1= quantile(dailyflux, 0.25, na.rm=T),
+            q3= quantile(dailyflux, 0.75, na.rm=T),
+            iqr = IQR(dailyflux, na.rm = T),
+            unit_flux=unique(unitflux)) %>% 
+  arrange(ghgspecies, median_flux)
+
 
 
 #Template Plot Status------
@@ -506,7 +523,6 @@ ggsave(filename = "PAPERPLOTS_Fig2_status_CO2_molar_boxplot_allCP.png",
        units = "mm",
        height = 229,
        width = 90)
-
 
 
 #Fig. 3 (CH4 status)-----
@@ -2812,6 +2828,490 @@ ggsave(filename = "Alternative_status_GWP_pseudolog.png",
 
 
 
+
+#____________________--------
+#N2O exploratory figures------
+
+
+#Import Chamberdata4paper.csv
+alldaily<-read.csv(file = paste0(paper_path,"ChamberData4paper.csv"))
+
+#Format main data: 
+n2odaily<- alldaily %>% 
+  #Remove NAs
+  filter(!is.na(dailyflux)) %>% 
+  #Keep only ghg of interest
+  filter(ghgspecies%in%c("n2o")) %>% 
+  #Rename to GWPco2andch4
+  mutate(ghgspecies=if_else(ghgspecies=="gwp_co2andch4","GWPco2andch4",ghgspecies)) %>% 
+  mutate(vegpresence=if_else(strata=="vegetated","Vegetated","Non-vegetated")) %>% 
+  #Factor grouping variables:
+  mutate(season=factor(season, levels = c("S1","S2","S3","S4"), ordered = T),
+         casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
+         status=factor(status, levels = c("Preserved","Altered","Restored"), ordered = T),
+         subsite=factor(subsite, ordered = F),
+         ghgspecies=factor(ghgspecies, ordered=F),
+         strata=factor(strata, levels = c("open water","bare","vegetated"), ordered = F),
+         sampling=factor(sampling, ordered = F),
+         vegpresence=factor(vegpresence, levels = c("Non-vegetated","Vegetated"), ordered = F))
+
+    
+    #N2O plot dailyflux: 
+    ggplot(n2odaily, aes(x = status, y = dailyflux)) +
+      geom_hline(yintercept = 0, linetype = "dashed") +
+      geom_boxplot(width = 0.2, outliers = T, aes(fill = status), size = 0.7) +
+      theme_bw() +
+      scale_fill_manual(values = c(
+        "Preserved" = "#009E73",
+        "Altered"   = "#D55E00",
+        "Restored"  = "#56B4E9"
+      )) +
+      scale_color_manual(values = c(
+        "Preserved" = "#009E73",
+        "Altered"   = "#D55E00",
+        "Restored"  = "#56B4E9"
+      )) +
+      scale_y_continuous(expand = expansion(mult = c(0.1, 0.2), 0)) +
+      theme(
+        axis.text = element_text(face = "bold")
+      ) +
+      guides(color = "none", fill = "none") +
+      labs(
+        y = expression(N[2]*O~(mmol~m^2~d^-1)),
+        x = "Conservation status",
+        fill = "Status"
+      ) +
+      facet_grid(rows = vars(casepilot), scales = "free")
+
+
+instant_n2o<- read.csv(paste0(dropbox_root,"/GHG/N2O_fluxes/S4_restore4cs_N2O_arealflux_nmol_s-1_m-2.csv"))
+
+instant_n2o<- instant_n2o %>% 
+  separate(UniqueID_notime, into = c("season","casepilot","status_num","plotnum","strat","light"), remove = F) %>% 
+  mutate(status=case_when(grepl("a",status_num)~"Altered",
+                          grepl("p",status_num)~"Preserved",
+                          grepl("r",status_num)~"Restored"),
+         casepilot=factor(toupper(casepilot), levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
+         strata=factor(case_when(grepl("v",strat)~"Vegetated", 
+                                 grepl("o",strat)~"Open water",
+                                 grepl("b",strat)~"Bare"), levels = c("Vegetated","Open water","Bare"),ordered = F),
+         light=if_else(light=="t", "Transparent","Dark")) %>% 
+  mutate(sigflux=if_else(N2Oflux_pvalue<0.05,T,F))
+
+
+library(ggpubr)
+
+#Instant n2o plot:
+ggplot(instant_n2o, aes(x = status, y = N2Oflux_nmol_per_second_per_m2)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_boxplot(width = 0.2, outliers = T, aes(fill = status), size = 0.7) +
+  theme_bw() +
+  # scale_fill_manual(values = c(
+  #   "Vegetated" = "green",
+  #   "Bare"   = "orange",
+  #   "Open water"  = "lightblue"
+  # )) +
+  scale_fill_manual(values = c(
+    "Preserved" = "#009E73",
+    "Altered"   = "#D55E00",
+    "Restored"  = "#56B4E9"
+  )) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2), 0)) +
+  theme(
+    axis.text = element_text(face = "bold")
+  ) +
+  guides(color = "none", fill = "none") +
+  labs(
+    y = expression(N[2]*O~(nmol~m^2~s^-1)),
+    x = "Conservation status",
+    fill = "Status"
+  ) +
+  facet_grid(rows = vars(casepilot), scales = "free")
+
+
+
+#AUTUM SCHOOL-------
+
+
+school_path<-"C:/Users/Miguel/OneDrive - Universitat de Barcelona/Documents - UB_CANBAS/2. PROJECTS/Restore4Cs/Autumn School Malaga 2025ppt/"
+
+##_Baseline ----
+
+base_co2_ident<-
+  data4paper %>% 
+  filter(status=="Preserved", ghgspecies%in%c("co2")) %>% 
+  ggplot(aes(x=casepilot, y=(dailyflux*1000)))+
+  geom_hline(yintercept=0, linetype="dashed")+
+  geom_boxplot(width=0.2,outliers = F, fill="#00BA38",size = 0.7)+
+  theme_bw() +
+  theme(
+    axis.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
+  guides(color = "none", fill="none")+
+  labs(y= expression(CO[2]~NEE~(mmol~m^-2~d^-1)),
+       x=NULL,
+       fill=paste0("Status"))
+
+
+
+# Main plot
+base_ch4_ident_main <- data4paper %>%
+  filter(status == "Preserved", ghgspecies %in% c("ch4")) %>%
+  ggplot(aes(x = casepilot, y = dailyflux)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_boxplot(width = 0.2, outliers = FALSE, fill = "#00BA38", size = 0.7) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5)
+  ) +
+  guides(color = "none", fill = "none") +
+  labs(
+    y = expression(CH[4] ~ NEE ~ (mmol~m^-2~d^-1)),
+    x = NULL,
+    fill = "Status"
+  )
+
+# Inset plot
+inset_plot <- data4paper %>%
+  filter(status == "Preserved", ghgspecies %in% c("ch4"),
+         casepilot %in% c("DU", "RI", "CA", "VA")) %>%
+  ggplot(aes(x = casepilot, y = dailyflux)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_boxplot(width = 0.2, outliers = FALSE, fill = "#00BA38", size = 0.7) +
+  theme_bw(base_size = 8) +
+  theme(
+    axis.title = element_blank(),
+    axis.text = element_text(size = 6, face = "bold"),
+    axis.text.x = element_text(angle = 0, hjust = 0.5, vjust = 0.5)
+  )
+
+#Create the grob of your inset plot
+inset_grob <- ggplotGrob(inset_plot)
+
+#define position of inset and geom_rect (in main-plot scale)
+xmin<- 1
+xmax<- 4
+ymin<- 5
+ymax<- 20
+
+#Extract and store the y-range (without outliers) of the main plot (they are overriden when using annotation_custom
+y_range <- range(ggplot_build(base_ch4_ident_main)$layout$panel_params[[1]]$y.range)
+
+
+#Combine plot with inset (using positions and limits defined above) using annotation_custom
+base_ch4_ident_comb <- base_ch4_ident_main +
+  annotation_custom(
+    grob = inset_grob,
+    xmin = xmin, xmax = xmax,
+    ymin = ymin, ymax = ymax
+  ) +
+  geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+            color = "black", fill = NA) +
+  coord_cartesian(ylim = c(y_range[1], y_range[2]))
+
+
+
+base_gwp_ident_noxaxis<-data4paper %>% 
+  filter(status=="Preserved", ghgspecies%in%c("GWPco2andch4")) %>% 
+  mutate(casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"))) %>% 
+  ggplot(aes(x=casepilot, y=(dailyflux)))+
+  geom_hline(yintercept=0, linetype="dashed")+
+  geom_boxplot(width=0.2,outliers = F, fill="#00BA38",size = 0.7)+
+  theme_bw() +
+  theme(
+    axis.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust=0.5))+
+  guides(color = "none", fill="none")+
+  labs(y= expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1)),
+       x = NULL,
+       fill=paste0("Status"))
+
+
+#COMBINE all 3 panels (with CH4 inset)
+baseline_3sp_ident_withinset_horizontal <- plot_grid(
+  base_co2_ident,
+  base_ch4_ident_comb,
+  base_gwp_ident_noxaxis,
+  nrow = 1,
+  align = "v",
+  axis = "lr"
+  # labels = c("A", "B", "C"),
+  # label_size = 12,
+  # label_x = 0.02,  # move label closer to left
+  # label_y = 1      # top-aligned
+)
+
+#Save:
+ggsave(plot = baseline_3sp_ident_withinset_horizontal, 
+       filename = "baseline_wide_3sp.png",
+       path = school_path,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 90, 
+       width = 320)
+
+
+baseline_2sp_ident_withinset_horizontal <- plot_grid(
+  base_co2_ident,
+  base_ch4_ident_comb,
+  nrow = 1,
+  align = "v",
+  axis = "lr"
+  # labels = c("A", "B", "C"),
+  # label_size = 12,
+  # label_x = 0.02,  # move label closer to left
+  # label_y = 1      # top-aligned
+)
+
+#Save:
+ggsave(plot = baseline_2sp_ident_withinset_horizontal, 
+       filename = "baseline_wide_2sp.png",
+       path = school_path,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 90, 
+       width = 280)
+
+
+
+
+
+#FUNCTION to create single plot 1CP 1GHG (automatic y-label and multiplyer)
+plot_status_CP_1sp <- function(GHG,
+                               CP,
+                             y_multiplier = 1,
+                             drawboxplot_outliers=F) {
+  
+  #Create label object based on GHG (and modify y_multiplier accordingly)
+  if(GHG=="co2") {
+    y_label<- expression(CO[2]~NEE~(mmol~m^-2~d^-1))
+    y_multiplier <- 1000
+  }
+  if(GHG=="ch4") {y_label<- expression(CH[4]~NEE~(mmol~m^-2~d^-1))}
+  if(GHG=="GWPco2andch4") {y_label<- expression(GWP~NEE~(g*CO[2~eq]~m^-2~d^-1))}
+  
+
+  #filter data for CP and GHG
+  data<- data4paper %>% filter(casepilot==CP&ghgspecies==GHG)
+  emmeans_data<- bestmodel_emmeans_status %>% filter(casepilot==CP&ghgspecies==GHG) 
+  
+  #Produce plot: 
+  ggplot(data, aes(x = status, y = dailyflux * y_multiplier)) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    geom_boxplot(width = 0.2, outliers = drawboxplot_outliers, aes(fill = status), size = 0.7) +
+    
+    # Add emmeans points
+    geom_point(data = emmeans_data, aes(x = status, y = emmean_bt * y_multiplier),
+               shape = 23, size = 3, fill = "black") +
+    
+    # Add group letters
+    geom_text(data = emmeans_data, aes(x = status, label = cld_group, y = Inf),
+              vjust = 1.2, hjust = 0.5, color = "black", inherit.aes = FALSE,
+              size = 5, fontface = "bold") +
+    theme_bw() +
+    scale_fill_manual(values = c(
+      "Preserved" = "#009E73",
+      "Altered"   = "#D55E00",
+      "Restored"  = "#56B4E9"
+    )) +
+    scale_y_continuous(expand = expansion(mult = c(0.1, 0.2), 0)) +
+    theme(
+      axis.text = element_text(face = "bold")
+    ) +
+    guides(color = "none", fill = "none") +
+    labs(
+      y = y_label,
+      x = NULL,
+      fill = "Status"
+    )
+}
+
+##_DU------
+DU_status_3sp_horizontal <- plot_grid(
+  plot_status_CP_1sp(GHG="co2",CP="DU"),
+  plot_status_CP_1sp(GHG="ch4",CP="DU"),
+  plot_status_CP_1sp(GHG="GWPco2andch4",CP="DU"),
+  nrow = 1,
+  align = "v",
+  axis = "lr"
+)
+
+#Save:
+ggsave(plot = DU_status_3sp_horizontal, 
+       filename = "DU_status_3sp_hz.png",
+       path = school_path,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 80, 
+       width = 280)
+
+
+##_RI------
+RI_status_3sp_horizontal <- plot_grid(
+  plot_status_CP_1sp(GHG="co2",CP="RI"),
+  plot_status_CP_1sp(GHG="ch4",CP="RI"),
+  plot_status_CP_1sp(GHG="GWPco2andch4",CP="RI"),
+  nrow = 1,
+  align = "v",
+  axis = "lr"
+)
+
+#Save:
+ggsave(plot = RI_status_3sp_horizontal, 
+       filename = "RI_status_3sp_hz.png",
+       path = school_path,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 80, 
+       width = 280)
+
+
+##_CA------
+CA_status_3sp_horizontal <- plot_grid(
+  plot_status_CP_1sp(GHG="co2",CP="CA"),
+  plot_status_CP_1sp(GHG="ch4",CP="CA"),
+  plot_status_CP_1sp(GHG="GWPco2andch4",CP="CA"),
+  nrow = 1,
+  align = "v",
+  axis = "lr"
+)
+
+#Save:
+ggsave(plot = CA_status_3sp_horizontal, 
+       filename = "CA_status_3sp_hz.png",
+       path = school_path,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 80, 
+       width = 280)
+
+
+
+##_VA------
+VA_status_3sp_horizontal <- plot_grid(
+  plot_status_CP_1sp(GHG="co2",CP="VA"),
+  plot_status_CP_1sp(GHG="ch4",CP="VA"),
+  plot_status_CP_1sp(GHG="GWPco2andch4",CP="VA"),
+  nrow = 1,
+  align = "v",
+  axis = "lr"
+)
+
+#Save:
+ggsave(plot = VA_status_3sp_horizontal, 
+       filename = "VA_status_3sp_hz.png",
+       path = school_path,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 80, 
+       width = 280)
+
+
+##_DA------
+DA_status_3sp_horizontal <- plot_grid(
+  plot_status_CP_1sp(GHG="co2",CP="DA"),
+  plot_status_CP_1sp(GHG="ch4",CP="DA"),
+  plot_status_CP_1sp(GHG="GWPco2andch4",CP="DA"),
+  nrow = 1,
+  align = "v",
+  axis = "lr"
+)
+
+#Save:
+ggsave(plot = DA_status_3sp_horizontal, 
+       filename = "DA_status_3sp_hz.png",
+       path = school_path,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 80, 
+       width = 280)
+
+
+##_CU------
+CU_status_3sp_horizontal <- plot_grid(
+  plot_status_CP_1sp(GHG="co2",CP="CU"),
+  plot_status_CP_1sp(GHG="ch4",CP="CU"),
+  plot_status_CP_1sp(GHG="GWPco2andch4",CP="CU"),
+  nrow = 1,
+  align = "v",
+  axis = "lr"
+)
+
+#Save:
+ggsave(plot = CU_status_3sp_horizontal, 
+       filename = "CU_status_3sp_hz.png",
+       path = school_path,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 80, 
+       width = 280)
+
+
+
+#_Contrasts per GHG----
+#P-values are calculated in model scale, so back-transformed 95CI might cross cero even when contrast is significant. 
+
+#Accompany contrast with formated p-values. (<0.001, <0.01, <0.05, p=value for all >0.05)
+#Side by side pannels GHG. 
+
+#MOdify units for consisntecy: 
+str(restoration_mitigation_all)
+
+change_after_rest<- restoration_mitigation_all %>% 
+  dplyr::select(-c(co2_sigsymbol,ch4_sigsymbol,GWPco2andch4_sigsymbol)) %>% 
+  pivot_longer(cols = -casepilot) %>% 
+  separate(name, into = c("ghgspecies","parameter"),sep = "_") %>% 
+  pivot_wider(names_from = c(parameter), values_from = value) %>% 
+  mutate(significant=if_else(p.value<0.05, T,F),
+         change_direction=case_when(significant&change<0~"Lower",
+                                    significant&change>0~"Higher",
+                                    !significant~"NS"),
+         pval_symbol=pval_to_symbol(p.value))
+
+
+
+change_after_rest %>% 
+  # filter(ghgspecies=="ch4") %>% 
+ggplot(aes(x = change, y = casepilot)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_errorbarh(aes(xmin = lower.CL, xmax = upper.CL), height = 0.2, color = "gray40") +
+  geom_point(aes(fill=change_direction), size = 3, color = "black", shape = 21) +
+  scale_fill_manual(values = c(
+    "Lower" = "green",
+    "Higher"   = "red",
+    "NS"  = "gray"
+  )) +
+  scale_y_discrete(limits = rev)+
+  guides( fill = "none")+
+  labs(
+    x = "Change after restoration (95% CI)",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.y = element_text(size = 11),
+    axis.text.x = element_text(size = 11)
+  )+
+  facet_grid(cols=vars(ghgspecies),scales="free")
+
+
+
+
+
+
+
+
+#_______--------
+
 ##(OMIT) cores models-----
 #We decided not to use core incubations in the paper. 
 
@@ -3491,108 +3991,7 @@ ggplot(gwp_4paper, aes(x=status, y=dailyflux))+
 
 
 
-
-
-#____________________--------
-#N2O exploratory figures------
-
-
-#Import Chamberdata4paper.csv
-alldaily<-read.csv(file = paste0(paper_path,"ChamberData4paper.csv"))
-
-#Format main data: 
-n2odaily<- alldaily %>% 
-  #Remove NAs
-  filter(!is.na(dailyflux)) %>% 
-  #Keep only ghg of interest
-  filter(ghgspecies%in%c("n2o")) %>% 
-  #Rename to GWPco2andch4
-  mutate(ghgspecies=if_else(ghgspecies=="gwp_co2andch4","GWPco2andch4",ghgspecies)) %>% 
-  mutate(vegpresence=if_else(strata=="vegetated","Vegetated","Non-vegetated")) %>% 
-  #Factor grouping variables:
-  mutate(season=factor(season, levels = c("S1","S2","S3","S4"), ordered = T),
-         casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
-         status=factor(status, levels = c("Preserved","Altered","Restored"), ordered = T),
-         subsite=factor(subsite, ordered = F),
-         ghgspecies=factor(ghgspecies, ordered=F),
-         strata=factor(strata, levels = c("open water","bare","vegetated"), ordered = F),
-         sampling=factor(sampling, ordered = F),
-         vegpresence=factor(vegpresence, levels = c("Non-vegetated","Vegetated"), ordered = F))
-
-    
-    #N2O plot dailyflux: 
-    ggplot(n2odaily, aes(x = status, y = dailyflux)) +
-      geom_hline(yintercept = 0, linetype = "dashed") +
-      geom_boxplot(width = 0.2, outliers = T, aes(fill = status), size = 0.7) +
-      theme_bw() +
-      scale_fill_manual(values = c(
-        "Preserved" = "#009E73",
-        "Altered"   = "#D55E00",
-        "Restored"  = "#56B4E9"
-      )) +
-      scale_color_manual(values = c(
-        "Preserved" = "#009E73",
-        "Altered"   = "#D55E00",
-        "Restored"  = "#56B4E9"
-      )) +
-      scale_y_continuous(expand = expansion(mult = c(0.1, 0.2), 0)) +
-      theme(
-        axis.text = element_text(face = "bold")
-      ) +
-      guides(color = "none", fill = "none") +
-      labs(
-        y = expression(N[2]*O~(mmol~m^2~d^-1)),
-        x = "Conservation status",
-        fill = "Status"
-      ) +
-      facet_grid(rows = vars(casepilot), scales = "free")
-
-
-instant_n2o<- read.csv(paste0(dropbox_root,"/GHG/N2O_fluxes/S4_restore4cs_N2O_arealflux_nmol_s-1_m-2.csv"))
-
-instant_n2o<- instant_n2o %>% 
-  separate(UniqueID_notime, into = c("season","casepilot","status_num","plotnum","strat","light"), remove = F) %>% 
-  mutate(status=case_when(grepl("a",status_num)~"Altered",
-                          grepl("p",status_num)~"Preserved",
-                          grepl("r",status_num)~"Restored"),
-         casepilot=factor(toupper(casepilot), levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
-         strata=factor(case_when(grepl("v",strat)~"Vegetated", 
-                                 grepl("o",strat)~"Open water",
-                                 grepl("b",strat)~"Bare"), levels = c("Vegetated","Open water","Bare"),ordered = F),
-         light=if_else(light=="t", "Transparent","Dark")) %>% 
-  mutate(sigflux=if_else(N2Oflux_pvalue<0.05,T,F))
-
-
-library(ggpubr)
-
-#Instant n2o plot:
-ggplot(instant_n2o, aes(x = status, y = N2Oflux_nmol_per_second_per_m2)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_boxplot(width = 0.2, outliers = T, aes(fill = status), size = 0.7) +
-  theme_bw() +
-  # scale_fill_manual(values = c(
-  #   "Vegetated" = "green",
-  #   "Bare"   = "orange",
-  #   "Open water"  = "lightblue"
-  # )) +
-  scale_fill_manual(values = c(
-    "Preserved" = "#009E73",
-    "Altered"   = "#D55E00",
-    "Restored"  = "#56B4E9"
-  )) +
-  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2), 0)) +
-  theme(
-    axis.text = element_text(face = "bold")
-  ) +
-  guides(color = "none", fill = "none") +
-  labs(
-    y = expression(N[2]*O~(nmol~m^2~s^-1)),
-    x = "Conservation status",
-    fill = "Status"
-  ) +
-  facet_grid(rows = vars(casepilot), scales = "free")
-
-
+#___________------
 
 
 #SEFS PLOTS-----------
