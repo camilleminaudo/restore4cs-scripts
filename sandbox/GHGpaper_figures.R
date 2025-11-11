@@ -40,6 +40,10 @@ library(hms)
 library(suncalc)
 library(cowplot) #Alligned axis
 library(ggforce) #geom_sina
+library(flextable) #to produce formated tables
+library(officer) #to save tables as word
+
+
 
 
 #Repo-functions
@@ -230,29 +234,31 @@ complexmodel_emmeans_statuswithinvegpresence<- complexmodel_emmeans_all %>%
 #status
 bestmodel_emmeans_status<- RI_simplemodel_emmeans_status %>% 
   full_join(complexmodel_emmeans_status) %>% 
-  dplyr::select(ghgspecies, casepilot, comparison, status, emmean_bt,SE_bt, cld_group)
+  dplyr::select(ghgspecies, casepilot, comparison, status, emmean_bt,SE_bt,lower.CL_bt, upper.CL_bt, cld_group)
 
 str(bestmodel_emmeans_status)
 
 #season
 bestmodel_emmeans_season<- RI_simplemodel_emmeans_season %>% 
   full_join(complexmodel_emmeans_season) %>% 
-  dplyr::select(ghgspecies, casepilot, comparison, season, emmean_bt,SE_bt, cld_group)
-
+  dplyr::select(ghgspecies, casepilot, comparison, season, emmean_bt,SE_bt,lower.CL_bt, upper.CL_bt, cld_group)
 str(bestmodel_emmeans_season)
 
 #status_within_season
 bestmodel_emmeans_statuswithinseason<- RI_simplemodel_emmeans_statuswithinseason %>% 
   full_join(complexmodel_emmeans_statuswithinseason) %>% 
-  dplyr::select(ghgspecies, casepilot, comparison, status,season, emmean_bt,SE_bt, cld_group)
+  dplyr::select(ghgspecies, casepilot, comparison, status,season, emmean_bt,SE_bt, lower.CL_bt, upper.CL_bt, cld_group)
 
 str(bestmodel_emmeans_statuswithinseason)
 
 #status_within_vegpresence, NO need to join RI (no comparison possible)
 bestmodel_emmeans_statuswithinvegpresence<- complexmodel_emmeans_statuswithinvegpresence %>% 
-  dplyr::select(ghgspecies, casepilot, comparison, status,vegpresence, emmean_bt,SE_bt, cld_group)
+  dplyr::select(ghgspecies, casepilot, comparison, status,vegpresence, emmean_bt,SE_bt, lower.CL_bt, upper.CL_bt, cld_group)
 
 str(bestmodel_emmeans_statuswithinvegpresence)
+
+
+
 
 
 #DONE CREATE:SEASONAL Plots (1per ghg, casepilot per pannel)(with posthoc letter groups), no status.
@@ -564,7 +570,271 @@ ggsave(filename = "PAPERPLOTS_Fig4_status_GWP_boxplot_allCP.png",
 #____________________--------
 #TABLES--------
 
-#Model summary------
+#Main tables: 
+  #1. Site descriptions (manual)
+  #2. Restoration mitigation (R-based, DONE, needs update with RS)
+
+#Supplementary tables: 
+  #1. Model summary (R-based, DONE finished final version)
+  #2. Emmeans status (R-based, TO-DO, needs update with RS)
+  #2. Full Contrasts post-hoc status (R-based, DONE, needs update with RS)
+
+
+#MT1: Site descriptions------
+#Manually filed. 
+
+#MT2: Restoration mitigation-----
+
+#Table with formated contrasts (altered-restored) to show the estimated effect of restoration (change over altered) for every ghg and casepilot. Contrast have been re-ordered to show Change after restoration (restored flux - altered flux), more intuitive: negative values=emissions mitigated. 
+
+##TO-DO:-----
+#Fix Statistical "Issue": Ideally, CI95 should be asymmetric (I think current calculation is based on SE directly, giving symmetric CI, which might be responsible for CI crossing cero for some signicant contrasts) 
+
+
+simplemodel_contrasts<- read.csv(file = paste0(paper_path,"Emmeans-posthoctests_simplemodels_chambermodels.csv"))
+
+restoration_mitigation_RI<- simplemodel_contrasts %>% 
+  filter(casepilot=="RI", comparison=="status", contrast=="Altered - Restored") %>% 
+  #Change the order of contrast to show flux-change after restoration. Sign-inversion and swap of CL order
+  mutate(change=-estimate_bt, SE=SE_bt, lower.CL=-upper.CL_bt, upper.CL=-lower.CL_bt) %>% 
+  dplyr::select(casepilot, ghgspecies, change, SE, lower.CL, upper.CL,p.value) %>%
+  pivot_longer(cols = c(change, SE, lower.CL, upper.CL, p.value), values_to = "value", names_to = "parameter") %>% 
+  pivot_wider(values_from = value, names_from = c(ghgspecies, parameter)) %>% 
+  mutate(co2_sigsymbol=pval_to_symbol(co2_p.value),
+         ch4_sigsymbol=pval_to_symbol(ch4_p.value),
+         GWPco2andch4_sigsymbol=pval_to_symbol(GWPco2andch4_p.value)) %>% 
+  dplyr::select(casepilot,
+                co2_change, co2_SE, co2_lower.CL, co2_upper.CL, co2_p.value,co2_sigsymbol,
+                ch4_change, ch4_SE, ch4_lower.CL, ch4_upper.CL, ch4_p.value,ch4_sigsymbol,
+                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol) %>% 
+  #Change CO2 contrast units to mmol m-2 d-1, ch4 is already in mmol m-2d-1, GWP is in gCO2eq m-2d-1
+  mutate(co2_change= co2_change*1000,
+         co2_SE=co2_SE*1000,
+         co2_lower.CL=co2_lower.CL*1000,
+         co2_upper.CL=co2_upper.CL*1000)
+
+
+complexmodel_contrasts<- read.csv(file=paste0(paper_path,"Emmeans-posthoctests_complexmodel_customweight_chambermodels.csv"))
+
+restoration_mitigation_rest<- complexmodel_contrasts %>% 
+  filter(comparison=="status", contrast=="Altered - Restored") %>% 
+  #Change the order of contrast to show flux-change after restoration. Sign-inversion and swap of CL order
+  mutate(change=-estimate_bt, SE=SE_bt, lower.CL=-upper.CL_bt, upper.CL=-lower.CL_bt) %>% 
+  dplyr::select(casepilot, ghgspecies, change, SE, lower.CL, upper.CL,p.value) %>%
+  pivot_longer(cols = c(change, SE, lower.CL, upper.CL, p.value), values_to = "value", names_to = "parameter") %>% 
+  pivot_wider(values_from = value, names_from = c(ghgspecies, parameter)) %>% 
+  mutate(co2_sigsymbol=pval_to_symbol(co2_p.value),
+         ch4_sigsymbol=pval_to_symbol(ch4_p.value),
+         GWPco2andch4_sigsymbol=pval_to_symbol(GWPco2andch4_p.value)) %>% 
+  dplyr::select(casepilot,
+                co2_change, co2_SE, co2_lower.CL, co2_upper.CL, co2_p.value,co2_sigsymbol,
+                ch4_change, ch4_SE, ch4_lower.CL, ch4_upper.CL, ch4_p.value,ch4_sigsymbol,
+                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol) %>% 
+  #Change CO2 contrast units to mmol m-2 d-1, ch4 is already in mmol m-2d-1, GWP is in gCO2eq m-2d-1
+  mutate(co2_change= co2_change*1000,
+         co2_SE=co2_SE*1000,
+         co2_lower.CL=co2_lower.CL*1000,
+         co2_upper.CL=co2_upper.CL*1000)
+
+
+restoration_mitigation_all<- rbind(restoration_mitigation_rest,restoration_mitigation_RI) %>% 
+  mutate(casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T)) %>% 
+  arrange(casepilot)
+
+write.csv(restoration_mitigation_all, 
+          file=paste0(main_figures, "Flux_change_after_restoration.csv"), row.names = F)
+
+
+#Format as word table
+wordtable_restoration_mitigation_all<- restoration_mitigation_all %>% 
+  #FORMAT for CO2: 
+  mutate(fco2_changeSE=sprintf("%.1f ± %.1f", co2_change, co2_SE),# round to 1 decimal for co2
+         fco2_95CI= sprintf("%.1f to %.1f", co2_lower.CL, co2_upper.CL),# round to 1 decimal for co2
+         fco2_pvalue=if_else(co2_p.value<0.001,"< 0.001",as.character(round(co2_p.value,digits = 3)))) %>% # Conditional formatting p < 0.001  or actual value with 3 decimal places
+  #FORMAT for ch4: 
+  mutate(fch4_changeSE=if_else(abs(ch4_change)<0.1, 
+                               sprintf("%.2e ± %.2e", ch4_change, ch4_SE), #Scientific notation with 2 decimal places
+                               sprintf("%.3g ± %.3g", ch4_change, ch4_SE)), #Normal notation with 3 significant digits. 
+         fch4_95CI= if_else(abs(ch4_change)<0.1, 
+                            sprintf("%.2e to %.2e", ch4_lower.CL, ch4_upper.CL), #Scientific notation with 2 decimal places
+                            sprintf("%.3g to %.3g", ch4_lower.CL, ch4_upper.CL)),#Normal notation with 3 significant digits. 
+         fch4_pvalue=if_else(ch4_p.value<0.001,"< 0.001",as.character(round(ch4_p.value,digits = 3)))) %>% 
+  #FORMAT for GWP
+  mutate(fgwp_changeSE=sprintf("%.2f ± %.2f", GWPco2andch4_change, GWPco2andch4_SE),# round to 2 decimal for GWP
+         fgwp_95CI= sprintf("%.2f to %.2f", GWPco2andch4_lower.CL, GWPco2andch4_upper.CL),# round to 1 decimal for GWP
+         fgwp_pvalue=if_else(GWPco2andch4_p.value<0.001,"< 0.001",as.character(round(GWPco2andch4_p.value,digits = 3)))) %>%  # Conditional formatting p < 0.001  or actual value with 3 decimal places
+  dplyr::select(casepilot, 
+                fco2_changeSE, fco2_95CI, fco2_pvalue, 
+                fch4_changeSE,fch4_95CI, fch4_pvalue, 
+                fgwp_changeSE, fgwp_95CI, fgwp_pvalue)
+
+
+#Adapt pipe to produce table as: 
+#CO2 (mmol m^-2 d^-1)        #CH4 (mmol m^-2 d^-1)          #GWP (gCO2eq m^-2 d^-1)
+#Casepilot  Change±SE, CI (95%), pvalue   Change±SE, CI (95%), pvalue   Change±SE, CI (95%), pvalue
+
+#Do not bother with subscripts, leave as is written above, will format manually for final table. 
+
+ft_restoration<- flextable(wordtable_restoration_mitigation_all) %>%
+  add_header_row(
+    values = c("Case pilot","CO2 (mmol m-2 d-1)", "CH4 (mmol m-2 d-1)", "GWP (g CO2eq m-2 d-1)"),  
+    colwidths = c(1,3,3,3)                          # number of columns each value spans
+  ) %>%
+  set_header_labels(
+    casepilot = "Case pilot",
+    fco2_changeSE = "Change ± SE",
+    fco2_95CI = "95% CI",
+    fco2_pvalue = "P-value",
+    fch4_changeSE = "Change ± SE",
+    fch4_95CI = "95% CI",
+    fch4_pvalue = "P-value",
+    fgwp_changeSE = "Change ± SE",
+    fgwp_95CI = "95% CI",
+    fgwp_pvalue = "P-value"
+  ) %>%
+  merge_v(j="casepilot", part="header") %>% 
+  bold(part = "header") %>%
+  fontsize(size=10, part = "header") %>% 
+  fontsize(size=10, part = "body") %>%
+  theme_vanilla() %>%
+  autofit()
+
+
+doc <- read_docx() %>%
+  body_add_par("Main Table 2: Change in GHG flux after restoration (with respect to altered", style = "heading 1") %>%
+  body_add_flextable(ft_restoration) %>% 
+  body_end_section_landscape()
+
+print(doc,
+      target=paste0(main_figures,"Main_Table2_Flux change after restoration.docx"))
+
+
+
+#MT3: Conservation mitigation-----
+#SAME as Restoration mitigation but for conservation (avoided emissions if no altereation had occurred)
+#Table with formated contrasts (altered-preserved) to show the estimated effect of avoiding alteration (mantaining well-preserved status) for every ghg and casepilot. Contrast have been re-ordered to show negative values for avoided emissions (Preserved - altered flux), more intuitive: negative values=emissions mitigated. 
+
+conservation_mitigation_RI<- simplemodel_contrasts %>% 
+  filter(casepilot=="RI", comparison=="status", contrast=="Altered - Preserved") %>% 
+  #Change the order of contrast to show flux-change after restoration. Sign-inversion and swap of CL order
+  mutate(change=-estimate_bt, SE=SE_bt, lower.CL=-upper.CL_bt, upper.CL=-lower.CL_bt) %>% 
+  dplyr::select(casepilot, ghgspecies, change, SE, lower.CL, upper.CL,p.value) %>%
+  pivot_longer(cols = c(change, SE, lower.CL, upper.CL, p.value), values_to = "value", names_to = "parameter") %>% 
+  pivot_wider(values_from = value, names_from = c(ghgspecies, parameter)) %>% 
+  mutate(co2_sigsymbol=pval_to_symbol(co2_p.value),
+         ch4_sigsymbol=pval_to_symbol(ch4_p.value),
+         GWPco2andch4_sigsymbol=pval_to_symbol(GWPco2andch4_p.value)) %>% 
+  dplyr::select(casepilot,
+                co2_change, co2_SE, co2_lower.CL, co2_upper.CL, co2_p.value,co2_sigsymbol,
+                ch4_change, ch4_SE, ch4_lower.CL, ch4_upper.CL, ch4_p.value,ch4_sigsymbol,
+                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol) %>% 
+  #Change CO2 contrast units to mmol m-2 d-1, ch4 is already in mmol m-2d-1, GWP is in gCO2eq m-2d-1
+  mutate(co2_change= co2_change*1000,
+         co2_SE=co2_SE*1000,
+         co2_lower.CL=co2_lower.CL*1000,
+         co2_upper.CL=co2_upper.CL*1000)
+
+
+
+conservation_mitigation_rest<- complexmodel_contrasts %>% 
+  filter(comparison=="status", contrast=="Altered - Preserved") %>% 
+  #Change the order of contrast to show flux-change after restoration. Sign-inversion and swap of CL order
+  mutate(change=-estimate_bt, SE=SE_bt, lower.CL=-upper.CL_bt, upper.CL=-lower.CL_bt) %>% 
+  dplyr::select(casepilot, ghgspecies, change, SE, lower.CL, upper.CL,p.value) %>%
+  pivot_longer(cols = c(change, SE, lower.CL, upper.CL, p.value), values_to = "value", names_to = "parameter") %>% 
+  pivot_wider(values_from = value, names_from = c(ghgspecies, parameter)) %>% 
+  mutate(co2_sigsymbol=pval_to_symbol(co2_p.value),
+         ch4_sigsymbol=pval_to_symbol(ch4_p.value),
+         GWPco2andch4_sigsymbol=pval_to_symbol(GWPco2andch4_p.value)) %>% 
+  dplyr::select(casepilot,
+                co2_change, co2_SE, co2_lower.CL, co2_upper.CL, co2_p.value,co2_sigsymbol,
+                ch4_change, ch4_SE, ch4_lower.CL, ch4_upper.CL, ch4_p.value,ch4_sigsymbol,
+                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol) %>% 
+  #Change CO2 contrast units to mmol m-2 d-1, ch4 is already in mmol m-2d-1, GWP is in gCO2eq m-2d-1
+  mutate(co2_change= co2_change*1000,
+         co2_SE=co2_SE*1000,
+         co2_lower.CL=co2_lower.CL*1000,
+         co2_upper.CL=co2_upper.CL*1000)
+
+
+conservation_mitigation_all<- rbind(conservation_mitigation_rest,conservation_mitigation_RI) %>% 
+  mutate(casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T)) %>% 
+  arrange(casepilot)
+
+write.csv(conservation_mitigation_all, 
+          file=paste0(main_figures, "Flux_change_if_no_alteration_had_happened.csv"), row.names = F)
+
+
+#Format as word table
+wordtable_conservation_mitigation_all<- conservation_mitigation_all %>% 
+  #FORMAT for CO2: 
+  mutate(fco2_changeSE=sprintf("%.1f ± %.1f", co2_change, co2_SE),# round to 1 decimal for co2
+         fco2_95CI= sprintf("%.1f to %.1f", co2_lower.CL, co2_upper.CL),# round to 1 decimal for co2
+         fco2_pvalue=if_else(co2_p.value<0.001,"< 0.001",as.character(round(co2_p.value,digits = 3)))) %>% # Conditional formatting p < 0.001  or actual value with 3 decimal places
+  #FORMAT for ch4: 
+  mutate(fch4_changeSE=if_else(abs(ch4_change)<0.1, 
+                               sprintf("%.2e ± %.2e", ch4_change, ch4_SE), #Scientific notation with 2 decimal places
+                               sprintf("%.3g ± %.3g", ch4_change, ch4_SE)), #Normal notation with 3 significant digits. 
+         fch4_95CI= if_else(abs(ch4_change)<0.1, 
+                            sprintf("%.2e to %.2e", ch4_lower.CL, ch4_upper.CL), #Scientific notation with 2 decimal places
+                            sprintf("%.3g to %.3g", ch4_lower.CL, ch4_upper.CL)),#Normal notation with 3 significant digits. 
+         fch4_pvalue=if_else(ch4_p.value<0.001,"< 0.001",as.character(round(ch4_p.value,digits = 3)))) %>% 
+  #FORMAT for GWP
+  mutate(fgwp_changeSE=sprintf("%.2f ± %.2f", GWPco2andch4_change, GWPco2andch4_SE),# round to 2 decimal for GWP
+         fgwp_95CI= sprintf("%.2f to %.2f", GWPco2andch4_lower.CL, GWPco2andch4_upper.CL),# round to 1 decimal for GWP
+         fgwp_pvalue=if_else(GWPco2andch4_p.value<0.001,"< 0.001",as.character(round(GWPco2andch4_p.value,digits = 3)))) %>%  # Conditional formatting p < 0.001  or actual value with 3 decimal places
+  dplyr::select(casepilot, 
+                fco2_changeSE, fco2_95CI, fco2_pvalue, 
+                fch4_changeSE,fch4_95CI, fch4_pvalue, 
+                fgwp_changeSE, fgwp_95CI, fgwp_pvalue)
+
+
+#Adapt pipe to produce table as: 
+#CO2 (mmol m^-2 d^-1)        #CH4 (mmol m^-2 d^-1)          #GWP (gCO2eq m^-2 d^-1)
+#Casepilot  Change±SE, CI (95%), pvalue   Change±SE, CI (95%), pvalue   Change±SE, CI (95%), pvalue
+
+#Do not bother with subscripts, leave as is written above, will format manually for final table. 
+
+ft_conservation<- flextable(wordtable_conservation_mitigation_all) %>%
+  add_header_row(
+    values = c("Case pilot","CO2 (mmol m-2 d-1)", "CH4 (mmol m-2 d-1)", "GWP (g CO2eq m-2 d-1)"),  
+    colwidths = c(1,3,3,3)                          # number of columns each value spans
+  ) %>%
+  set_header_labels(
+    casepilot = "Case pilot",
+    fco2_changeSE = "Change ± SE",
+    fco2_95CI = "95% CI",
+    fco2_pvalue = "P-value",
+    fch4_changeSE = "Change ± SE",
+    fch4_95CI = "95% CI",
+    fch4_pvalue = "P-value",
+    fgwp_changeSE = "Change ± SE",
+    fgwp_95CI = "95% CI",
+    fgwp_pvalue = "P-value"
+  ) %>%
+  merge_v(j="casepilot", part="header") %>% 
+  bold(part = "header") %>%
+  fontsize(size=10, part = "header") %>% 
+  fontsize(size=10, part = "body") %>%
+  theme_vanilla() %>%
+  autofit()
+
+
+doc <- read_docx() %>%
+  body_add_par("Main Table 3: Mitigated fluxes if no alteration had happened (Preserved vs altered fluxes)", style = "heading 1") %>%
+  body_add_flextable(ft_conservation) %>% 
+  body_end_section_landscape()
+
+print(doc,
+      target=paste0(main_figures,"Main_Table3_Conservation mitigation.docx"))
+
+
+
+
+
+#ST1: Model summary------
+#Supplementary table with model summaries 18 models (6CP x 3 GHG). 
+
 #Format model summary into table with effect significance, R2c and R2m
 #Arrange by co2,ch4,GWP, then casepilot (DU,RI,CA,VA,DA,CU) , then effect (status,season,interaction).
 
@@ -615,64 +885,255 @@ write.csv(combined_model_summary,
           file=paste0(main_figures, "Formated_summary_models.csv"), row.names = F)
 
 
-
-#Restoration mitigation-----
-
-#Table with formated contrasts (altered-restored) to show the estimated effect of restoration (change over altered) for every ghg and casepilot. Contrast have been re-ordered to show Change after restoration (restored flux - altered flux), more intuitive: negative values=emissions mitigated. 
-
-#TO-DO:----------
-#CHECK UNITS OF contrasts!
-
-#Statistical Issue: cannot back-transform the contrasts: difference of back-transformed != back-transformed difference. Especially worrisome for SEs. OCTOBER 29th: I THINK THIS WAS ALREADY CORRECTED. 
-
-
-simplemodel_contrasts<- read.csv(file = paste0(paper_path,"Emmeans-posthoctests_simplemodels_chambermodels.csv"))
-
-restoration_mitigation_RI<- simplemodel_contrasts %>% 
-  filter(casepilot=="RI", comparison=="status", contrast=="Altered - Restored") %>% 
-  #Change the order of contrast to show flux-change after restoration. Sign-inversion and swap of CL order
-  mutate(change=-estimate_bt, SE=SE_bt, lower.CL=-upper.CL_bt, upper.CL=-lower.CL_bt) %>% 
-  dplyr::select(casepilot, ghgspecies, change, SE, lower.CL, upper.CL,p.value) %>%
-  pivot_longer(cols = c(change, SE, lower.CL, upper.CL, p.value), values_to = "value", names_to = "parameter") %>% 
-  pivot_wider(values_from = value, names_from = c(ghgspecies, parameter)) %>% 
-  mutate(co2_sigsymbol=pval_to_symbol(co2_p.value),
-         ch4_sigsymbol=pval_to_symbol(ch4_p.value),
-         GWPco2andch4_sigsymbol=pval_to_symbol(GWPco2andch4_p.value)) %>% 
-  dplyr::select(casepilot,
-                co2_change, co2_SE, co2_lower.CL, co2_upper.CL, co2_p.value,co2_sigsymbol,
-                ch4_change, ch4_SE, ch4_lower.CL, ch4_upper.CL, ch4_p.value,ch4_sigsymbol,
-                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol)
+#Format summary table into word-table:
+wordtable_model_summary<- combined_model_summary %>% 
+  select(ghgspecies, casepilot, transformation, formula, family, nobs, R2m, R2c, effect, rounded_p_value) %>% 
+  mutate(effect = factor(gsub("\\."," : ",effect), levels = c("status","season","vegpresence","status : season","status : vegpresence","season : vegpresence","status : season : vegpresence"), ordered = T)) %>% 
+  arrange(ghgspecies, casepilot, effect) %>% 
+  mutate(transformation=case_when(transformation=="best_pseudo_log"~"pseudo-log",
+                                  transformation=="log_x"~"log", 
+                                  transformation=="arcsinh_x"~"arcsinh",
+                                  transformation=="yeojohnson"~"Yeo-Johnson"),
+         formula=gsub("dailyflux_trans","Flux",formula),
+         ghgspecies=case_when(ghgspecies=="co2"~"CO2", 
+                              ghgspecies=="ch4"~"CH4",
+                              ghgspecies=="GWPco2andch4"~ "GWP"),
+         formula= paste0("Call: ",formula, 
+                         ", \nDistribution: ",family,
+                         ", \nTransformation: ",transformation), 
+         dataset=paste(casepilot, ghgspecies, sep = " - ")) %>% 
+  dplyr::select(dataset, formula, nobs, R2m, R2c, effect, rounded_p_value)
 
 
-
-complexmodel_contrasts<- read.csv(file=paste0(paper_path,"Emmeans-posthoctests_complexmodel_customweight_chambermodels.csv"))
-
-restoration_mitigation_rest<- complexmodel_contrasts %>% 
-  filter(comparison=="status", contrast=="Altered - Restored") %>% 
-   #Change the order of contrast to show flux-change after restoration. Sign-inversion and swap of CL order
-  mutate(change=-estimate_bt, SE=SE_bt, lower.CL=-upper.CL_bt, upper.CL=-lower.CL_bt) %>% 
-  dplyr::select(casepilot, ghgspecies, change, SE, lower.CL, upper.CL,p.value) %>%
-  pivot_longer(cols = c(change, SE, lower.CL, upper.CL, p.value), values_to = "value", names_to = "parameter") %>% 
-  pivot_wider(values_from = value, names_from = c(ghgspecies, parameter)) %>% 
-  mutate(co2_sigsymbol=pval_to_symbol(co2_p.value),
-         ch4_sigsymbol=pval_to_symbol(ch4_p.value),
-         GWPco2andch4_sigsymbol=pval_to_symbol(GWPco2andch4_p.value)) %>% 
-  dplyr::select(casepilot,
-                co2_change, co2_SE, co2_lower.CL, co2_upper.CL, co2_p.value,co2_sigsymbol,
-                ch4_change, ch4_SE, ch4_lower.CL, ch4_upper.CL, ch4_p.value,ch4_sigsymbol,
-                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol)
+ft<- flextable(wordtable_model_summary) %>% 
+  merge_v( j= c("dataset","formula","nobs","R2m","R2c"), combine = T) %>% 
+set_header_labels(
+  dataset = "Dataset",
+  formula = "Best-Supported Model",
+  nobs = "N",
+  R2m = "R2m",
+  R2c = "R2c",
+  effect = "Effect",
+  rounded_p_value = "p-Value"
+) %>% 
+  bold(part = "header") %>%
+  fontsize(size=10, part = "body") %>% 
+  theme_vanilla() %>% 
+  autofit()
 
 
-restoration_mitigation_all<- rbind(restoration_mitigation_rest,restoration_mitigation_RI) %>% 
-  mutate(casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T)) %>% 
-  arrange(casepilot)
+doc <- read_docx() %>%
+  body_add_par("Supp. Table 1: Model structures and Effects significance", style = "heading 1") %>%
+  body_add_flextable(ft) %>% 
+  body_end_section_landscape()
 
-write.csv(restoration_mitigation_all, 
-          file=paste0(main_figures, "Flux_change_after_restoration.csv"), row.names = F)
+print(doc, 
+      target=paste0(main_figures,"Sup_Table1_Model_str_and_effects.docx"))
+
+
+#STx: Emmeans status-----
+#Table with full emmeans for each status, casepilot and ghg
+
+formated_emmeans<- bestmodel_emmeans_status %>%
+  #change units co2  to mmol 
+  mutate(emmean=if_else(ghgspecies=="co2", emmean_bt*1000,emmean_bt),
+         SE=if_else(ghgspecies=="co2", SE_bt*1000,SE_bt),
+         lower.CL=if_else(ghgspecies=="co2", lower.CL_bt*1000,lower.CL_bt),
+         upper.CL=if_else(ghgspecies=="co2", upper.CL_bt*1000,upper.CL_bt)) %>% 
+  mutate(emmean_SE=sprintf("%.3g ± %.3g", emmean, SE),# 3 significant figures (normal or scientific notation)
+         CI95= sprintf("%.3g to %.3g", lower.CL, upper.CL)) %>% # 3 significant figures (normal or scientific notation)
+  dplyr::select(c(ghgspecies, casepilot, status, emmean_SE, CI95)) %>% 
+  mutate(ghgspecies=if_else(ghgspecies=="GWPco2andch4", "gwp",ghgspecies)) %>% 
+  pivot_wider(names_from = ghgspecies, values_from = c("emmean_SE", "CI95")) %>% 
+  dplyr::select(casepilot, status, emmean_SE_co2, CI95_co2, emmean_SE_ch4, CI95_ch4,emmean_SE_gwp, CI95_gwp)
+
+
+
+ft_emmeans<- formated_emmeans %>% 
+  flextable() %>% 
+  add_header_row(
+    values = c("Case pilot","Status","CO2 flux (mmol m-2 d-1)","CH4 flux (mmol m-2 d-1)","GWP flux (g CO2eq. m-2 d-1)"),  
+    colwidths = c(1,1,2,2,2)                          # number of columns each value spans
+  ) %>%
+  set_header_labels(
+    casepilot = "Case pilot",
+    status = "Status",
+    emmean_SE_co2 = "Mean ± SE",
+    CI95_co2 = "95% CI",
+    emmean_SE_ch4 = "Mean ± SE",
+    CI95_ch4 = "95% CI",
+    emmean_SE_gwp = "Mean ± SE",
+    CI95_gwp = "95% CI") %>%
+  merge_v(j="casepilot") %>% 
+  merge_v(j="casepilot", part="header") %>% 
+  merge_v(j="status", part="header") %>% 
+  bold(part = "header") %>%
+  fontsize(size=10, part = "header") %>% 
+  fontsize(size=9, part = "body") %>%
+  theme_vanilla() %>%
+  autofit()
+
+  
+#Create word doc with emmeans table.
+
+doc <- read_docx() %>%
+  body_add_par("Supplementary Table X: Model-derived Estimated marginal means of GHG fluxes across status") %>%
+  body_add_flextable(ft_emmeans) %>% 
+  body_end_section_landscape()
+
+print(doc,
+      target=paste0(main_figures,"Supplementary_Tables_Status_emmeans.docx"))
 
 
 
 
+#STx: Full contrasts status-----
+#Supplementary tables with full contrasts for status: 
+#case pilot    Contrast    Difference +- SE    95%CI   p.value
+
+formatedcontrasts_RI<- simplemodel_contrasts %>% 
+  filter(casepilot=="RI", comparison=="status") %>% 
+  mutate(difference=estimate_bt, SE=SE_bt, lower.CL=lower.CL_bt, upper.CL=upper.CL_bt) %>% 
+  mutate(Fghg=case_when(ghgspecies=="co2"~"CO2",
+                        ghgspecies=="ch4"~"CH4",
+                        ghgspecies=="GWPco2andch4"~"GWP")) %>% 
+  mutate(dataset=paste0(casepilot, " - ",Fghg)) %>% 
+  dplyr::select(casepilot, ghgspecies,dataset, contrast, difference, SE, lower.CL, upper.CL,p.value)
+
+
+formatedcontrasts_rest<- complexmodel_contrasts %>% 
+  filter(comparison=="status") %>% 
+  #Leave order of contrasts as is, modify naming of variables
+  mutate(difference=estimate_bt, SE=SE_bt, lower.CL=lower.CL_bt, upper.CL=upper.CL_bt) %>% 
+  mutate(Fghg=case_when(ghgspecies=="co2"~"CO2",
+                        ghgspecies=="ch4"~"CH4",
+                        ghgspecies=="GWPco2andch4"~"GWP")) %>% 
+  mutate(dataset=paste0(casepilot, " - ",Fghg)) %>% 
+  dplyr::select(casepilot, ghgspecies,dataset, contrast, difference, SE, lower.CL, upper.CL,p.value)
+
+
+
+formatedcontrasts_all<-  rbind(formatedcontrasts_rest,formatedcontrasts_RI) %>% 
+  mutate(casepilot=factor(casepilot, levels = c("DU","RI","CA","VA","DA","CU"), ordered = T),
+         ghgspecies=factor(ghgspecies, levels=c("co2","ch4","GWPco2andch4"), ordered = T)) %>% 
+  #Change CO2 contrast from mol units to mmol m-2 d-1, ch4 is already in mmol m-2d-1, GWP is in gCO2eq m-2d-1
+  mutate(difference= if_else(ghgspecies=="co2", difference*1000, difference), 
+         SE=if_else(ghgspecies=="co2", SE*1000, SE),
+         lower.CL=if_else(ghgspecies=="co2", lower.CL*1000,lower.CL),
+         upper.CL=if_else(ghgspecies=="co2", upper.CL*1000, upper.CL), 
+         flux_units=case_when(ghgspecies=="co2"~"mmol m-2 d-1",
+                              ghgspecies=="ch4"~"mmol m-2 d-1",
+                              ghgspecies=="GWPco2andch4"~"g CO2 eq.m-2 d-1"
+         )) %>% 
+  arrange(casepilot,ghgspecies) %>%  
+  mutate(difference_SE=sprintf("%.3g ± %.3g", difference, SE),# 3 significant figures (normal or scientific notation)
+         CI95= sprintf("%.3g to %.3g", lower.CL, upper.CL),# 3 significant figures (normal or scientific notation)
+         pvalue=if_else(p.value<0.001,"< 0.001",as.character(round(p.value,digits = 3)))) %>% 
+  dplyr::select(casepilot, ghgspecies, dataset, contrast, difference_SE,CI95, pvalue)
+
+#We need a different column with units
+#3 tables (1perGHG), with columns dataset, contrast, Difference (units), Pvalue
+
+#within the Difference column we will have 3 actual columns (estimate +- SE, 95% CI, Pvalue)
+
+ft_contrasts_co2<- formatedcontrasts_all %>%
+  filter(ghgspecies=="co2") %>%
+  dplyr::select(casepilot, contrast, difference_SE, CI95, pvalue) %>% 
+  flextable() %>% 
+  add_header_row(
+    values = c("Case pilot","Contrast","Difference (mmol CO2 m-2 d-1)"),  
+    colwidths = c(1,1,3)                          # number of columns each value spans
+  ) %>%
+  set_header_labels(
+    casepilot = "Case pilot",
+    contrast = "Contrast",
+    difference_SE = "Estimate ± SE",
+    CI95 = "95% CI",
+    pvalue = "P-value"
+  ) %>% 
+  merge_v(j="casepilot") %>% 
+  merge_v(j="casepilot", part="header") %>% 
+  merge_v(j="contrast", part="header") %>% 
+  bold(part = "header") %>%
+  fontsize(size=10, part = "header") %>% 
+  fontsize(size=10, part = "body") %>%
+  theme_vanilla() %>%
+  autofit()
+
+
+
+ft_contrasts_ch4<- formatedcontrasts_all %>%
+  filter(ghgspecies=="ch4") %>%
+  dplyr::select(casepilot, contrast, difference_SE, CI95, pvalue) %>% 
+  flextable() %>% 
+  add_header_row(
+    values = c("Case pilot","Contrast","Difference (mmol CH4 m-2 d-1)"),  
+    colwidths = c(1,1,3)                          # number of columns each value spans
+  ) %>%
+  set_header_labels(
+    casepilot = "Case pilot",
+    contrast = "Contrast",
+    difference_SE = "Estimate ± SE",
+    CI95 = "95% CI",
+    pvalue = "P-value"
+  ) %>% 
+  merge_v(j="casepilot") %>% 
+  merge_v(j="casepilot", part="header") %>% 
+  merge_v(j="contrast", part="header") %>% 
+  bold(part = "header") %>%
+  fontsize(size=10, part = "header") %>% 
+  fontsize(size=10, part = "body") %>%
+  theme_vanilla() %>%
+  autofit()
+
+
+ft_contrasts_gwp<- formatedcontrasts_all %>%
+  filter(ghgspecies=="GWPco2andch4") %>%
+  dplyr::select(casepilot, contrast, difference_SE, CI95, pvalue) %>% 
+  flextable() %>% 
+  add_header_row(
+    values = c("Case pilot","Contrast","Difference (g CO2eq. m-2 d-1)"),  
+    colwidths = c(1,1,3)                          # number of columns each value spans
+  ) %>%
+  set_header_labels(
+    casepilot = "Case pilot",
+    contrast = "Contrast",
+    difference_SE = "Estimate ± SE",
+    CI95 = "95% CI",
+    pvalue = "P-value"
+  ) %>% 
+  merge_v(j="casepilot") %>% 
+  merge_v(j="casepilot", part="header") %>% 
+  merge_v(j="contrast", part="header") %>% 
+  bold(part = "header") %>%
+  fontsize(size=10, part = "header") %>% 
+  fontsize(size=10, part = "body") %>%
+  theme_vanilla() %>%
+  autofit()
+
+
+doc <- read_docx() %>%
+  body_add_par("Supplementary Tables X: Post-hoc contrasts between ecological status classes for CO2, CH4 and GWP.", style = "heading 1") %>%
+  body_add_par("Supplementary Table Xa: CO2 Post-hoc contrasts.", style = "Normal") %>%
+  body_add_flextable(ft_contrasts_co2) %>% 
+  body_add_par("Supplementary Table Xb: CH4 Post-hoc contrasts.", style = "Normal") %>%
+  body_add_flextable(ft_contrasts_ch4) %>% 
+  body_add_par("Supplementary Table Xc: GWP Post-hoc contrasts.", style = "Normal") %>%
+  body_add_flextable(ft_contrasts_gwp) 
+
+
+print(doc,
+      target=paste0(main_figures,"Supplementary_Tables_post-hoc_contrasts_co2_ch4_gwp.docx"))
+
+
+
+
+
+
+
+#Extra tables----
+
+##mitigation per vegpresence-----
 restoration_mitigation_per_vegpresence<- complexmodel_contrasts %>% 
   filter(comparison=="status_within_vegpresence", contrast=="Altered - Restored") %>% 
   #Change the order of contrast to show flux-change after restoration. Sign-inversion and swap of CL order
@@ -686,11 +1147,25 @@ restoration_mitigation_per_vegpresence<- complexmodel_contrasts %>%
   dplyr::select(casepilot, vegpresence,
                 co2_change, co2_SE, co2_lower.CL, co2_upper.CL, co2_p.value,co2_sigsymbol,
                 ch4_change, ch4_SE, ch4_lower.CL, ch4_upper.CL, ch4_p.value,ch4_sigsymbol,
-                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol)
+                GWPco2andch4_change, GWPco2andch4_SE, GWPco2andch4_lower.CL, GWPco2andch4_upper.CL, GWPco2andch4_p.value,GWPco2andch4_sigsymbol) %>% 
+  #Change CO2 contrast units to mmol m-2 d-1, ch4 is already in mmol m-2d-1, GWP is in gCO2eq m-2d-1
+  mutate(co2_change= co2_change*1000,
+         co2_SE=co2_SE*1000,
+         co2_lower.CL=co2_lower.CL*1000,
+         co2_upper.CL=co2_upper.CL*1000)
+
 
 
 write.csv(restoration_mitigation_per_vegpresence, 
           file=paste0(main_figures, "Supp_Flux_change_after_restoration_per_vegpresence.csv"), row.names = F)
+
+
+
+
+
+
+
+
 
 
 
@@ -3077,6 +3552,21 @@ ggsave(plot = baseline_2sp_ident_withinset_horizontal,
 
 
 
+#_Summary model table-----
+
+simplified_summary<- combined_model_summary %>% 
+  dplyr::select(ghgspecies, casepilot, R2c, R2m, effect, sig_symbol) %>% 
+  mutate(R2c=as.character(round(R2c, 2)),
+         R2m=as.character(round(R2m,2))) %>% 
+  pivot_wider(names_from = effect, values_from = sig_symbol) %>% 
+  pivot_longer(cols = -c(ghgspecies,casepilot),names_to = "parameter",values_to = "value") %>% 
+  pivot_wider(names_from = ghgspecies, values_from = value) %>% 
+  mutate(parameter=factor(parameter, levels=c("status","season","vegpresence","status.season","status.vegpresence","season.vegpresence","status.season.vegpresence","R2m","R2c"), ordered = T)) %>% 
+  arrange(casepilot, parameter)
+  
+
+write.csv(simplified_summary,file = paste0(school_path,"model_summary_simplified.csv"),row.names = F)
+
 
 
 #FUNCTION to create single plot 1CP 1GHG (automatic y-label and multiplyer)
@@ -3270,12 +3760,24 @@ change_after_rest<- restoration_mitigation_all %>%
   dplyr::select(-c(co2_sigsymbol,ch4_sigsymbol,GWPco2andch4_sigsymbol)) %>% 
   pivot_longer(cols = -casepilot) %>% 
   separate(name, into = c("ghgspecies","parameter"),sep = "_") %>% 
+  #Transform all into gCO2eq units
+  mutate(value=case_when(parameter!="p.value"&ghgspecies=="co2"~ value*44.009, # mol*44 = g CO2
+                         parameter!="p.value"&ghgspecies=="ch4"~value*1e-3*16.043*28, #mmol to mol and to gCH4, then by IPCC WP factor 28
+                         TRUE~value) #Do not transform p.values or GWP (already in gCO2 units)
+         ) %>% 
   pivot_wider(names_from = c(parameter), values_from = value) %>% 
   mutate(significant=if_else(p.value<0.05, T,F),
          change_direction=case_when(significant&change<0~"Lower",
                                     significant&change>0~"Higher",
                                     !significant~"NS"),
-         pval_symbol=pval_to_symbol(p.value))
+         pval_symbol=pval_to_symbol(p.value),
+         formatted_pvalue=case_when(p.value<0.001~"p < 0.001",
+                                    p.value<0.01~"p < 0.01",
+                                    p.value<0.05~"p < 0.05",
+                                    p.value>=0.05~paste("p =",as.character(round(p.value,3)))),
+         ghgspecies=factor(case_when(ghgspecies=="co2"~"CO2",
+                                     ghgspecies=="ch4"~"CH4",
+                                     ghgspecies=="GWPco2andch4"~"GWP"), levels = c("CO2","CH4","GWP"), ordered = T))
 
 
 
@@ -3285,6 +3787,7 @@ ggplot(aes(x = change, y = casepilot)) +
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
   geom_errorbarh(aes(xmin = lower.CL, xmax = upper.CL), height = 0.2, color = "gray40") +
   geom_point(aes(fill=change_direction), size = 3, color = "black", shape = 21) +
+  geom_text(aes(label=formatted_pvalue), nudge_y = 0.25)+
   scale_fill_manual(values = c(
     "Lower" = "green",
     "Higher"   = "red",
@@ -3293,7 +3796,7 @@ ggplot(aes(x = change, y = casepilot)) +
   scale_y_discrete(limits = rev)+
   guides( fill = "none")+
   labs(
-    x = "Change after restoration (95% CI)",
+    x = expression(Change~after~restoration~(CO[2]~eq~m^{-2}~d^{-1})*", with 95% CI"),
     y = NULL
   ) +
   theme_bw() +
@@ -3301,9 +3804,16 @@ ggplot(aes(x = change, y = casepilot)) +
     axis.text.y = element_text(size = 11),
     axis.text.x = element_text(size = 11)
   )+
-  facet_grid(cols=vars(ghgspecies),scales="free")
+  facet_grid(cols=vars(ghgspecies))
 
 
+ggsave(filename = "Change_after_restoration.png",
+       path = school_path,
+       device = "png",
+       dpi = 400,
+       units = "mm",
+       height = 100, 
+       width = 280)
 
 
 
